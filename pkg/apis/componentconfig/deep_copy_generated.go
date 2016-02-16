@@ -202,6 +202,9 @@ func DeepCopy_componentconfig_KubeSchedulerConfiguration(in KubeSchedulerConfigu
 }
 
 func DeepCopy_componentconfig_KubeletConfiguration(in KubeletConfiguration, out *KubeletConfiguration, c *conversion.Cloner) error {
+	if err := unversioned.DeepCopy_unversioned_TypeMeta(in.TypeMeta, &out.TypeMeta, c); err != nil {
+		return err
+	}
 	out.Config = in.Config
 	if err := unversioned.DeepCopy_unversioned_Duration(in.SyncFrequency, &out.SyncFrequency, c); err != nil {
 		return err
@@ -227,9 +230,27 @@ func DeepCopy_componentconfig_KubeletConfiguration(in KubeletConfiguration, out 
 	out.RootDirectory = in.RootDirectory
 	out.SeccompProfileRoot = in.SeccompProfileRoot
 	out.AllowPrivileged = in.AllowPrivileged
-	out.HostNetworkSources = in.HostNetworkSources
-	out.HostPIDSources = in.HostPIDSources
-	out.HostIPCSources = in.HostIPCSources
+	if in.HostNetworkSources != nil {
+		in, out := in.HostNetworkSources, &out.HostNetworkSources
+		*out = make([]string, len(in))
+		copy(*out, in)
+	} else {
+		out.HostNetworkSources = nil
+	}
+	if in.HostPIDSources != nil {
+		in, out := in.HostPIDSources, &out.HostPIDSources
+		*out = make([]string, len(in))
+		copy(*out, in)
+	} else {
+		out.HostPIDSources = nil
+	}
+	if in.HostIPCSources != nil {
+		in, out := in.HostIPCSources, &out.HostIPCSources
+		*out = make([]string, len(in))
+		copy(*out, in)
+	} else {
+		out.HostIPCSources = nil
+	}
 	out.RegistryPullQPS = in.RegistryPullQPS
 	out.RegistryBurst = in.RegistryBurst
 	out.EventRecordQPS = in.EventRecordQPS
