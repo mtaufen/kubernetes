@@ -167,7 +167,7 @@ func ValidateClusterSize() {
 	}
 
 	if numNodes < minNodeCount {
-		log.Fatalf("Cluster size (%d) is too small to run e2e tests.  %d Nodes are required.", numNodes, minNodeCount)
+		log.Fatalf("Cluster size (%d) is too small to run e2e tests.  %d Nodes are requiredd.", numNodes, minNodeCount)
 	}
 }
 
