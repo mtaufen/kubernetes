@@ -30,7 +30,7 @@ func addConversionFuncs(scheme *runtime.Scheme) {
 			case "metadata.name":
 				return label, value, nil
 			default:
-				return "", "", fmt.Errorf("field label not supported: %s", label)
+				return "", "", fmt.Errorf("field label derp not supported: %s", label)
 			}
 		})
 	if err != nil {
