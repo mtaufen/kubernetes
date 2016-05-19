@@ -23,8 +23,10 @@ import (
 	docker "github.com/fsouza/go-dockerclient"
 	"github.com/golang/glog"
 	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/client/restclient"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/util/wait"
+	"k8s.io/kubernetes/test/e2e/framework"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -32,46 +34,72 @@ import (
 
 var _ = Describe("GarbageCollect", func() {
 	var cl *client.Client
+	var fr *framework.Framework
+	// fr = NewDefaultFramework("garbage-collection")
 	var dockerClient *docker.Client
+
+	// Note: apiServerAddress is in test/e2e_node/util.go
+	//       and at this time is 127.0.0.1:8080
+	cl = client.NewOrDie(&restclient.Config{Host: *apiServerAddress})
+
+	// I'm starting with a new framework and client for each test.
+	// Normally if you don't put a client on a framework it makes one for you.
+	// But does it make the right kind of client?
+	// The framework will make a namespace for you as well. Not quite sure what
+	// doing that entails yet. But I'm pretty sure it happens.
+
+	fr = framework.NewFramework("garbage-collection-test",
+		framework.FrameworkOptions{ // same options that are given to the default framework
+			ClientQPS:   20,
+			ClientBurst: 50,
+		},
+		cl)
+
 	BeforeEach(func() {
-		cl = client.NewOrDie(&client.Config{Host: *apiServerAddress})
 		var err error
 		dockerClient, err = docker.NewClientFromEnv()
 		Expect(err).To(BeNil(), fmt.Sprintf("Error connecting to docker %v", err))
 	})
 
 	It("Should garbage collect deleted pods", func() {
-		Skip("Requires docker permissions") // FIXME
+		// Skip("Requires docker permissions") // FIXME TODO: I think this was a Jenkins thing?
 
+		// TODO: Change back to e = 5 and num = 90
 		const (
 			// The acceptable delta when counting containers.
-			epsilon = 5
+			epsilon = 0
 			// The number of pods to create & delete.
-			numPods = 90
+			numPods = 15
 		)
 
 		containers, err := dockerClient.ListContainers(docker.ListContainersOptions{All: true})
 		Expect(err).To(BeNil(), fmt.Sprintf("Error listing containers %v", err))
+
 		initialContainerCount := len(containers)
 
 		// Start pods.
+		By("Creating the pods.")
 		podNames := make([]string, numPods)
 		podContainers := []api.Container{getPauseContainer()}
 		for i := 0; i < numPods; i++ {
 			podNames[i] = fmt.Sprintf("pod-%d", i)
-			createPod(cl, podNames[i], podContainers, nil)
+			createPod(fr, podNames[i], podContainers, nil)
 		}
 
 		// Wait for containers to start.
-		Expect(waitForContainerCount(dockerClient, atLeast(numPods))).To(BeNil())
+		By("Waiting for the containers to start")
+		Expect(waitForContainerCount(dockerClient, atLeast(initialContainerCount+numPods))).To(BeNil())
 
 		// Delete pods.
+		By("Deleting the pods")
+		podClient := fr.Client.Pods(fr.Namespace.Name)
 		for _, podName := range podNames {
-			err := cl.Pods(api.NamespaceDefault).Delete(podName, &api.DeleteOptions{})
+			err := podClient.Delete(podName, &api.DeleteOptions{})
 			Expect(err).To(BeNil(), fmt.Sprintf("Error deleting Pod %q: %v", podName, err))
 		}
 
 		// Wait for containers to be garbage collected.
+		By("Waiting for the containers to be garbage collected")
 		Expect(waitForContainerCount(dockerClient, atMost(initialContainerCount+epsilon))).To(BeNil())
 	})
 })
