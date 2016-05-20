@@ -45,9 +45,38 @@ func createPod(f *framework.Framework, podName string, containers []api.Containe
 	Expect(err).To(BeNil(), fmt.Sprintf("Error creating Pod %v", err))
 }
 
+// Same as createPod, except this one has a restart policy. It's undead!
+func createUndeadPod(f *framework.Framework, podName string, containers []api.Container, volumes []api.Volume) {
+	podClient := f.Client.Pods(f.Namespace.Name)
+	pod := &api.Pod{
+		ObjectMeta: api.ObjectMeta{
+			Name: podName,
+		},
+		Spec: api.PodSpec{
+			// Force the Pod to schedule to the node without a scheduler running
+			NodeName: *nodeName,
+			// Restart the pod. Always! Is undead. RestartPolicy[Always | OnFailure | Never]
+			RestartPolicy: api.RestartPolicyAlways,
+			Containers:    containers,
+			Volumes:       volumes,
+		},
+	}
+	_, err := podClient.Create(pod)
+	Expect(err).To(BeNil(), fmt.Sprintf("Error creating Pod %v", err))
+}
+
 func getPauseContainer() api.Container {
 	return api.Container{
 		Name:  "pause",
 		Image: "gcr.io/google_containers/pause:2.0",
+	}
+}
+
+func getBusyboxDeathContainer() api.Container {
+	return api.Container{
+		Name:  "busybox",
+		Image: "gcr.io/google_containers/busybox:1.24",
+		// Run `false` so the status is Exited (1)
+		Command: []string{"false"},
 	}
 }
