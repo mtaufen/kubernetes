@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// Does not WaitForPodRunning. The decision to do so is now up to the caller of createPod.
 func createPod(f *framework.Framework, podName string, containers []api.Container, volumes []api.Volume) {
 	podClient := f.Client.Pods(f.Namespace.Name)
 	pod := &api.Pod{
@@ -42,7 +43,6 @@ func createPod(f *framework.Framework, podName string, containers []api.Containe
 	}
 	_, err := podClient.Create(pod)
 	Expect(err).To(BeNil(), fmt.Sprintf("Error creating Pod %v", err))
-	framework.ExpectNoError(f.WaitForPodRunning(pod.Name))
 }
 
 func getPauseContainer() api.Container {
