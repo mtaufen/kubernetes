@@ -101,6 +101,7 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 		f := NewDefaultFramework("gc-dead-containers")
 
 		It("it should garbage collect the dead containers", func() {
+			Skip("Just skip this one for now") // TODO: remove this skip
 
 			// TODO: Change back to num = 90
 			const (
@@ -186,11 +187,17 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 
 			By("Starting a new pod which we will use to create disk pressure")
 			createPod(f, "gc-pressure-pod-0",
-				[]api.Container{api.Container{
-					Name: "busybox",
-					Image: "gcr.io/google_containers/busybox:1.24",
-					Command: []string{"sleep", "10"} // TODO: Change this to something that writes to the volume
-
+				[]api.Container{
+					api.Container{
+						Name:    "busybox",
+						Image:   "gcr.io/google_containers/busybox:1.24",
+						Command: []string{"sleep", "10"}, // TODO: Change this to something that writes to the volume
+						// could do something like: touch foo && dd if=/dev/zero of=foo bs=500M count=2 (on the volume!)
+						// bs is block size and count is number of blocks
+						Volumes: []api.Volume{
+							Name: "not-really-sure-what-the-proper-thing-to-name-this-is", // TODO
+							VolumeSource: whatShouldTheVolumeSourceBe?, // TOOD
+						}
 					}}, nil)
 
 			By("Bringing a volume into the new pod")
@@ -198,40 +205,8 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 			// Good example of how to do this:
 			// test/e2e/volumes.go:221
 
-			// TODO: Instead of doing it this way, we may just encode writing to the volume
-			//       in the container spec on the pod. Which contains things better and makes
-			//       cleanup easier.
-			By("Concurrently creating disk pressure by filling 80 percent of the volume")
-			stopch := make(chan bool)
-			go func() { // TODO: have this take a volume as an arg
-
-				done := func() {
-					// do any necessary cleanup here
-					return nil
-				}
-
-				for {
-					// TODO: Maybe eventually also stop writing when the volume is 80% full?
-					select {
-					case stop := <-stopch:
-						return done()
-					default:
-						// If we haven't been told to stop, just keep filling the volume.
-					}
-
-					// Write some bytes to the volume here
-				}
-				return done()
-			}
-
 			By("Waiting for the image count to dip. This indicates image GC is happening.")
 			Expect(waitForImageCountDip(dockerClient)).To(BeNil())
-
-			// TODO: Not 100% sure if this is necessary or not, but it's probably
-			//       a good idea. I don't know if the goroutine would be automatically
-			//       cleaned up when the test finishes or not.
-			By("Letting the goroutine know it can stop creating disk pressure")
-			true -> stopch
 
 		})
 	})
