@@ -19,9 +19,12 @@ package e2e_node
 import (
 	"fmt"
 	"time"
-
-	docker "github.com/fsouza/go-dockerclient"
+	// TODO: I just switched from fsouza/go-dockerclient to docker/engine-api/client
+	//       So we may need to fiddle with things to get them to work again
+	dockerapi "github.com/docker/engine-api/client"
+	dockertypes "github.com/docker/engine-api/types"
 	"github.com/golang/glog"
+	"golang.org/x/net/context"
 	"k8s.io/kubernetes/pkg/api"
 	// "k8s.io/kubernetes/pkg/client/restclient"
 	// client "k8s.io/kubernetes/pkg/client/unversioned"
@@ -36,12 +39,12 @@ import (
 //       submit a PR and run it with the whole suite of e2e tests
 
 var _ = framework.KubeDescribe("GarbageCollect", func() {
-	var dockerClient *docker.Client
+	var dockerClient *dockerapi.Client
 
 	// BeforeEach blocks closer to the root of the Describe/Context/It tree run first
 	BeforeEach(func() {
 		var err error
-		dockerClient, err = docker.NewClientFromEnv()
+		dockerClient, err = dockerapi.NewEnvClient()
 		Expect(err).To(BeNil(), fmt.Sprintf("Error connecting to docker %v", err))
 	})
 
@@ -63,7 +66,7 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 			// We compare the number of running containers to this initial count to determine
 			// whether the containers for our pods are running or not. This is one reason the
 			// test needs to run in serial with other tests.
-			containers, err := dockerClient.ListContainers(docker.ListContainersOptions{All: true})
+			containers, err := dockerClient.ContainerList(context.Background(), dockertypes.ContainerListOptions{All: true})
 			Expect(err).To(BeNil(), fmt.Sprintf("Error listing containers %v", err))
 			initialContainerCount := len(containers)
 
@@ -246,14 +249,14 @@ func atLeast(val int) condition {
 
 // Wait for at least count containers to be running if atleast is true, or at most count containers
 // to be running if atleast is false.
-func waitForContainerCount(dockerClient *docker.Client, cond condition) error {
+func waitForContainerCount(dockerClient *dockerapi.Client, cond condition) error {
 	const (
 		pollPeriod  = 10 * time.Second
 		pollTimeout = 5 * time.Minute
 	)
 	var count int
 	err := wait.PollImmediate(pollPeriod, pollTimeout, func() (bool, error) {
-		containers, err := dockerClient.ListContainers(docker.ListContainersOptions{All: true})
+		containers, err := dockerClient.ContainerList(context.Background(), dockertypes.ContainerListOptions{All: true})
 		if err != nil {
 			glog.Errorf("Error listing containers: %v", err)
 			return false, nil // TODO: Is it right to return nil here?
@@ -272,7 +275,7 @@ func waitForContainerCount(dockerClient *docker.Client, cond condition) error {
 	return nil
 }
 
-func waitForContainerCountDip(dockerClient *docker.Client) error {
+func waitForContainerCountDip(dockerClient *dockerapi.Client) error {
 	const (
 		pollPeriod  = 3 * time.Second // TODO: Change back to every 10 seconds?
 		pollTimeout = 5 * time.Minute
@@ -280,7 +283,7 @@ func waitForContainerCountDip(dockerClient *docker.Client) error {
 	var oldCount int
 	var count int
 	err := wait.PollImmediate(pollPeriod, pollTimeout, func() (bool, error) {
-		containers, err := dockerClient.ListContainers(docker.ListContainersOptions{All: true})
+		containers, err := dockerClient.ContainerList(context.Background(), dockertypes.ContainerListOptions{All: true})
 		if err != nil {
 			glog.Errorf("Error listing containers: %v", err)
 			return false, nil // TODO: Is it right to return nil here?
@@ -300,7 +303,7 @@ func waitForContainerCountDip(dockerClient *docker.Client) error {
 	return nil
 }
 
-func waitForImageCountDip(dockerClient *docker.Client) error {
+func waitForImageCountDip(dockerClient *dockerapi.Client) error {
 	const (
 		pollPeriod  = 3 * time.Second // TODO: Change to every 10 sec?
 		pollTimeout = 5 * time.Minute
@@ -308,7 +311,7 @@ func waitForImageCountDip(dockerClient *docker.Client) error {
 	var oldCount int
 	var count int
 	err := wait.PollImmediate(pollPeriod, pollTimeout, func() (bool, error) {
-		images, err := dockerClient.ListImages(docker.ListImagesOptions{All: true})
+		images, err := dockerClient.ImageList(context.Background(), dockertypes.ImageListOptions{All: true})
 		if err != nil {
 			glog.Errorf("Error listing images: %v", err)
 			return false, nil
