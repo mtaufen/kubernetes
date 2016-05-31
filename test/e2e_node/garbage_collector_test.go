@@ -191,14 +191,27 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 					api.Container{
 						Name:    "busybox",
 						Image:   "gcr.io/google_containers/busybox:1.24",
-						Command: []string{"sleep", "10"}, // TODO: Change this to something that writes to the volume
+						Command: []string{"/bin/sh", "-c", "stat /firehose/ > /firehose/statfh && du > /firehose/du && df -h > /firehose/dfh"},
+						//Command: []string{"stat", "/firehose/", ">", "/firehose/teststat"}, // TODO: Change this to something that writes to the volume
 						// could do something like: touch foo && dd if=/dev/zero of=foo bs=500M count=2 (on the volume!)
 						// bs is block size and count is number of blocks
-						Volumes: []api.Volume{
-							Name: "not-really-sure-what-the-proper-thing-to-name-this-is", // TODO
-							VolumeSource: whatShouldTheVolumeSourceBe?, // TOOD
-						}
-					}}, nil)
+						VolumeMounts: []api.VolumeMount{
+							{
+								Name:      "disk-pressure-volume", // TODO
+								MountPath: "/firehose",            // TOOD
+							},
+						},
+					}},
+				[]api.Volume{
+					{
+						Name: "disk-pressure-volume",
+						VolumeSource: api.VolumeSource{
+							HostPath: &api.HostPathVolumeSource{
+								Path: "/tmp/firehose", // TODO: For now, just doing this
+							},
+						}, // I want a volume with a disk size. How do I put a disk usage restriction on the entire pod? Idk if this is a feature yet. Buddha is working on podlevel resource restrictions.
+					},
+				})
 
 			By("Bringing a volume into the new pod")
 			// TODO: Bring in a volume
