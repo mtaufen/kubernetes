@@ -107,11 +107,15 @@ if [ "$REMOTE" = true ] ; then
     --delete-instances="$delete_instances"
 
 else
+  # Refresh sudo credentials if not running on GCE.
+  if ! ping -c 1 -q metadata.google.internal &> /dev/null; then
+    sudo -v || exit 1
+  fi
+
   # Test using the host the script was run on
   # Provided for backwards compatibility
   "${ginkgo}" --focus=$focus --skip=$skip "${KUBE_ROOT}/test/e2e_node/" --report-dir=${report} \
     -- --alsologtostderr --v 2 --node-name $(hostname) --build-services=true --start-services=true --stop-services=true
 fi
-
 
 exit $?
