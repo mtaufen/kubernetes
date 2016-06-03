@@ -41,6 +41,8 @@ var _ = framework.KubeDescribe("ResourceEvict", func() {
 	// 	Expect(err).To(BeNil(), fmt.Sprintf("Error connecting to docker %v", err))
 	// })
 
+	// TODO: Make sure all these pods run on the same node!
+
 	Context("when there is memory pressure", func() {
 		f := NewDefaultFramework("resource-eviction-test")
 
@@ -81,15 +83,15 @@ var _ = framework.KubeDescribe("ResourceEvict", func() {
 			}
 			{
 				var err error
-				guaranteedPod, err = podClient.Create(guaranteedPod)
-				Expect(err).To(BeNil(), fmt.Sprintf("Error creating burstable Pod %v", err))
-				// framework.ExpectNoError(f.WaitForPodRunning(guaranteedPod.Name))
+				guaranteedPod, err = podClient.Create(guaranteedPod) // TODO: Why are containers not being created for these pods?
+				Expect(err).To(BeNil(), fmt.Sprintf("Error creating guaranteed Pod %v", err))
+				framework.ExpectNoError(f.WaitForPodRunning(guaranteedPod.Name))
 			}
 
 			// A pod is burstable if limits and requests do not match across all containers.
 			burstablePod := &api.Pod{
 				ObjectMeta: api.ObjectMeta{
-					GenerateName: "besteffort-",
+					GenerateName: "burstable-",
 				},
 				Spec: api.PodSpec{
 					NodeName:      *nodeName,
@@ -116,7 +118,7 @@ var _ = framework.KubeDescribe("ResourceEvict", func() {
 				var err error
 				burstablePod, err = podClient.Create(burstablePod)
 				Expect(err).To(BeNil(), fmt.Sprintf("Error creating burstable Pod %v", err))
-				// framework.ExpectNoError(f.WaitForPodRunning(burstablePod.Name))
+				framework.ExpectNoError(f.WaitForPodRunning(burstablePod.Name))
 			}
 
 			// A pod is besteffort if none of its containers have specified any requests or limits.
@@ -144,8 +146,19 @@ var _ = framework.KubeDescribe("ResourceEvict", func() {
 				besteffortPod, err = podClient.Create(besteffortPod)
 				Expect(err).To(BeNil(), fmt.Sprintf("Error creating besteffort Pod %v", err))
 				glog.Infof("made the besteffort pod, waiting for it to start running (%s)", besteffortPod.Name)
-				// framework.ExpectNoError(f.WaitForPodRunning(besteffortPod.Name))
+				framework.ExpectNoError(f.WaitForPodRunning(besteffortPod.Name))
 			}
+
+			// TOOD: Watch for eviction on the node (watch status of each pod and detect failed status,
+			// then depending on the pod, query status of other two pods, and check that against
+			// failure modes described below).
+
+			// Watch is a method on PodInterface i.e. our podClient
+			// this returns a watch.Interface and I think you have to pass
+			// that to something else to use it.
+
+			gw, gwErr := podClient.Watch(api.SingleObject(api.ObjectMeta{Name: guaranteedPod.ObjectMeta.Name}))
+			_, err = watch.Until(1*time.Minute, gw, podFailed)
 
 			// TODO: Need to add a wait in here somewhere so I can watch for eviction
 			glog.Info("made the pods, about to wait for eviction")
@@ -174,13 +187,38 @@ var _ = framework.KubeDescribe("ResourceEvict", func() {
 			https://github.com/kubernetes/kubernetes/blob/master/docs/proposals/kubelet-eviction.md
 
 
+			*/
 
-			One idea:
-			Apply pressure through guaranteed, make sure best effort and burstable get evicted
-			Apply pressure through burstable, make sure best effort is evicted but not guaranteed
-			(still need to make sure best effort gets evicted before burstable)
-			Check if guaranteed keeps applying too much pressure, that it gets evicted?
+			/*
 
+				Test ends when everything is dead
+
+				We watch for something to die
+
+				When something dies, we get the status of the pods
+
+				The following are the possible failure modes:
+
+				101
+				011
+				010
+				001
+
+				besteffort: alive
+				burstable:  dead
+				guaranteed: alive
+
+				besteffort: alive
+				burstable:  alive
+				guaranteed: dead
+
+				besteffort: dead
+				burstable:  alive
+				guaranteed: dead
+
+				besteffort: alive
+				burstable:  dead
+				guaranteed: dead
 
 			*/
 
@@ -197,6 +235,25 @@ var _ = framework.KubeDescribe("ResourceEvict", func() {
 
 })
 
+// Condition func TODO: See if anyone's implemented this somewhere else so I can reuse
+func podFailed(event watch.Event) (bool, error) {
+	switch event.Type {
+	case watch.Deleted:
+		return false, errors.NewNotFound(unversioned.GroupResource{Resource: "pods"}, "")
+	}
+	switch t := event.Object.(type) {
+	case *api.Pod:
+		switch t.Status.Phase {
+		case api.PodRunning:
+			return false, nil
+		case api.PodFailed:
+			return true, ErrPodFailed
+		}
+	}
+	return false, nil
+}
+
+// TODO: There is also a WaitForPodTerminated function that could be useful
 // TODO: Wait for eviction function
 func waitForPodEviction(podName string, f *framework.Framework) error {
 	const (
