@@ -125,6 +125,14 @@ func getKubeletServerBin() string {
 	return bin
 }
 
+func getGinkgoBin() string {
+	bin, err := getK8sBin("ginkgo")
+	if err != nil {
+		panic(fmt.Sprintf("Could not locate ginkgo binary."))
+	}
+	return bin
+}
+
 func getApiServerBin() string {
 	bin, err := getK8sBin("kube-apiserver")
 	if err != nil {

@@ -99,9 +99,8 @@ test_e2e:
 #   make test_e2e_node FOCUS=kubelet SKIP=container
 # Build and run tests.
 test_e2e_node:
-	hack/e2e-node-test.sh FOCUS=$(FOCUS) SKIP=$(SKIP)
+	hack/e2e-node-test.sh
 .PHONY: test_e2e_node
-
 
 # Remove all build artifacts.
 #
