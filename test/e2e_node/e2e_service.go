@@ -26,9 +26,8 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
-
-	"k8s.io/kubernetes/pkg/util/wait"
 
 	"github.com/golang/glog"
 )
@@ -79,8 +78,8 @@ func (es *e2eService) start() error {
 }
 
 func (es *e2eService) stop() {
-	if err := es.stopService("kubelet"); err != nil {
-		glog.Errorf("Failed to stop kubelet.\n%v", err)
+	if err := es.stopService("kubelet", es.kubeletCmd); err != nil {
+		glog.Errorf("Failed to stop kubelet: %v", err)
 	}
 	if es.kubeletStaticPodDir != "" {
 		err := os.RemoveAll(es.kubeletStaticPodDir)
@@ -88,11 +87,11 @@ func (es *e2eService) stop() {
 			glog.Errorf("Failed to delete kubelet static pod directory %s.\n%v", es.kubeletStaticPodDir, err)
 		}
 	}
-	if err := es.stopService("kube-apiserver"); err != nil {
-		glog.Errorf("Failed to stop kube-apiserver.\n%v", err)
+	if err := es.stopService("kube-apiserver", es.apiServerCmd); err != nil {
+		glog.Errorf("Failed to stop kube-apiserver: %v", err)
 	}
-	if err := es.stopService("etcd"); err != nil {
-		glog.Errorf("Failed to stop etcd.\n%v", err)
+	if err := es.stopService("etcd", es.etcdCmd); err != nil {
+		glog.Errorf("Failed to stop etcd: %v", err)
 	}
 	if es.etcdDataDir != "" {
 		err := os.RemoveAll(es.etcdDataDir)
@@ -179,6 +178,11 @@ func (es *e2eService) startServer(cmd *healthCheckCommand) error {
 		cmd.Cmd.Stdout = outfile
 		cmd.Cmd.Stderr = outfile
 
+		// Killing the sudo command should kill the server as well.
+		cmd.Cmd.SysProcAttr = &syscall.SysProcAttr{
+			Pdeathsig: syscall.SIGKILL,
+		}
+
 		// Run the command
 		err = cmd.Run()
 		if err != nil {
@@ -202,39 +206,42 @@ func (es *e2eService) startServer(cmd *healthCheckCommand) error {
 	return fmt.Errorf("Timeout waiting for service %s", cmd)
 }
 
-func (es *e2eService) stopService(name string) error {
-	// Since node services are started with sudo, we must get the PID of the child process.
-	out, err := exec.Command("pidof", name).Output()
-	if err != nil {
-		return fmt.Errorf("error getting PID of %s: %v", name, err)
+func (es *e2eService) stopService(name string, cmd *exec.Cmd) error {
+	if cmd == nil || cmd.Process == nil {
+		glog.V(2).Infof("%s not running", name)
+		return nil
 	}
-	pid := strings.TrimSpace(string(out))
-	pidInt, err := strconv.Atoi(pid)
-	if err != nil || pidInt <= 1 {
-		return fmt.Errorf("invalid PID %q for %s: %v", pid, name, err)
+	pid := cmd.Process.Pid
+	if pid <= 1 {
+		return fmt.Errorf("invalid PID %d for %s", pid, name)
 	}
 
 	// Attempt to shut down the process in a friendly manner before forcing it.
-	const (
-		timout       = 10 * time.Second
-		pollInterval = 500 * time.Millisecond
-	)
+	waitChan := make(chan error)
+	go func() {
+		_, err := cmd.Process.Wait()
+		waitChan <- err
+		close(waitChan)
+	}()
+
+	const timeout = 10 * time.Second
 	for _, signal := range []string{"-TERM", "-KILL"} {
-		glog.V(2).Infof("Killing process %q (%s) with %s", pid, name, signal)
-		_, err := exec.Command("sudo", "kill", signal, pid).Output()
+		glog.V(2).Infof("Killing process %d (%s) with %s", pid, name, signal)
+		_, err := exec.Command("sudo", "kill", signal, strconv.Itoa(pid)).Output()
 		if err != nil {
-			glog.Errorf("Error signaling process %q (%s) with %s: %v", pid, name, signal, err)
+			glog.Errorf("Error signaling process %d (%s) with %s: %v", pid, name, signal, err)
 			continue
 		}
-		err = wait.PollImmediate(pollInterval, timout, func() (bool, error) {
-			_, err := exec.Command("pidof", name).Output()
+
+		select {
+		case err := <-waitChan:
 			if err != nil {
-				return true, nil
+				return fmt.Errorf("error stopping %s: %v", name, err)
 			}
-			return false, nil
-		})
-		if err == nil {
-			return nil // Success!
+			// Success!
+			return nil
+		case <-time.After(timeout):
+			// Continue.
 		}
 	}
 
