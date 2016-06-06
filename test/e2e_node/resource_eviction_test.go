@@ -86,7 +86,7 @@ var _ = framework.KubeDescribe("ResourceEvict", func() {
 			}
 			{
 				var err error
-				guaranteedPod, err = podClient.Create(guaranteedPod) // TODO: Why are containers not being created for these pods?
+				guaranteedPod, err = podClient.Create(guaranteedPod)
 				Expect(err).To(BeNil(), fmt.Sprintf("Error creating guaranteed Pod %v", err))
 				framework.ExpectNoError(f.WaitForPodRunning(guaranteedPod.Name))
 			}
@@ -160,18 +160,97 @@ var _ = framework.KubeDescribe("ResourceEvict", func() {
 			// this returns a watch.Interface and I think you have to pass
 			// that to something else to use it.
 
-			gw, gwErr := podClient.Watch(api.SingleObject(api.ObjectMeta{Name: guaranteedPod.ObjectMeta.Name}))
-			_, err := watch.Until(1*time.Minute, gw, podFailed)
-
-			glog.Infof("%v %v %v", gw, gwErr, err)
-
-			// TODO: Need to add a wait in here somewhere so I can watch for eviction
+			// gw, gwErr := podClient.Watch(api.SingleObject(api.ObjectMeta{Name: guaranteedPod.ObjectMeta.Name}))
 			glog.Info("made the pods, about to wait for eviction")
-			waitForPodEviction(guaranteedPod.ObjectMeta.Name, f)
-			glog.Info("done waiting for eviction")
+			//event, err := watch.Until(5*time.Minute, gw, podFailed)
 
-			// for {
-			// }
+			// glog.Infof("%v %v %v %v", gw, gwErr, event, err)
+
+			// Eventually polls, so you can do e.g.
+			// Eventually(func string {...}, ...).Should(Equal("stuff"))
+			// So I suppose we should wait for them all to be killed?
+			// and if they aren't all dead, it keeps polling, and we'll make the
+			// test fail from inside the eventually. How do we force failure from inside
+			// the eventually? panic? or can we use Should?
+
+			// We poll until timeout or all pods are dead
+			// The func returns true when all pods are dead,
+			// false otherwise.
+			// Inside the func, we check that no failure modes are present
+			// for the combined pod statuses.
+			Eventually(func() bool {
+
+				gteed, gtErr := f.Client.Pods(f.Namespace.Name).Get(guaranteedPod.Name)
+				framework.ExpectNoError(gtErr, fmt.Sprintf("getting pod %s", guaranteedPod.Name))
+				gteedPh := gteed.Status.Phase
+
+				burst, buErr := f.Client.Pods(f.Namespace.Name).Get(burstablePod.Name)
+				framework.ExpectNoError(buErr, fmt.Sprintf("getting pod %s", burstablePod.Name))
+				burstPh := burst.Status.Phase
+
+				best, beErr := f.Client.Pods(f.Namespace.Name).Get(besteffortPod.Name)
+				framework.ExpectNoError(beErr, fmt.Sprintf("getting pod %s", besteffortPod.Name))
+				bestPh := best.Status.Phase
+
+				// Check failure modes:
+				/*
+
+					Test ends when everything is dead
+
+					We watch for something to die
+
+					When something dies, we get the status of the pods
+
+					Each failure mode is a violation of the order in which
+					the pods should be evicted.
+
+					The following are the possible test failure modes:
+
+					101
+					011
+					010
+					001
+
+					besteffort: alive
+					burstable:  dead
+					guaranteed: alive
+
+					besteffort: alive
+					burstable:  alive
+					guaranteed: dead
+
+					besteffort: dead
+					burstable:  alive
+					guaranteed: dead
+
+					besteffort: alive
+					burstable:  dead
+					guaranteed: dead
+
+				*/
+
+				if bestPh == api.PodRunning {
+					// TODO: Need to check "not failed" rather than "running" in case it's pending
+					Expect(burstPh).NotTo(Equal(api.PodFailed), "Burstable pod failed before best effort pod")
+					Expect(gteedPh).NotTo(Equal(api.PodFailed), "Guaranteed pod failed before best effort pod")
+				} else if burstPh == api.PodRunning {
+					Expect(gteedPh).NotTo(Equal(api.PodFailed), "Guaranteed pod failed before burstable pod")
+				}
+
+				// Otherwise pods are in a valid state wrt memory eviction,
+				// or some are still pending, or some are in a weird state that
+				// I'm not testing for yet.
+
+				// When all the pods are evicted, return true, else false
+				if bestPh == api.PodFailed && burstPh == api.PodFailed && gteedPh == api.PodFailed {
+					return true
+				}
+				return false
+
+			}, 5*time.Minute, 4*time.Second).Should(Equal(true))
+
+			glog.Info("done waiting for eviction")
+			// Eventually(func() )
 
 			/* Pods should be evicted in this order:
 			Best effort, then
@@ -194,39 +273,6 @@ var _ = framework.KubeDescribe("ResourceEvict", func() {
 
 			*/
 
-			/*
-
-				Test ends when everything is dead
-
-				We watch for something to die
-
-				When something dies, we get the status of the pods
-
-				The following are the possible failure modes:
-
-				101
-				011
-				010
-				001
-
-				besteffort: alive
-				burstable:  dead
-				guaranteed: alive
-
-				besteffort: alive
-				burstable:  alive
-				guaranteed: dead
-
-				besteffort: dead
-				burstable:  alive
-				guaranteed: dead
-
-				besteffort: alive
-				burstable:  dead
-				guaranteed: dead
-
-			*/
-
 		})
 	})
 
@@ -240,9 +286,14 @@ var _ = framework.KubeDescribe("ResourceEvict", func() {
 
 })
 
+func pollEvictionOrder(best string, burst, string, gteed string) {
+
+}
+
 // Condition func TODO: See if anyone's implemented this somewhere else so I can reuse
 // might want to check kubernetes/pkg/client/unversioned/conditions.go for examples
 func podFailed(event watch.Event) (bool, error) {
+	glog.Infof("event: %v", event)
 	switch event.Type {
 	case watch.Deleted:
 		return false, errors.NewNotFound(unversioned.GroupResource{Resource: "pods"}, "")
@@ -252,6 +303,8 @@ func podFailed(event watch.Event) (bool, error) {
 		switch t.Status.Phase {
 		case api.PodFailed:
 			return true, nil
+		default:
+			glog.Infof("phase: %v", t.Status.Phase)
 		}
 	}
 	return false, nil
