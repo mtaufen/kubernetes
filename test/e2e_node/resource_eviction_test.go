@@ -69,7 +69,7 @@ var _ = framework.KubeDescribe("ResourceEvict", func() {
 							ImagePullPolicy: "Always",
 							Command: []string{"/bin/sh",
 								"-c",
-								"while true; do memhog -r100 200m; sleep 1; done"},
+								"while true; do dd bs=1GB if=/dev/zero of=/dev/memsink; sleep 5; done"},
 							Resources: api.ResourceRequirements{
 								Requests: api.ResourceList{
 									"cpu":    resource.MustParse("100m"),
@@ -106,7 +106,7 @@ var _ = framework.KubeDescribe("ResourceEvict", func() {
 							ImagePullPolicy: "Always",
 							Command: []string{"/bin/sh",
 								"-c",
-								"while true; do memhog -r100 200m; sleep 1; done"},
+								"while true; do dd bs=1GB if=/dev/zero of=/dev/memsink; sleep 5; done"},
 							Resources: api.ResourceRequirements{
 								Requests: api.ResourceList{
 									"cpu":    resource.MustParse("100m"),
@@ -139,7 +139,7 @@ var _ = framework.KubeDescribe("ResourceEvict", func() {
 							ImagePullPolicy: "Always",
 							Command: []string{"/bin/sh",
 								"-c",
-								"while true; do memhog -r100 200m; sleep 1; done"},
+								"while true; do dd bs=1GB if=/dev/zero of=/dev/memsink; sleep 5; done"},
 						},
 					},
 				},
