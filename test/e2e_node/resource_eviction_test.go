@@ -20,8 +20,11 @@ import (
 	"fmt"
 	"github.com/golang/glog"
 	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/errors"
 	"k8s.io/kubernetes/pkg/api/resource"
+	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/util/wait"
+	"k8s.io/kubernetes/pkg/watch"
 	"k8s.io/kubernetes/test/e2e/framework"
 	"time"
 
@@ -158,7 +161,9 @@ var _ = framework.KubeDescribe("ResourceEvict", func() {
 			// that to something else to use it.
 
 			gw, gwErr := podClient.Watch(api.SingleObject(api.ObjectMeta{Name: guaranteedPod.ObjectMeta.Name}))
-			_, err = watch.Until(1*time.Minute, gw, podFailed)
+			_, err := watch.Until(1*time.Minute, gw, podFailed)
+
+			glog.Infof("%v %v %v", gw, gwErr, err)
 
 			// TODO: Need to add a wait in here somewhere so I can watch for eviction
 			glog.Info("made the pods, about to wait for eviction")
@@ -236,6 +241,7 @@ var _ = framework.KubeDescribe("ResourceEvict", func() {
 })
 
 // Condition func TODO: See if anyone's implemented this somewhere else so I can reuse
+// might want to check kubernetes/pkg/client/unversioned/conditions.go for examples
 func podFailed(event watch.Event) (bool, error) {
 	switch event.Type {
 	case watch.Deleted:
@@ -244,10 +250,8 @@ func podFailed(event watch.Event) (bool, error) {
 	switch t := event.Object.(type) {
 	case *api.Pod:
 		switch t.Status.Phase {
-		case api.PodRunning:
-			return false, nil
 		case api.PodFailed:
-			return true, ErrPodFailed
+			return true, nil
 		}
 	}
 	return false, nil
