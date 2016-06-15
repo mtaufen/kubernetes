@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -28,19 +29,21 @@ import (
 	kruntime "k8s.io/kubernetes/pkg/runtime"
 )
 
-var zeroDuration = unversioned.Duration{}
+const (
+	defaultRootDir = "/var/lib/kubelet"
 
-var defaultPodInfraConatinerImage = func() string {
-	const (
-		defaultPodInfraContainerImageName    = "gcr.io/google_containers/pause"
-		defaultPodInfraContainerImageVersion = "2.0"
-	)
-	if runtime.GOARCH == "amd64" {
-		return defaultPodInfraContainerImageName + ":" + defaultPodInfraContainerImageVersion
-	} else {
-		return defaultPodInfraContainerImageName + "-" + runtime.GOARCH + ":" + defaultPodInfraContainerImageVersion
-	}
-}()
+	// When these values are updated, also update test/e2e/framework/util.go
+	defaultPodInfraContainerImageName    = "gcr.io/google_containers/pause"
+	defaultPodInfraContainerImageVersion = "3.0"
+	defaultPodInfraContainerImage        = defaultPodInfraContainerImageName +
+		"-" + runtime.GOARCH + ":" +
+		defaultPodInfraContainerImageVersion
+
+	// From pkg/kubelet/rkt/rkt.go to avoid circular import
+	defaultRktAPIServiceEndpoint = "localhost:15441"
+)
+
+var zeroDuration = unversioned.Duration{}
 
 func addDefaultingFuncs(scheme *kruntime.Scheme) {
 	scheme.AddDefaultingFuncs(
@@ -138,7 +141,7 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 		obj.CAdvisorPort = 4194
 	}
 	if obj.VolumeStatsAggPeriod == zeroDuration {
-		obj.VolumeStatsAggPeriod = unversioned.Duration{1 * time.Minute}
+		obj.VolumeStatsAggPeriod = unversioned.Duration{Duration: time.Minute}
 	}
 	if obj.CertDirectory == "" {
 		obj.CertDirectory = "/var/run/kubernetes"
@@ -155,7 +158,7 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 	if obj.DockerExecHandlerName == "" {
 		obj.DockerExecHandlerName = "native"
 	}
-	if obj.DockerEndpoint == "" {
+	if obj.DockerEndpoint == "" { // TODO: This isn't in NewKubeletServer in options.go in master...
 		obj.DockerEndpoint = "unix:///var/run/docker.sock"
 	}
 	if obj.EventBurst == 0 {
@@ -164,6 +167,9 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 	if obj.EventRecordQPS == 0 {
 		obj.EventRecordQPS = 5.0
 	}
+	if obj.EnableControllerAttachDetach == nil {
+		obj.EnableControllerAttachDetach = boolVar(true)
+	}
 	if obj.EnableDebuggingHandlers == nil {
 		obj.EnableDebuggingHandlers = boolVar(true)
 	}
@@ -171,7 +177,7 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 		obj.EnableServer = boolVar(true)
 	}
 	if obj.FileCheckFrequency == zeroDuration {
-		obj.FileCheckFrequency = unversioned.Duration{20 * time.Second}
+		obj.FileCheckFrequency = unversioned.Duration{Duration: 20 * time.Second}
 	}
 	if obj.HealthzBindAddress == "" {
 		obj.HealthzBindAddress = "127.0.0.1"
@@ -189,12 +195,15 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 		obj.HostIPCSources = []string{kubetypes.AllSource}
 	}
 	if obj.HTTPCheckFrequency == zeroDuration {
-		obj.HTTPCheckFrequency = unversioned.Duration{20 * time.Second}
+		obj.HTTPCheckFrequency = unversioned.Duration{Duration: 20 * time.Second}
 	}
-	if obj.ImageGCHighThresholdPercent == nil {
+	if obj.ImageMinimumGCAge == zeroDuration {
+		obj.ImageMinimumGCAge = unversioned.Duration{Duration: 2 * time.Minute}
+	}
+	if obj.ImageGCHighThresholdPercent == 0 { //TODO, pointer, nil?
 		obj.ImageGCHighThresholdPercent = 90
 	}
-	if obj.ImageGCLowThresholdPercent == nil {
+	if obj.ImageGCLowThresholdPercent == 0 { //TODO, pointer, nil?
 		obj.ImageGCLowThresholdPercent = 80
 	}
 	if obj.LowDiskSpaceThresholdMB == 0 {
@@ -204,7 +213,7 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 		obj.MasterServiceNamespace = api.NamespaceDefault
 	}
 	if obj.MaxContainerCount == nil {
-		temp := int64(100)
+		temp := int32(240)
 		obj.MaxContainerCount = &temp
 	}
 	if obj.MaxPerPodContainerCount == 0 {
@@ -217,7 +226,7 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 		obj.MaxPods = 110
 	}
 	if obj.MinimumGCAge == zeroDuration {
-		obj.MinimumGCAge = unversioned.Duration{1 * time.Minute}
+		obj.MinimumGCAge = unversioned.Duration{Duration: 1 * time.Minute}
 	}
 	if obj.NetworkPluginDir == "" {
 		obj.NetworkPluginDir = "/usr/libexec/kubernetes/kubelet-plugins/net/exec/"
@@ -229,13 +238,14 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 		obj.VolumePluginDir = "/usr/libexec/kubernetes/kubelet-plugins/volume/exec/"
 	}
 	if obj.NodeStatusUpdateFrequency == zeroDuration {
-		obj.NodeStatusUpdateFrequency = unversioned.Duration{10 * time.Second}
+		obj.NodeStatusUpdateFrequency = unversioned.Duration{Duration: 10 * time.Second}
 	}
-	if obj.OOMScoreAdj == 0 {
-		obj.OOMScoreAdj = int32(qos.KubeletOOMScoreAdj)
+	if obj.OOMScoreAdj == nil {
+		temp := int32(qos.KubeletOOMScoreAdj)
+		obj.OOMScoreAdj = &temp
 	}
 	if obj.PodInfraContainerImage == "" {
-		obj.PodInfraContainerImage = defaultPodInfraContainer
+		obj.PodInfraContainerImage = defaultPodInfraContainerImage
 	}
 	if obj.Port == 0 {
 		obj.Port = ports.KubeletPort
@@ -252,26 +262,36 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 	if obj.RegistryBurst == 0 {
 		obj.RegistryBurst = 10
 	}
-	if obj.RegistryPullQPS == 0 {
-		obj.RegistryPullQPS = 5
+	if obj.RegistryPullQPS == nil {
+		temp := float64(5)
+		obj.RegistryPullQPS = &temp
+	}
+	if obj.ResolverConfig == "" {
+		obj.ResolverConfig = kubetypes.ResolvConfDefault
 	}
 	if obj.RktAPIEndpoint == "" {
-		obj.RktAPIEndpoint = "localhost:15441"
+		obj.RktAPIEndpoint = defaultRktAPIServiceEndpoint
 	}
 	if obj.RootDirectory == "" {
-		obj.RootDirectory = "/var/lib/kubelet"
+		obj.RootDirectory = defaultRootDir
 	}
 	if obj.SerializeImagePulls == nil {
 		obj.SerializeImagePulls = boolVar(true)
 	}
+	if obj.SeccompProfileRoot == "" {
+		filepath.Join(defaultRootDir, "seccomp")
+	}
 	if obj.StreamingConnectionIdleTimeout == zeroDuration {
-		obj.StreamingConnectionIdleTimeout = unversioned.Duration{4 * time.Hour}
+		obj.StreamingConnectionIdleTimeout = unversioned.Duration{Duration: 4 * time.Hour}
 	}
 	if obj.SyncFrequency == zeroDuration {
-		obj.SyncFrequency = unversioned.Duration{1 * time.Minute}
+		obj.SyncFrequency = unversioned.Duration{Duration: 1 * time.Minute}
 	}
 	if obj.ReconcileCIDR == nil {
 		obj.ReconcileCIDR = boolVar(true)
+	}
+	if obj.ContentType == "" {
+		obj.ContentType = "application/vnd.kubernetes.protobuf"
 	}
 	if obj.KubeAPIQPS == 0 {
 		obj.KubeAPIQPS = 5
@@ -279,14 +299,14 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 	if obj.KubeAPIBurst == 0 {
 		obj.KubeAPIBurst = 10
 	}
-	if obj.ExperimentalFlannelOverlay == nil {
-		obj.ExperimentalFlannelOverlay = boolVar(false)
-	}
 	if obj.OutOfDiskTransitionFrequency == zeroDuration {
-		obj.OutOfDiskTransitionFrequency = unversioned.Duration{5 * time.Minute}
+		obj.OutOfDiskTransitionFrequency = unversioned.Duration{Duration: 5 * time.Minute}
 	}
 	if string(obj.HairpinMode) == "" {
 		obj.HairpinMode = PromiscuousBridge
+	}
+	if obj.EvictionPressureTransitionPeriod == zeroDuration {
+		obj.EvictionPressureTransitionPeriod = unversioned.Duration{Duration: 5 * time.Minute}
 	}
 }
 

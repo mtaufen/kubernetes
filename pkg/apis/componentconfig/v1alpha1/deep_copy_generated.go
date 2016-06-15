@@ -140,6 +140,7 @@ func DeepCopy_v1alpha1_KubeletConfiguration(in KubeletConfiguration, out *Kubele
 	out.PodInfraContainerImage = in.PodInfraContainerImage
 	out.DockerEndpoint = in.DockerEndpoint
 	out.RootDirectory = in.RootDirectory
+	out.SeccompProfileRoot = in.SeccompProfileRoot
 	if in.AllowPrivileged != nil {
 		in, out := in.AllowPrivileged, &out.AllowPrivileged
 		*out = new(bool)
@@ -168,7 +169,13 @@ func DeepCopy_v1alpha1_KubeletConfiguration(in KubeletConfiguration, out *Kubele
 	} else {
 		out.HostIPCSources = nil
 	}
-	out.RegistryPullQPS = in.RegistryPullQPS
+	if in.RegistryPullQPS != nil {
+		in, out := in.RegistryPullQPS, &out.RegistryPullQPS
+		*out = new(float64)
+		**out = *in
+	} else {
+		out.RegistryPullQPS = nil
+	}
 	out.RegistryBurst = in.RegistryBurst
 	out.EventRecordQPS = in.EventRecordQPS
 	out.EventBurst = in.EventBurst
@@ -185,7 +192,7 @@ func DeepCopy_v1alpha1_KubeletConfiguration(in KubeletConfiguration, out *Kubele
 	out.MaxPerPodContainerCount = in.MaxPerPodContainerCount
 	if in.MaxContainerCount != nil {
 		in, out := in.MaxContainerCount, &out.MaxContainerCount
-		*out = new(int64)
+		*out = new(int32)
 		**out = *in
 	} else {
 		out.MaxContainerCount = nil
@@ -193,7 +200,13 @@ func DeepCopy_v1alpha1_KubeletConfiguration(in KubeletConfiguration, out *Kubele
 	out.CAdvisorPort = in.CAdvisorPort
 	out.HealthzPort = in.HealthzPort
 	out.HealthzBindAddress = in.HealthzBindAddress
-	out.OOMScoreAdj = in.OOMScoreAdj
+	if in.OOMScoreAdj != nil {
+		in, out := in.OOMScoreAdj, &out.OOMScoreAdj
+		*out = new(int32)
+		**out = *in
+	} else {
+		out.OOMScoreAdj = nil
+	}
 	if in.RegisterNode != nil {
 		in, out := in.RegisterNode, &out.RegisterNode
 		*out = new(bool)
@@ -230,6 +243,8 @@ func DeepCopy_v1alpha1_KubeletConfiguration(in KubeletConfiguration, out *Kubele
 	out.CgroupRoot = in.CgroupRoot
 	out.ContainerRuntime = in.ContainerRuntime
 	out.RktPath = in.RktPath
+	out.RktAPIEndpoint = in.RktAPIEndpoint
+	out.RktStage1Image = in.RktStage1Image
 	if in.LockFilePath != nil {
 		in, out := in.LockFilePath, &out.LockFilePath
 		*out = new(string)
@@ -237,7 +252,7 @@ func DeepCopy_v1alpha1_KubeletConfiguration(in KubeletConfiguration, out *Kubele
 	} else {
 		out.LockFilePath = nil
 	}
-	out.RktStage1Image = in.RktStage1Image
+	out.ExitOnLockContention = in.ExitOnLockContention
 	if in.ConfigureCBR0 != nil {
 		in, out := in.ConfigureCBR0, &out.ConfigureCBR0
 		*out = new(bool)
@@ -246,7 +261,9 @@ func DeepCopy_v1alpha1_KubeletConfiguration(in KubeletConfiguration, out *Kubele
 		out.ConfigureCBR0 = nil
 	}
 	out.HairpinMode = in.HairpinMode
+	out.BabysitDaemons = in.BabysitDaemons
 	out.MaxPods = in.MaxPods
+	out.NvidiaGPUs = in.NvidiaGPUs
 	out.DockerExecHandlerName = in.DockerExecHandlerName
 	out.PodCIDR = in.PodCIDR
 	out.ResolverConfig = in.ResolverConfig
@@ -279,6 +296,7 @@ func DeepCopy_v1alpha1_KubeletConfiguration(in KubeletConfiguration, out *Kubele
 	} else {
 		out.RegisterSchedulable = nil
 	}
+	out.ContentType = in.ContentType
 	out.KubeAPIQPS = in.KubeAPIQPS
 	out.KubeAPIBurst = in.KubeAPIBurst
 	if in.SerializeImagePulls != nil {
@@ -288,13 +306,7 @@ func DeepCopy_v1alpha1_KubeletConfiguration(in KubeletConfiguration, out *Kubele
 	} else {
 		out.SerializeImagePulls = nil
 	}
-	if in.ExperimentalFlannelOverlay != nil {
-		in, out := in.ExperimentalFlannelOverlay, &out.ExperimentalFlannelOverlay
-		*out = new(bool)
-		**out = *in
-	} else {
-		out.ExperimentalFlannelOverlay = nil
-	}
+	out.ExperimentalFlannelOverlay = in.ExperimentalFlannelOverlay
 	if err := unversioned.DeepCopy_unversioned_Duration(in.OutOfDiskTransitionFrequency, &out.OutOfDiskTransitionFrequency, c); err != nil {
 		return err
 	}
@@ -310,6 +322,21 @@ func DeepCopy_v1alpha1_KubeletConfiguration(in KubeletConfiguration, out *Kubele
 	}
 	out.NonMasqueradeCIDR = in.NonMasqueradeCIDR
 	out.EnableCustomMetrics = in.EnableCustomMetrics
+	out.EvictionHard = in.EvictionHard
+	out.EvictionSoft = in.EvictionSoft
+	out.EvictionSoftGracePeriod = in.EvictionSoftGracePeriod
+	if err := unversioned.DeepCopy_unversioned_Duration(in.EvictionPressureTransitionPeriod, &out.EvictionPressureTransitionPeriod, c); err != nil {
+		return err
+	}
+	out.EvictionMaxPodGracePeriod = in.EvictionMaxPodGracePeriod
+	out.PodsPerCore = in.PodsPerCore
+	if in.EnableControllerAttachDetach != nil {
+		in, out := in.EnableControllerAttachDetach, &out.EnableControllerAttachDetach
+		*out = new(bool)
+		**out = *in
+	} else {
+		out.EnableControllerAttachDetach = nil
+	}
 	return nil
 }
 

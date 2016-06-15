@@ -50,13 +50,51 @@ func init() {
 		Convert_string_To_Pointer_string,
 		Convert_labels_Selector_To_string,
 		Convert_fields_Selector_To_string,
-		Convert_int64_ref_To_int,
-		Convert_int_To_int64_ref,
+		Convert_Pointer_int64_To_int,
+		Convert_int_To_Pointer_int64,
+		Convert_Pointer_float64_To_float64,
+		Convert_float64_To_Pointer_float64,
 		Convert_resource_Quantity_To_resource_Quantity,
 	)
 }
 
-func Convert_int64_ref_To_int(in **int64, out *int, s conversion.Scope) error {
+func Convert_Pointer_float64_To_float64(in **float64, out *float64, s conversion.Scope) error {
+	if *in == nil {
+		*out = 0
+		return nil
+	}
+	*out = float64(**in)
+	return nil
+}
+
+func Convert_float64_To_Pointer_float64(in **float64, out *float64, s conversion.Scope) error {
+	if *in == nil {
+		*out = 0
+		return nil
+	}
+	*out = float64(**in)
+	return nil
+}
+
+func Convert_Pointer_int32_To_int32(in **int32, out *int32, s conversion.Scope) error {
+	if *in == nil {
+		*out = 0
+		return nil
+	}
+	*out = int32(**in)
+	return nil
+}
+
+func Convert_int32_To_Pointer_int32(in **int32, out *int32, s conversion.Scope) error {
+	if *in == nil {
+		*out = 0
+		return nil
+	}
+	*out = int32(**in)
+	return nil
+}
+
+func Convert_Pointer_int64_To_int(in **int64, out *int, s conversion.Scope) error {
 	if *in == nil {
 		*out = 0
 		return nil
@@ -65,7 +103,7 @@ func Convert_int64_ref_To_int(in **int64, out *int, s conversion.Scope) error {
 	return nil
 }
 
-func Convert_int_To_int64_ref(in *int, out **int64, s conversion.Scope) error {
+func Convert_int_To_Pointer_int64(in *int, out **int64, s conversion.Scope) error {
 	temp := int64(*in)
 	*out = &temp
 	return nil
