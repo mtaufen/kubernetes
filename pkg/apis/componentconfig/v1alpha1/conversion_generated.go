@@ -32,6 +32,7 @@ func init() {
 		Convert_componentconfig_KubeProxyConfiguration_To_v1alpha1_KubeProxyConfiguration,
 		Convert_v1alpha1_KubeSchedulerConfiguration_To_componentconfig_KubeSchedulerConfiguration,
 		Convert_componentconfig_KubeSchedulerConfiguration_To_v1alpha1_KubeSchedulerConfiguration,
+		Convert_v1alpha1_KubeletConfiguration_To_componentconfig_KubeletConfiguration,
 		Convert_v1alpha1_LeaderElectionConfiguration_To_componentconfig_LeaderElectionConfiguration,
 		Convert_componentconfig_LeaderElectionConfiguration_To_v1alpha1_LeaderElectionConfiguration,
 	); err != nil {
@@ -150,6 +151,138 @@ func autoConvert_componentconfig_KubeSchedulerConfiguration_To_v1alpha1_KubeSche
 
 func Convert_componentconfig_KubeSchedulerConfiguration_To_v1alpha1_KubeSchedulerConfiguration(in *componentconfig.KubeSchedulerConfiguration, out *KubeSchedulerConfiguration, s conversion.Scope) error {
 	return autoConvert_componentconfig_KubeSchedulerConfiguration_To_v1alpha1_KubeSchedulerConfiguration(in, out, s)
+}
+
+func autoConvert_v1alpha1_KubeletConfiguration_To_componentconfig_KubeletConfiguration(in *KubeletConfiguration, out *componentconfig.KubeletConfiguration, s conversion.Scope) error {
+	SetDefaults_KubeletConfiguration(in)
+	if err := api.Convert_unversioned_TypeMeta_To_unversioned_TypeMeta(&in.TypeMeta, &out.TypeMeta, s); err != nil {
+		return err
+	}
+	out.Config = in.Config
+	out.SyncFrequency = in.SyncFrequency
+	out.FileCheckFrequency = in.FileCheckFrequency
+	out.HTTPCheckFrequency = in.HTTPCheckFrequency
+	out.ManifestURL = in.ManifestURL
+	out.ManifestURLHeader = in.ManifestURLHeader
+	if err := api.Convert_Pointer_bool_To_bool(&in.EnableServer, &out.EnableServer, s); err != nil {
+		return err
+	}
+	out.Address = in.Address
+	out.Port = int(in.Port)
+	out.ReadOnlyPort = int(in.ReadOnlyPort)
+	out.TLSCertFile = in.TLSCertFile
+	out.TLSPrivateKeyFile = in.TLSPrivateKeyFile
+	out.CertDirectory = in.CertDirectory
+	out.HostnameOverride = in.HostnameOverride
+	out.PodInfraContainerImage = in.PodInfraContainerImage
+	out.DockerEndpoint = in.DockerEndpoint
+	out.RootDirectory = in.RootDirectory
+	out.SeccompProfileRoot = in.SeccompProfileRoot
+	if err := api.Convert_Pointer_bool_To_bool(&in.AllowPrivileged, &out.AllowPrivileged, s); err != nil {
+		return err
+	}
+	out.HostNetworkSources = in.HostNetworkSources
+	out.HostPIDSources = in.HostPIDSources
+	out.HostIPCSources = in.HostIPCSources
+	if err := api.Convert_Pointer_float64_To_float64(&in.RegistryPullQPS, &out.RegistryPullQPS, s); err != nil {
+		return err
+	}
+	out.RegistryBurst = int32(in.RegistryBurst)
+	out.EventRecordQPS = in.EventRecordQPS
+	out.EventBurst = int32(in.EventBurst)
+	if err := api.Convert_Pointer_bool_To_bool(&in.EnableDebuggingHandlers, &out.EnableDebuggingHandlers, s); err != nil {
+		return err
+	}
+	out.MinimumGCAge = in.MinimumGCAge
+	out.MaxPerPodContainerCount = int32(in.MaxPerPodContainerCount)
+	if err := api.Convert_Pointer_int32_To_int32(&in.MaxContainerCount, &out.MaxContainerCount, s); err != nil {
+		return err
+	}
+	out.CAdvisorPort = int(in.CAdvisorPort)
+	out.HealthzPort = in.HealthzPort
+	out.HealthzBindAddress = in.HealthzBindAddress
+	if err := api.Convert_Pointer_int32_To_int32(&in.OOMScoreAdj, &out.OOMScoreAdj, s); err != nil {
+		return err
+	}
+	if err := api.Convert_Pointer_bool_To_bool(&in.RegisterNode, &out.RegisterNode, s); err != nil {
+		return err
+	}
+	out.ClusterDomain = in.ClusterDomain
+	out.MasterServiceNamespace = in.MasterServiceNamespace
+	out.ClusterDNS = in.ClusterDNS
+	out.StreamingConnectionIdleTimeout = in.StreamingConnectionIdleTimeout
+	out.NodeStatusUpdateFrequency = in.NodeStatusUpdateFrequency
+	out.ImageMinimumGCAge = in.ImageMinimumGCAge
+	out.ImageGCHighThresholdPercent = in.ImageGCHighThresholdPercent
+	out.ImageGCLowThresholdPercent = in.ImageGCLowThresholdPercent
+	out.LowDiskSpaceThresholdMB = int32(in.LowDiskSpaceThresholdMB)
+	out.VolumeStatsAggPeriod = in.VolumeStatsAggPeriod
+	out.NetworkPluginName = in.NetworkPluginName
+	out.NetworkPluginDir = in.NetworkPluginDir
+	out.VolumePluginDir = in.VolumePluginDir
+	out.CloudProvider = in.CloudProvider
+	out.CloudConfigFile = in.CloudConfigFile
+	out.KubeletCgroups = in.KubeletCgroups
+	out.RuntimeCgroups = in.RuntimeCgroups
+	out.SystemCgroups = in.SystemCgroups
+	out.CgroupRoot = in.CgroupRoot
+	out.ContainerRuntime = in.ContainerRuntime
+	out.RktPath = in.RktPath
+	out.RktAPIEndpoint = in.RktAPIEndpoint
+	out.RktStage1Image = in.RktStage1Image
+	if err := api.Convert_Pointer_string_To_string(&in.LockFilePath, &out.LockFilePath, s); err != nil {
+		return err
+	}
+	out.ExitOnLockContention = in.ExitOnLockContention
+	if err := api.Convert_Pointer_bool_To_bool(&in.ConfigureCBR0, &out.ConfigureCBR0, s); err != nil {
+		return err
+	}
+	out.HairpinMode = in.HairpinMode
+	out.BabysitDaemons = in.BabysitDaemons
+	out.MaxPods = in.MaxPods
+	out.NvidiaGPUs = in.NvidiaGPUs
+	out.DockerExecHandlerName = in.DockerExecHandlerName
+	out.PodCIDR = in.PodCIDR
+	out.ResolverConfig = in.ResolverConfig
+	if err := api.Convert_Pointer_bool_To_bool(&in.CPUCFSQuota, &out.CPUCFSQuota, s); err != nil {
+		return err
+	}
+	if err := api.Convert_Pointer_bool_To_bool(&in.Containerized, &out.Containerized, s); err != nil {
+		return err
+	}
+	out.MaxOpenFiles = in.MaxOpenFiles
+	if err := api.Convert_Pointer_bool_To_bool(&in.ReconcileCIDR, &out.ReconcileCIDR, s); err != nil {
+		return err
+	}
+	if err := api.Convert_Pointer_bool_To_bool(&in.RegisterSchedulable, &out.RegisterSchedulable, s); err != nil {
+		return err
+	}
+	out.ContentType = in.ContentType
+	out.KubeAPIQPS = in.KubeAPIQPS
+	out.KubeAPIBurst = in.KubeAPIBurst
+	if err := api.Convert_Pointer_bool_To_bool(&in.SerializeImagePulls, &out.SerializeImagePulls, s); err != nil {
+		return err
+	}
+	out.ExperimentalFlannelOverlay = in.ExperimentalFlannelOverlay
+	out.OutOfDiskTransitionFrequency = in.OutOfDiskTransitionFrequency
+	out.NodeIP = in.NodeIP
+	out.NodeLabels = in.NodeLabels
+	out.NonMasqueradeCIDR = in.NonMasqueradeCIDR
+	out.EnableCustomMetrics = in.EnableCustomMetrics
+	out.EvictionHard = in.EvictionHard
+	out.EvictionSoft = in.EvictionSoft
+	out.EvictionSoftGracePeriod = in.EvictionSoftGracePeriod
+	out.EvictionPressureTransitionPeriod = in.EvictionPressureTransitionPeriod
+	out.EvictionMaxPodGracePeriod = in.EvictionMaxPodGracePeriod
+	out.PodsPerCore = in.PodsPerCore
+	if err := api.Convert_Pointer_bool_To_bool(&in.EnableControllerAttachDetach, &out.EnableControllerAttachDetach, s); err != nil {
+		return err
+	}
+	return nil
+}
+
+func Convert_v1alpha1_KubeletConfiguration_To_componentconfig_KubeletConfiguration(in *KubeletConfiguration, out *componentconfig.KubeletConfiguration, s conversion.Scope) error {
+	return autoConvert_v1alpha1_KubeletConfiguration_To_componentconfig_KubeletConfiguration(in, out, s)
 }
 
 func autoConvert_v1alpha1_LeaderElectionConfiguration_To_componentconfig_LeaderElectionConfiguration(in *LeaderElectionConfiguration, out *componentconfig.LeaderElectionConfiguration, s conversion.Scope) error {
