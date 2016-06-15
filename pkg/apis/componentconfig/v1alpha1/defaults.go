@@ -30,7 +30,7 @@ import (
 
 var zeroDuration = unversioned.Duration{}
 
-var defaultPodInfraConatinerImage = func() string {
+var defaultPodInfraContainerImage = func() string {
 	const (
 		defaultPodInfraContainerImageName    = "gcr.io/google_containers/pause"
 		defaultPodInfraContainerImageVersion = "2.0"
@@ -235,7 +235,7 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 		obj.OOMScoreAdj = int32(qos.KubeletOOMScoreAdj)
 	}
 	if obj.PodInfraContainerImage == "" {
-		obj.PodInfraContainerImage = defaultPodInfraContainer
+		obj.PodInfraContainerImage = defaultPodInfraContainerImage
 	}
 	if obj.Port == 0 {
 		obj.Port = ports.KubeletPort
