@@ -32,9 +32,9 @@ import (
 
 	cadvisorapi "github.com/google/cadvisor/info/v1"
 
-	"k8s.io/kubernetes/cmd/kubelet/app/options"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
+	cmpcfgV1A1 "k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1"
 	"k8s.io/kubernetes/pkg/client/record"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	containertest "k8s.io/kubernetes/pkg/kubelet/container/testing"
@@ -152,7 +152,7 @@ func newTestDockerManager() (*dockertools.DockerManager, *dockertools.FakeDocker
 		proberesults.NewManager(),
 		containerRefManager,
 		&cadvisorapi.MachineInfo{},
-		options.GetDefaultPodInfraContainerImage(),
+		cmpcfgV1A1.GetDefaultPodInfraContainerImage(),
 		0, 0, "",
 		&containertest.FakeOS{},
 		networkPlugin,

@@ -36,10 +36,10 @@ import (
 	dockerstrslice "github.com/docker/engine-api/types/strslice"
 	cadvisorapi "github.com/google/cadvisor/info/v1"
 	"github.com/stretchr/testify/assert"
-	"k8s.io/kubernetes/cmd/kubelet/app/options"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/testapi"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
+	cmpcfgV1A1 "k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1"
 	"k8s.io/kubernetes/pkg/client/record"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	containertest "k8s.io/kubernetes/pkg/kubelet/container/testing"
@@ -116,7 +116,7 @@ func createTestDockerManager(fakeHTTPClient *fakeHTTP, fakeDocker *FakeDockerCli
 		proberesults.NewManager(),
 		containerRefManager,
 		&cadvisorapi.MachineInfo{},
-		options.GetDefaultPodInfraContainerImage(),
+		cmpcfgV1A1.GetDefaultPodInfraContainerImage(),
 		0, 0, "",
 		&containertest.FakeOS{},
 		networkPlugin,
@@ -535,7 +535,7 @@ func generatePodInfraContainerHash(pod *api.Pod) uint64 {
 
 	container := &api.Container{
 		Name:            PodInfraContainerName,
-		Image:           options.GetDefaultPodInfraContainerImage(),
+		Image:           cmpcfgV1A1.GetDefaultPodInfraContainerImage(),
 		Ports:           ports,
 		ImagePullPolicy: podInfraContainerImagePullPolicy,
 	}

@@ -35,13 +35,15 @@ const (
 	// When these values are updated, also update test/e2e/framework/util.go
 	defaultPodInfraContainerImageName    = "gcr.io/google_containers/pause"
 	defaultPodInfraContainerImageVersion = "3.0"
-	defaultPodInfraContainerImage        = defaultPodInfraContainerImageName +
-		"-" + runtime.GOARCH + ":" +
-		defaultPodInfraContainerImageVersion
 
 	// From pkg/kubelet/rkt/rkt.go to avoid circular import
 	defaultRktAPIServiceEndpoint = "localhost:15441"
 )
+
+// Returns the arch-specific pause image that kubelet should use as the default
+func GetDefaultPodInfraContainerImage() string {
+	return defaultPodInfraContainerImageName + "-" + runtime.GOARCH + ":" + defaultPodInfraContainerImageVersion
+}
 
 var zeroDuration = unversioned.Duration{}
 
@@ -245,7 +247,7 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 		obj.OOMScoreAdj = &temp
 	}
 	if obj.PodInfraContainerImage == "" {
-		obj.PodInfraContainerImage = defaultPodInfraContainerImage
+		obj.PodInfraContainerImage = GetDefaultPodInfraContainerImage()
 	}
 	if obj.Port == 0 {
 		obj.Port = ports.KubeletPort
