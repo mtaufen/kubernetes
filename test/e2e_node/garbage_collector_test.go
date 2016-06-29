@@ -79,9 +79,6 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 				createPod(f, gc_podNames[i], gc_podContainers, nil)
 			}
 
-			// TODO: What happens if there are a lot of containers when we get our initial count,
-			//       but then many are reaped before we get here? initialContainerCount + numPods
-			//       will be too great, and we will just wait forever, and the test will flake...
 			// Wait for containers to start
 			By("Waiting for the containers to start")
 			Expect(waitForContainerCount(dockerClient, atLeast(initialContainerCount+numPods))).To(BeNil())
@@ -95,7 +92,7 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 			}
 
 			// Wait for containers to be garbage collected.
-			By("Waiting for the containers to be garbage collected") // TODO: What actually does the garbage collection?
+			By("Waiting for the containers to be garbage collected")
 			Expect(waitForContainerCount(dockerClient, atMost(initialContainerCount+epsilon))).To(BeNil())
 		})
 	})
