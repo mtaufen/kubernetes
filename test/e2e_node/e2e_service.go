@@ -234,7 +234,8 @@ func (es *e2eService) startKubeletServer() (*killCmd, error) {
 		"--file-check-frequency", "10s", // Check file frequently so tests won't wait too long
 		"--v", LOG_VERBOSITY_LEVEL, "--logtostderr",
 		"--network-plugin=kubenet",
-		"--pod-cidr=10.180.0.0/24", // Assign a fixed CIDR to the node because there is no node controller.
+		"--pod-cidr=10.180.0.0/24",                  // Assign a fixed CIDR to the node because there is no node controller.
+		"--eviction-hard", "memory.available<2.5Gi", // try a 500Mi threshold for eviction
 	)
 	cmd := exec.Command("sudo", cmdArgs...)
 	hcc := newHealthCheckCommand(

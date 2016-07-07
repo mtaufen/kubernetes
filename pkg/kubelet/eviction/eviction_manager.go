@@ -30,6 +30,9 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
 	"k8s.io/kubernetes/pkg/util"
 	"k8s.io/kubernetes/pkg/util/wait"
+
+	"github.com/davecgh/go-spew/spew"
+	"strings"
 )
 
 // managerImpl implements NodeStabilityManager
@@ -116,6 +119,7 @@ func (m *managerImpl) IsUnderMemoryPressure() bool {
 func (m *managerImpl) synchronize(podFunc ActivePodsFunc) {
 	// if we have nothing to do, just return
 	thresholds := m.config.Thresholds
+	glog.Infof("eviction manager: len(m.config.Thresholds): %v, thresholds: %s", len(thresholds), strings.Replace(spew.Sdump(thresholds), "\n", " ", -1)) // REMOVE
 	if len(thresholds) == 0 {
 		return
 	}
@@ -126,12 +130,15 @@ func (m *managerImpl) synchronize(podFunc ActivePodsFunc) {
 		glog.Errorf("eviction manager: unexpected err: %v", err)
 		return
 	}
+	glog.Infof("eviction manager: observations: %s", strings.Replace(spew.Sdump(observations), "\n", " ", -1))
+	glog.Infof("eviction manager: statsFunc: %s", strings.Replace(spew.Sdump(statsFunc), "\n", " ", -1))
 
 	// find the list of thresholds that are met independent of grace period
 	now := m.clock.Now()
 
 	// determine the set of thresholds met independent of grace period
 	thresholds = thresholdsMet(thresholds, observations)
+	glog.Infof("eviction manager: len(thresholdsMet): %v", len(thresholds)) // REMOVE
 
 	// track when a threshold was first observed
 	thresholdsFirstObservedAt := thresholdsFirstObservedAt(thresholds, m.thresholdsFirstObservedAt, now)
@@ -147,6 +154,7 @@ func (m *managerImpl) synchronize(podFunc ActivePodsFunc) {
 
 	// determine the set of thresholds we need to drive eviction behavior (i.e. all grace periods are met)
 	thresholds = thresholdsMetGracePeriod(thresholdsFirstObservedAt, now)
+	glog.Infof("eviction manager: len(thresholdsMetGracePeriod): %v", len(thresholds)) // REMOVE
 
 	// update internal state
 	m.Lock()
