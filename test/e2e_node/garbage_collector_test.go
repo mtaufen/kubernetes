@@ -38,6 +38,8 @@ import (
 // TODO: Make sure this test runs in serial before we
 //       submit a PR and run it with the whole suite of e2e tests
 
+// TODO: maybe lower the thresholds for garbage collection in the kubelet
+
 var _ = framework.KubeDescribe("GarbageCollect", func() {
 	var dockerClient *dockerapi.Client
 
@@ -75,7 +77,7 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 			for i := 0; i < numPods; i++ {
 				pods[i] = &api.Pod{
 					ObjectMeta: api.ObjectMeta{
-						Name: fmt.Sprintf("gc-container-pod-%d", i),
+						Name: fmt.Sprintf("gc-deleted-pod-containers-pod-%d", i),
 					},
 					Spec: api.PodSpec{
 						// Don't restart the Pod since it is expected to exit (pause container only)
@@ -107,7 +109,7 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 		f := NewDefaultFramework("gc-dead-containers")
 
 		It("it should garbage collect the dead containers", func() {
-			// Skip("Just skip this one for now") // TODO: remove this skip
+			Skip("Just skip this one for now") // TODO: remove this skip
 
 			// TODO: Change back to num = 90
 			const (
@@ -128,16 +130,11 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 				Command: []string{"false"},
 			}}
 			for i := 0; i < numPods; i++ {
-				// TODO: Make these pods crash when they start (run false as a command?)
-				// TODO: Any way to test if these crash?
 				pods[i] = &api.Pod{
 					ObjectMeta: api.ObjectMeta{
-						Name: fmt.Sprintf("evil-pod-%d", i), // TODO: Rename from "evil" to something else
+						Name: fmt.Sprintf("gc-dead-containers-pod-%d", i),
 					},
 					Spec: api.PodSpec{
-						// Force the Pod to schedule to the node without a scheduler running
-						// NodeName: *nodeName,
-						// Restart the pod. Always! Is undead. RestartPolicy[Always | OnFailure | Never]
 						RestartPolicy: api.RestartPolicyAlways,
 						Containers:    containers,
 					},
@@ -152,7 +149,6 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 			By("Waiting for the container count to dip. This indicates container GC is happening.")
 			Expect(waitForContainerCountDip(dockerClient)).To(BeNil())
 
-			// TODO: maybe lower the thresholds for garbage collection in the kubelet
 		})
 
 	})
@@ -161,14 +157,14 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 		f := NewDefaultFramework("gc-images-disk-pressure")
 		// TODO:
 		It("it should garbage collect images to free up space", func() {
-			Skip("uh because") // TODO: Remove skip
+			//Skip("uh because") // TODO: Remove skip
 
 			// Now we'll induce some disk pressure to see if the sample images get cleaned up
 			// TODO: I wonder how this will play out on my workstation... maybe I can trick the pod into cleaning up?
 			//       What actually does the cleanup? Is it the pod? Some daemon?
 			//By("Creating a pod that will induce disk pressure")
 
-			// The sample image is ________________
+			// The sample image is
 			// TODO: How to induce disk pressure
 			// TODO: How to lower the threshold for image garbage collection (again, this is a)
 			//       parameter on the kubelet:
