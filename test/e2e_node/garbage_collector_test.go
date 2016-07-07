@@ -53,31 +53,39 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 
 		It("it should garbage collect containers for deleted pods", func() {
 			Skip("Requires docker permissions") // FIXME TODO: I think this was a Jenkins thing?
-
-			// TODO: Change back to e = 5 and num = 90
 			const (
 				// The acceptable delta when counting containers.
-				epsilon = 0
+				epsilon = 5
 				// The number of pods to create & delete.
-				numPods = 15
+				numPods = 90
 			)
 
 			// Get an initial container count
 			// We compare the number of running containers to this initial count to determine
 			// whether the containers for our pods are running or not. This is one reason the
 			// test needs to run in serial with other tests.
+			// TODO: Actually make it run in serial!
 			containers, err := dockerClient.ContainerList(context.Background(), dockertypes.ContainerListOptions{All: true})
 			Expect(err).To(BeNil(), fmt.Sprintf("Error listing containers %v", err))
 			initialContainerCount := len(containers)
 
 			// Start pods
 			By("Creating the pods")
-			gc_podNames := make([]string, numPods)
-			gc_podContainers := []api.Container{getPauseContainer()}
+			pods := make([]*api.Pod, numPods)
 			for i := 0; i < numPods; i++ {
-				gc_podNames[i] = fmt.Sprintf("gc-container-pod-%d", i)
-				createPod(f, gc_podNames[i], gc_podContainers, nil)
+				pods[i] = &api.Pod{
+					ObjectMeta: api.ObjectMeta{
+						Name: fmt.Sprintf("gc-container-pod-%d", i),
+					},
+					Spec: api.PodSpec{
+						// Don't restart the Pod since it is expected to exit (pause container only)
+						RestartPolicy: api.RestartPolicyNever,
+						Containers:    []api.Container{getPauseContainer()},
+					},
+				}
+
 			}
+			f.CreatePodsAsync(pods) // Use async; otherwise will fail waiting for pause container to start, which never happens
 
 			// Wait for containers to start
 			By("Waiting for the containers to start")
@@ -85,10 +93,8 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 
 			// Delete pods.
 			By("Deleting the pods")
-			podClient := f.Client.Pods(f.Namespace.Name)
-			for _, podName := range gc_podNames {
-				err := podClient.Delete(podName, &api.DeleteOptions{})
-				Expect(err).To(BeNil(), fmt.Sprintf("Error deleting Pod %q: %v", podName, err))
+			for _, pod := range pods {
+				f.DeletePodAsync(pod, &api.DeleteOptions{})
 			}
 
 			// Wait for containers to be garbage collected.
@@ -101,27 +107,43 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 		f := NewDefaultFramework("gc-dead-containers")
 
 		It("it should garbage collect the dead containers", func() {
-			Skip("Just skip this one for now") // TODO: remove this skip
+			// Skip("Just skip this one for now") // TODO: remove this skip
 
 			// TODO: Change back to num = 90
 			const (
 				// The number of pods to create & delete.
-				numPods = 20
+				numPods = 90
 			)
 
 			// Now we'll create some pods with a restart policy that crash, and we'll try to make sure
 			// that the container count does not monotonically increase (e.g. old, crashed containers get cleaned up)
 			// (the restarted pods will be running new containers)
 
-			By("Creating the Every Villain Is Lemons pods") // TODO: Potentially rename evil pods -> death pods
-			evil_podNames := make([]string, numPods)
+			By("Creating pods that will die and rise from the grave") // TODO: Potentially rename evil pods -> death pods
+			pods := make([]*api.Pod, numPods)
+			containers := []api.Container{api.Container{
+				Name:  "busybox",
+				Image: "gcr.io/google_containers/busybox:1.24",
+				// Run `false` so the status is Exited (1)
+				Command: []string{"false"},
+			}}
 			for i := 0; i < numPods; i++ {
 				// TODO: Make these pods crash when they start (run false as a command?)
 				// TODO: Any way to test if these crash?
-				evil_podNames[i] = fmt.Sprintf("evil-pod-%d", i)
-				evil_podContainers := []api.Container{getBusyboxDeathContainer()}
-				createUndeadPod(f, evil_podNames[i], evil_podContainers, nil) // There is only one container in podContainers, so there will be one container per pod
+				pods[i] = &api.Pod{
+					ObjectMeta: api.ObjectMeta{
+						Name: fmt.Sprintf("evil-pod-%d", i), // TODO: Rename from "evil" to something else
+					},
+					Spec: api.PodSpec{
+						// Force the Pod to schedule to the node without a scheduler running
+						// NodeName: *nodeName,
+						// Restart the pod. Always! Is undead. RestartPolicy[Always | OnFailure | Never]
+						RestartPolicy: api.RestartPolicyAlways,
+						Containers:    containers,
+					},
+				}
 			}
+			f.CreatePodsAsync(pods)
 
 			// Now we'll watch the container count and wait until we see it dip.
 			// We are trying to detect that old, dead containers get cleaned up.
@@ -130,17 +152,7 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 			By("Waiting for the container count to dip. This indicates container GC is happening.")
 			Expect(waitForContainerCountDip(dockerClient)).To(BeNil())
 
-			// TODO: need to lower the thresholds for garbage collection in the kubelet
-			// this probably happens when the kubelet server is created
-
-			// See this doc, useful: https://github.com/kubernetes/kubernetes/blob/b9cfab87e33ea649bdd13a1bd243c502d76e5d22/docs/admin/garbage-collection.md#L83
-
-			// These thresholds seem to be parameters on the Kubelet server? See func NewKubeletServer in
-			// cmd/kubelet/app/options/options.go and also componentconfig.KubeletConfiguration
-			// in pkg/apis/componentconfig/types.go
-
-			// TODO: Where does the Kubelet configuration live for end to end tests?
-			//       Seems to be in kubernetes/test/e2e_node/e2e_service.go:startKubeletServer
+			// TODO: maybe lower the thresholds for garbage collection in the kubelet
 		})
 
 	})
@@ -149,6 +161,7 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 		f := NewDefaultFramework("gc-images-disk-pressure")
 		// TODO:
 		It("it should garbage collect images to free up space", func() {
+			Skip("uh because") // TODO: Remove skip
 
 			// Now we'll induce some disk pressure to see if the sample images get cleaned up
 			// TODO: I wonder how this will play out on my workstation... maybe I can trick the pod into cleaning up?
@@ -329,43 +342,21 @@ func waitForImageCountDip(dockerClient *dockerapi.Client) error {
 }
 
 // Does not WaitForPodRunning. The decision to do so is now up to the caller of createPod.
-func createPod(f *framework.Framework, podName string, containers []api.Container, volumes []api.Volume) {
-	podClient := f.Client.Pods(f.Namespace.Name)
+func createPod(f *framework.Framework, podName string,
+	containers []api.Container, volumes []api.Volume) {
 	pod := &api.Pod{
 		ObjectMeta: api.ObjectMeta{
 			Name: podName,
 		},
 		Spec: api.PodSpec{
 			// Force the Pod to schedule to the node without a scheduler running
-			NodeName: *nodeName,
 			// Don't restart the Pod since it is expected to exit
 			RestartPolicy: api.RestartPolicyNever,
 			Containers:    containers,
 			Volumes:       volumes,
 		},
 	}
-	_, err := podClient.Create(pod)
-	Expect(err).To(BeNil(), fmt.Sprintf("Error creating Pod %v", err))
-}
-
-// Same as createPod, except this one has a restart policy. It's undead!
-func createUndeadPod(f *framework.Framework, podName string, containers []api.Container, volumes []api.Volume) {
-	podClient := f.Client.Pods(f.Namespace.Name)
-	pod := &api.Pod{
-		ObjectMeta: api.ObjectMeta{
-			Name: podName,
-		},
-		Spec: api.PodSpec{
-			// Force the Pod to schedule to the node without a scheduler running
-			NodeName: *nodeName,
-			// Restart the pod. Always! Is undead. RestartPolicy[Always | OnFailure | Never]
-			RestartPolicy: api.RestartPolicyAlways,
-			Containers:    containers,
-			Volumes:       volumes,
-		},
-	}
-	_, err := podClient.Create(pod)
-	Expect(err).To(BeNil(), fmt.Sprintf("Error creating Pod %v", err))
+	f.CreatePodAsync(pod)
 }
 
 func getPauseContainer() api.Container {

@@ -66,6 +66,19 @@ func (f *Framework) CreatePods(pods []*api.Pod) {
 	wg.Wait()
 }
 
+// Batch version of CreatePodAsync (don't wait for them to start).
+func (f *Framework) CreatePodsAsync(pods []*api.Pod) {
+	for _, pod := range pods {
+		f.CreatePodAsync(pod)
+	}
+}
+
+// Delete a pod by spec (uses the name). TODO: reword/should this be called async or not? Does .Delete wait?
+func (f *Framework) DeletePodAsync(pod *api.Pod, options *api.DeleteOptions) {
+	err := f.PodClient().Delete(pod.Name, options)
+	ExpectNoError(err, "Error deleting Pod")
+}
+
 // Apply test-suite specific transformations to the pod spec.
 // TODO: figure out a nicer, more generic way to tie this to framework instances.
 func (f *Framework) MungePodSpec(pod *api.Pod) {
