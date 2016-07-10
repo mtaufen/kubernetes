@@ -203,23 +203,44 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 					Containers:    imgContainers,
 				},
 			}
-			f.CreatePod(imgPod)
+			f.CreatePodAsync(imgPod) // TODO/NOTE: Async because pod might complete before CreatePod checks starts waiting for it to start
 			f.DeletePodAsync(imgPod, &api.DeleteOptions{})
 
 			By("Starting a new pod which we will use to create disk pressure")
+
+			/*
+				Probabaly want to fill to just above 90% capacity, as this is the default threshold that triggers image gc
+
+
+				Now, sure, this is putting us on the medium backing the store, but is that volume equal in capacity to the node's
+				disk capacity?
+
+			*/
+
 			dpContainers := []api.Container{
 				api.Container{
-					Name:    "busybox",
-					Image:   "gcr.io/google_containers/busybox:1.24",
-					Command: []string{"/bin/sh", "-c", "stat /firehose/ > /firehose/statfh && du > /firehose/du && df -h > /firehose/dfh"},
+					Name:  "busybox",
+					Image: "gcr.io/google_containers/ubuntu:14.04",
+					Command: []string{"/bin/bash",
+						"-c",
+						"while true; do " +
+							//"df -k --total /disk-pressure-volume; | grep total | awk '{print $2}'; " + // Get the total number of 1K blocks in the volume
+							//"echo $blocks; " +
+							"echo 'whatever'; " +
+							// 91% of which is
+							// minus used blocks gives us how much we need to fill
+							// and we just dd that into a file in the volume (what is the max size of a file?)
+
+							"sleep 1; " +
+							"done"},
 					//Command: []string{"stat", "/firehose/", ">", "/firehose/teststat"}, // TODO: Change this to something that writes to the volume
 					// could do something like: touch foo && dd if=/dev/zero of=foo bs=500M count=2 (on the volume!)
 					// bs is block size and count is number of blocks
 					// TODO: make this actually create disk pressure.
 					VolumeMounts: []api.VolumeMount{
 						{
-							Name:      "disk-pressure-volume", // TODO
-							MountPath: "/firehose",            // TOOD
+							Name:      "disk-pressure-volume",  // TODO
+							MountPath: "/disk-pressure-volume", // TOOD
 						},
 					},
 				},
@@ -232,15 +253,15 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 				api.Volume{
 					Name: "disk-pressure-volume",
 					VolumeSource: api.VolumeSource{
-						HostPath: &api.HostPathVolumeSource{
-							Path: "/tmp/firehose", // TODO: For now, just doing this
+						EmptyDir: &api.EmptyDirVolumeSource{ // TODO: Ask Vish whether I can really rely on EmptyDir or whether I should use HostPath
+							Medium: "", // Use default storage medium for node (TODO: Hope this isn't a tmpfs... otoh if images are in a tmpfs, we would want them to be gc'd. But if img gc is only triggered by disk pressure, and tmpfs is memory pressure....)
 						},
 					}, // TODO: I want a volume with a disk size. How do I put a disk usage restriction on the entire pod? Idk if this is a feature yet. Buddha is working on podlevel resource restrictions.
 				},
 			}
 			dpPod := &api.Pod{
 				ObjectMeta: api.ObjectMeta{
-					Name: "gc-images-disk-pressure-pod",
+					GenerateName: "gc-images-disk-pressure-pod",
 				},
 				Spec: api.PodSpec{
 					RestartPolicy: api.RestartPolicyNever,
@@ -278,7 +299,7 @@ func atLeast(val int) condition {
 
 // Wait for at least count containers to be running if atleast is true, or at most count containers
 // to be running if atleast is false.
-func waitForContainerCount(dockerClient *dockerapi.Client, cond condition) error {
+func waitForContainerCount(dockerClient *dockerapi.Client, cond condition) error { // TOOD: Convert these waits to use Eventually
 	const (
 		pollPeriod  = 10 * time.Second
 		pollTimeout = 5 * time.Minute
