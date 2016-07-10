@@ -67,6 +67,7 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 			// whether the containers for our pods are running or not. This is one reason the
 			// test needs to run in serial with other tests.
 			// TODO: Actually make it run in serial!
+			// TODO: Shouldn't this be runtime-agnostic?
 			containers, err := dockerClient.ContainerList(context.Background(), dockertypes.ContainerListOptions{All: true})
 			Expect(err).To(BeNil(), fmt.Sprintf("Error listing containers %v", err))
 			initialContainerCount := len(containers)
@@ -82,10 +83,14 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 					Spec: api.PodSpec{
 						// Don't restart the Pod since it is expected to exit (pause container only)
 						RestartPolicy: api.RestartPolicyNever,
-						Containers:    []api.Container{getPauseContainer()},
+						Containers: []api.Container{
+							api.Container{
+								Name:  "pause",
+								Image: "gcr.io/google_containers/pause:2.0",
+							},
+						},
 					},
 				}
-
 			}
 			f.CreatePodsAsync(pods) // Use async; otherwise will fail waiting for pause container to start, which never happens
 
@@ -183,49 +188,67 @@ var _ = framework.KubeDescribe("GarbageCollect", func() {
 			// TODO: Could probably just create one pod with several containers if
 			//       I just want those images to be pulled.
 			By("Creating and then deleting a pod, so that images for an old pod exist")
-			podContainers := []api.Container{getPauseContainer()} // TODO: use several containers with big images
-			// for i := 0; i < numPods; i++ {
-			name := fmt.Sprintf("gc-img-pod-%d", 0)
-			createPod(f, name, podContainers, nil)
-			framework.ExpectNoError(f.WaitForPodRunning(name))
-			err := f.Client.Pods(f.Namespace.Name).Delete(name, &api.DeleteOptions{})
-			Expect(err).To(BeNil(), fmt.Sprintf("Error deleting Pod %q: %v", name, err))
-			// }
-
-			// TODO: It might turn out that we need to wait for the containers to start running before we can delete the pod.
+			imgContainers := []api.Container{
+				api.Container{
+					Name:  "ubuntu",
+					Image: "gcr.io/google_containers/ubuntu:14.04",
+				},
+			} // TODO: use several containers with big images
+			imgPod := &api.Pod{
+				ObjectMeta: api.ObjectMeta{
+					Name: "gc-images-image-pod",
+				},
+				Spec: api.PodSpec{
+					RestartPolicy: api.RestartPolicyNever,
+					Containers:    imgContainers,
+				},
+			}
+			f.CreatePod(imgPod)
+			f.DeletePodAsync(imgPod, &api.DeleteOptions{})
 
 			By("Starting a new pod which we will use to create disk pressure")
-			createPod(f, "gc-pressure-pod-0",
-				[]api.Container{
-					api.Container{
-						Name:    "busybox",
-						Image:   "gcr.io/google_containers/busybox:1.24",
-						Command: []string{"/bin/sh", "-c", "stat /firehose/ > /firehose/statfh && du > /firehose/du && df -h > /firehose/dfh"},
-						//Command: []string{"stat", "/firehose/", ">", "/firehose/teststat"}, // TODO: Change this to something that writes to the volume
-						// could do something like: touch foo && dd if=/dev/zero of=foo bs=500M count=2 (on the volume!)
-						// bs is block size and count is number of blocks
-						VolumeMounts: []api.VolumeMount{
-							{
-								Name:      "disk-pressure-volume", // TODO
-								MountPath: "/firehose",            // TOOD
-							},
+			dpContainers := []api.Container{
+				api.Container{
+					Name:    "busybox",
+					Image:   "gcr.io/google_containers/busybox:1.24",
+					Command: []string{"/bin/sh", "-c", "stat /firehose/ > /firehose/statfh && du > /firehose/du && df -h > /firehose/dfh"},
+					//Command: []string{"stat", "/firehose/", ">", "/firehose/teststat"}, // TODO: Change this to something that writes to the volume
+					// could do something like: touch foo && dd if=/dev/zero of=foo bs=500M count=2 (on the volume!)
+					// bs is block size and count is number of blocks
+					// TODO: make this actually create disk pressure.
+					VolumeMounts: []api.VolumeMount{
+						{
+							Name:      "disk-pressure-volume", // TODO
+							MountPath: "/firehose",            // TOOD
 						},
-					}},
-				[]api.Volume{
-					{
-						Name: "disk-pressure-volume",
-						VolumeSource: api.VolumeSource{
-							HostPath: &api.HostPathVolumeSource{
-								Path: "/tmp/firehose", // TODO: For now, just doing this
-							},
-						}, // I want a volume with a disk size. How do I put a disk usage restriction on the entire pod? Idk if this is a feature yet. Buddha is working on podlevel resource restrictions.
 					},
-				})
-
-			By("Bringing a volume into the new pod")
-			// TODO: Bring in a volume
-			// Good example of how to do this:
-			// test/e2e/volumes.go:221
+				},
+			}
+			dpVolumes := []api.Volume{
+				// TODO: Use an emptyDir that is not a tmpfs
+				//       (i.e. don't set emptyDir.medium to "Memory"), normally emptyDirs are stored
+				//       on whatever medium backs the machine, depending on the environment.
+				//       Hopefully that is never something that gets charged against the memory limit, because we want to test disk-pressure gc.
+				api.Volume{
+					Name: "disk-pressure-volume",
+					VolumeSource: api.VolumeSource{
+						HostPath: &api.HostPathVolumeSource{
+							Path: "/tmp/firehose", // TODO: For now, just doing this
+						},
+					}, // TODO: I want a volume with a disk size. How do I put a disk usage restriction on the entire pod? Idk if this is a feature yet. Buddha is working on podlevel resource restrictions.
+				},
+			}
+			dpPod := &api.Pod{
+				ObjectMeta: api.ObjectMeta{
+					Name: "gc-images-disk-pressure-pod",
+				},
+				Spec: api.PodSpec{
+					RestartPolicy: api.RestartPolicyNever,
+					Containers:    dpContainers,
+					Volumes:       dpVolumes,
+				},
+			}
+			f.CreatePod(dpPod)
 
 			By("Waiting for the image count to dip. This indicates image GC is happening.")
 			Expect(waitForImageCountDip(dockerClient)).To(BeNil())
@@ -335,38 +358,4 @@ func waitForImageCountDip(dockerClient *dockerapi.Client) error {
 		return fmt.Errorf("timed out waiting for a dip in the image count")
 	}
 	return nil
-}
-
-// Does not WaitForPodRunning. The decision to do so is now up to the caller of createPod.
-func createPod(f *framework.Framework, podName string,
-	containers []api.Container, volumes []api.Volume) {
-	pod := &api.Pod{
-		ObjectMeta: api.ObjectMeta{
-			Name: podName,
-		},
-		Spec: api.PodSpec{
-			// Force the Pod to schedule to the node without a scheduler running
-			// Don't restart the Pod since it is expected to exit
-			RestartPolicy: api.RestartPolicyNever,
-			Containers:    containers,
-			Volumes:       volumes,
-		},
-	}
-	f.CreatePodAsync(pod)
-}
-
-func getPauseContainer() api.Container {
-	return api.Container{
-		Name:  "pause",
-		Image: "gcr.io/google_containers/pause:2.0",
-	}
-}
-
-func getBusyboxDeathContainer() api.Container {
-	return api.Container{
-		Name:  "busybox",
-		Image: "gcr.io/google_containers/busybox:1.24",
-		// Run `false` so the status is Exited (1)
-		Command: []string{"false"},
-	}
 }
