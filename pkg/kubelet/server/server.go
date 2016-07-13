@@ -59,6 +59,9 @@ import (
 	"k8s.io/kubernetes/pkg/util/limitwriter"
 	utilruntime "k8s.io/kubernetes/pkg/util/runtime"
 	"k8s.io/kubernetes/pkg/volume"
+
+	"encoding/json"
+	kcapiV1ALPHA1 "k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1" // TODO remane the imported-as name
 )
 
 // Server is a http.Handler which exposes kubelet functionality over HTTP.
@@ -195,9 +198,10 @@ func NewServer(
 		server.InstallAuthFilter()
 	}
 	server.InstallDefaultHandlers()
-	if enableDebuggingHandlers {
-		server.InstallDebuggingHandlers()
-	}
+	// TODO: Go back to not installing debugging handlers
+	// if enableDebuggingHandlers {
+	server.InstallDebuggingHandlers()
+	// }
 	return server
 }
 
@@ -343,6 +347,17 @@ func (s *Server) InstallDebuggingHandlers() {
 	ws.Route(ws.GET("/{podNamespace}/{podID}/{containerName}").
 		To(s.getContainerLogs).
 		Operation("getContainerLogs"))
+	s.restfulCont.Add(ws)
+
+	// Warning: Alpha feature, paths may change in the future
+	ws = new(restful.WebService)
+	ws.
+		Path("/config").
+		Produces(restful.MIME_JSON)
+	ws.Route(ws.GET("").
+		To(s.getConfig).
+		Operation("getConfig").
+		Writes(kcapiV1ALPHA1.KubeletConfiguration{}))
 	s.restfulCont.Add(ws)
 
 	configz.InstallHandler(s.restfulCont)
@@ -614,6 +629,22 @@ func (s *Server) getRun(request *restful.Request, response *restful.Response) {
 	if err != nil {
 		response.WriteError(http.StatusInternalServerError, err)
 		return
+	}
+	writeJsonResponse(response, data)
+}
+
+//getConfig handles config requests against the Kubelet (Warning: Alpha feature subject to change)
+func (s *Server) getConfig(request *restful.Request, response *restful.Response) {
+	config := &kcapiV1ALPHA1.KubeletConfiguration{
+		HostnameOverride: "IT WORKS!!!!!!",
+	}
+
+	// TODO: Where to get the config from?
+	// TODO: Might have to convert from sparse internal stuff
+
+	data, err := json.Marshal(config)
+	if err != nil {
+		response.WriteError(http.StatusInternalServerError, err)
 	}
 	writeJsonResponse(response, data)
 }
