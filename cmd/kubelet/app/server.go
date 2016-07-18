@@ -137,15 +137,6 @@ func UnsecuredKubeletConfig(s *options.KubeletServer) (*kubelet.KubeletConfig, e
 		return nil, err
 	}
 
-	manifestURLHeader := make(http.Header)
-	if s.ManifestURLHeader != "" {
-		pieces := strings.Split(s.ManifestURLHeader, ":")
-		if len(pieces) != 2 {
-			return nil, fmt.Errorf("manifest-url-header must have a single ':' key-value separator, got %q", s.ManifestURLHeader)
-		}
-		manifestURLHeader.Set(pieces[0], pieces[1])
-	}
-
 	reservation, err := parseReservation(s.KubeReserved, s.SystemReserved)
 	if err != nil {
 		return nil, err
@@ -172,17 +163,17 @@ func UnsecuredKubeletConfig(s *options.KubeletServer) (*kubelet.KubeletConfig, e
 		HostPIDSources:     hostPIDSources,
 		HostIPCSources:     hostIPCSources,
 		KubeClient:         nil,
-		ManifestURLHeader:  manifestURLHeader,
-		Mounter:            mounter,
-		NetworkPlugins:     ProbeNetworkPlugins(s.NetworkPluginDir),
-		OOMAdjuster:        oom.NewOOMAdjuster(),
-		OSInterface:        kubecontainer.RealOS{},
-		Reservation:        *reservation,
-		StandaloneMode:     (len(s.APIServerList) == 0),
-		TLSOptions:         tlsOptions,
-		Writer:             writer,
-		VolumePlugins:      ProbeVolumePlugins(s.VolumePluginDir),
-		EvictionConfig:     evictionConfig,
+		// ManifestURLHeader:  manifestURLHeader,
+		Mounter:        mounter,
+		NetworkPlugins: ProbeNetworkPlugins(s.NetworkPluginDir),
+		OOMAdjuster:    oom.NewOOMAdjuster(),
+		OSInterface:    kubecontainer.RealOS{},
+		Reservation:    *reservation,
+		StandaloneMode: (len(s.APIServerList) == 0),
+		TLSOptions:     tlsOptions,
+		Writer:         writer,
+		VolumePlugins:  ProbeVolumePlugins(s.VolumePluginDir),
+		EvictionConfig: evictionConfig,
 	}, nil
 }
 
