@@ -34,11 +34,11 @@ import (
 type KubeletServer struct {
 	componentconfig.KubeletConfiguration
 
-	AuthPath      util.StringFlag // Deprecated -- use KubeConfig instead
-	KubeConfig    util.StringFlag
-	APIServerList []string
+	AuthPath   util.StringFlag // Deprecated -- use KubeConfig instead
+	KubeConfig util.StringFlag
+	// APIServerList []string
 
-	RunOnce bool
+	// RunOnce bool
 
 	// Insert a probability of random errors during calls to the master.
 	ChaosChance float64

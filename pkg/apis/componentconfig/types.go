@@ -394,6 +394,14 @@ type KubeletConfiguration struct {
 	// Currently only cpu and memory are supported. [default=none]
 	// See http://releases.k8s.io/HEAD/docs/user-guide/compute-resources.md for more detail.
 	KubeReserved utilconfig.ConfigurationMap `json:"kubeReserved"`
+	// apiServerList is the list of API servers
+	// You would, for example, spin up a master's Kubelet with no API server, then reconfigure the
+	// master's Kubelet to know about the first API server that spins up, and, continuing on,
+	// configure the Kubelets to know about more API servers as you add them.
+	APIServerList []string `json:"apiServerList"`
+	// If runOnce is true, the Kubelet will check the API server once for pods,
+	// run those in addition to the pods specified by the local manifest, and exit.
+	RunOnce bool
 }
 
 type KubeSchedulerConfiguration struct {
