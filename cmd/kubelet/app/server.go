@@ -208,8 +208,8 @@ func UnsecuredKubeletConfig(s *options.KubeletServer) (*kubelet.KubeletConfig, e
 		// EnableDebuggingHandlers:      s.EnableDebuggingHandlers,
 		// CgroupsPerQOS:                s.CgroupsPerQOS,
 		// EnableServer:                 s.EnableServer,
-		EventBurst:     int(s.EventBurst),
-		EventRecordQPS: float32(s.EventRecordQPS),
+		// EventBurst:     int(s.EventBurst),
+		// EventRecordQPS: float32(s.EventRecordQPS),
 		// FileCheckFrequency:           s.FileCheckFrequency.Duration,
 		// HostnameOverride:             s.HostnameOverride,
 		HostNetworkSources: hostNetworkSources,
@@ -221,11 +221,11 @@ func UnsecuredKubeletConfig(s *options.KubeletServer) (*kubelet.KubeletConfig, e
 		// ManifestURL:                  s.ManifestURL,
 		ManifestURLHeader: manifestURLHeader,
 		// MasterServiceNamespace:       s.MasterServiceNamespace,
-		MaxContainerCount:       int(s.MaxContainerCount),
-		MaxOpenFiles:            uint64(s.MaxOpenFiles),
-		MaxPerPodContainerCount: int(s.MaxPerPodContainerCount),
-		MaxPods:                 int(s.MaxPods),
-		NvidiaGPUs:              int(s.NvidiaGPUs),
+		// MaxContainerCount:       int(s.MaxContainerCount),
+		// MaxOpenFiles: uint64(s.MaxOpenFiles),
+		// MaxPerPodContainerCount: int(s.MaxPerPodContainerCount),
+		// MaxPods:                 int(s.MaxPods),
+		// NvidiaGPUs:              int(s.NvidiaGPUs),
 		// MinimumGCAge:                 s.MinimumGCAge.Duration,
 		Mounter: mounter,
 		// NetworkPluginName:            s.NetworkPluginName,
@@ -238,12 +238,12 @@ func UnsecuredKubeletConfig(s *options.KubeletServer) (*kubelet.KubeletConfig, e
 		// PodCIDR:                      s.PodCIDR,
 		// ReconcileCIDR:                s.ReconcileCIDR,
 		// PodInfraContainerImage:       s.PodInfraContainerImage,
-		Port:         uint(s.Port),
-		ReadOnlyPort: uint(s.ReadOnlyPort),
+		// Port:         uint(s.Port),
+		// ReadOnlyPort: uint(s.ReadOnlyPort),
 		// RegisterNode:                   s.RegisterNode,
 		// RegisterSchedulable:            s.RegisterSchedulable,
-		RegistryBurst:   int(s.RegistryBurst),
-		RegistryPullQPS: float64(s.RegistryPullQPS),
+		// RegistryBurst:   int(s.RegistryBurst),
+		// RegistryPullQPS: float64(s.RegistryPullQPS),
 		// ResolverConfig:                 s.ResolverConfig,
 		Reservation: *reservation,
 		// KubeletCgroups:                 s.KubeletCgroups,
@@ -265,9 +265,9 @@ func UnsecuredKubeletConfig(s *options.KubeletServer) (*kubelet.KubeletConfig, e
 		// HairpinMode:                    s.HairpinMode,
 		// BabysitDaemons:                 s.BabysitDaemons,
 		// ExperimentalFlannelOverlay:     s.ExperimentalFlannelOverlay,
-		NodeIP:         net.ParseIP(s.NodeIP),
+		// NodeIP:         net.ParseIP(s.NodeIP),
 		EvictionConfig: evictionConfig,
-		PodsPerCore:    int(s.PodsPerCore),
+		// PodsPerCore:    int(s.PodsPerCore),
 	}, nil
 }
 
@@ -578,23 +578,23 @@ func SimpleKubelet(client *clientset.Clientset,
 		KubeClient:    client,
 		// ManifestURL:               manifestURL,
 		// MasterServiceNamespace:    masterServiceNamespace,
-		MaxContainerCount:       100,
-		MaxOpenFiles:            1024,
-		MaxPerPodContainerCount: 2,
-		MaxPods:                 maxPods,
-		NvidiaGPUs:              0,
+		// MaxContainerCount:       100,
+		// MaxOpenFiles: 1024,
+		// MaxPerPodContainerCount: 2,
+		// MaxPods:                 maxPods,
+		// NvidiaGPUs:              0,
 		// MinimumGCAge:              minimumGCAge,
 		// Mounter:                   mount.New(),
 		// NodeStatusUpdateFrequency: nodeStatusUpdateFrequency,
 		OOMAdjuster: oom.NewFakeOOMAdjuster(),
 		OSInterface: osInterface,
 		// PodInfraContainerImage:    c.PodInfraContainerImage,
-		Port:         port,
-		ReadOnlyPort: readOnlyPort,
+		// Port:         port,
+		// ReadOnlyPort: readOnlyPort,
 		// RegisterNode:        true,
 		// RegisterSchedulable: true,
-		RegistryBurst:   10,
-		RegistryPullQPS: 5.0,
+		// RegistryBurst:   10,
+		// RegistryPullQPS: 5.0,
 		// ResolverConfig:      kubetypes.ResolvConfDefault,
 		// KubeletCgroups:      "/kubelet",
 		// RootDirectory:       rootDir,
@@ -606,7 +606,7 @@ func SimpleKubelet(client *clientset.Clientset,
 		Writer:        &kubeio.StdWriter{},
 		// OutOfDiskTransitionFrequency: outOfDiskTransitionFrequency,
 		EvictionConfig: evictionConfig,
-		PodsPerCore:    podsPerCore,
+		// PodsPerCore:    podsPerCore,
 	}
 	return &kcfg
 }
@@ -673,7 +673,7 @@ func RunKubelet(kcfg *kubelet.KubeletConfig, kcfg_new *componentconfig.KubeletCo
 	}
 	podCfg := k.GetConfig().PodConfig
 
-	util.ApplyRLimitForSelf(kcfg.MaxOpenFiles)
+	util.ApplyRLimitForSelf(uint64(kcfg_new.MaxOpenFiles))
 
 	// TODO(dawnchen): remove this once we deprecated old debian containervm images.
 	// This is a workaround for issue: https://github.com/opencontainers/runc/issues/726
@@ -731,12 +731,12 @@ func startKubelet(k kubelet.KubeletBootstrap, podCfg *config.PodConfig, kc_old *
 	// start the kubelet server
 	if kc_new.EnableServer {
 		go wait.Until(func() {
-			k.ListenAndServe(net.ParseIP(kc_new.Address), kc_old.Port, kc_old.TLSOptions, kc_old.Auth, kc_new.EnableDebuggingHandlers)
+			k.ListenAndServe(net.ParseIP(kc_new.Address), uint(kc_new.Port), kc_old.TLSOptions, kc_old.Auth, kc_new.EnableDebuggingHandlers)
 		}, 0, wait.NeverStop)
 	}
-	if kc_old.ReadOnlyPort > 0 {
+	if kc_new.ReadOnlyPort > 0 {
 		go wait.Until(func() {
-			k.ListenAndServeReadOnly(net.ParseIP(kc_new.Address), kc_old.ReadOnlyPort)
+			k.ListenAndServeReadOnly(net.ParseIP(kc_new.Address), uint(kc_new.ReadOnlyPort))
 		}, 0, wait.NeverStop)
 	}
 }
