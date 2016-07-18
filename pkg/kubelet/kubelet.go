@@ -205,8 +205,8 @@ type KubeletConfig struct {
 	// ContainerRuntime               string
 	// RuntimeRequestTimeout time.Duration
 	// CPUCFSQuota                    bool
-	DiskSpacePolicy DiskSpacePolicy
-	DockerClient    dockertools.DockerInterface
+	// DiskSpacePolicy DiskSpacePolicy
+	DockerClient dockertools.DockerInterface
 	// RuntimeCgroups                 string
 	DockerExecHandler dockertools.ExecHandler
 	// EnableControllerAttachDetach   bool
@@ -224,8 +224,8 @@ type KubeletConfig struct {
 	HostPIDSources     []string
 	HostIPCSources     []string
 	// HTTPCheckFrequency             time.Duration
-	ImageGCPolicy ImageGCPolicy
-	KubeClient    *clientset.Clientset
+	// ImageGCPolicy ImageGCPolicy
+	KubeClient *clientset.Clientset
 	// ManifestURL                    string
 	ManifestURLHeader http.Header
 	// MasterServiceNamespace         string
@@ -336,6 +336,17 @@ func NewMainKubelet(kc_old *KubeletConfig, kc_new *componentconfig.KubeletConfig
 		KubeletEndpoint: api.DaemonEndpoint{Port: kc_new.Port},
 	}
 
+	imageGCPolicy := ImageGCPolicy{
+		MinAge:               kc_new.ImageMinimumGCAge.Duration,
+		HighThresholdPercent: int(kc_new.ImageGCHighThresholdPercent),
+		LowThresholdPercent:  int(kc_new.ImageGCLowThresholdPercent),
+	}
+
+	diskSpacePolicy := DiskSpacePolicy{
+		DockerFreeDiskMB: int(kc_new.LowDiskSpaceThresholdMB),
+		RootFreeDiskMB:   int(kc_new.LowDiskSpaceThresholdMB),
+	}
+
 	if kc_new.RootDirectory == "" {
 		return nil, fmt.Errorf("invalid root directory %q", kc_new.RootDirectory)
 	}
@@ -389,7 +400,7 @@ func NewMainKubelet(kc_old *KubeletConfig, kc_new *componentconfig.KubeletConfig
 		Namespace: "",
 	}
 
-	diskSpaceManager, err := newDiskSpaceManager(kc_old.CAdvisorInterface, kc_old.DiskSpacePolicy)
+	diskSpaceManager, err := newDiskSpaceManager(kc_old.CAdvisorInterface, diskSpacePolicy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize disk manager: %v", err)
 	}
@@ -582,7 +593,7 @@ func NewMainKubelet(kc_old *KubeletConfig, kc_new *componentconfig.KubeletConfig
 	klet.containerGC = containerGC
 
 	// setup imageManager
-	imageManager, err := newImageManager(klet.containerRuntime, kc_old.CAdvisorInterface, kc_old.Recorder, nodeRef, kc_old.ImageGCPolicy)
+	imageManager, err := newImageManager(klet.containerRuntime, kc_old.CAdvisorInterface, kc_old.Recorder, nodeRef, imageGCPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize image manager: %v", err)
 	}
