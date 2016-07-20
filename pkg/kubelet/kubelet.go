@@ -78,6 +78,7 @@ import (
 	"k8s.io/kubernetes/pkg/types"
 	"k8s.io/kubernetes/pkg/util"
 	"k8s.io/kubernetes/pkg/util/bandwidth"
+	utilconfig "k8s.io/kubernetes/pkg/util/config"
 	utilerrors "k8s.io/kubernetes/pkg/util/errors"
 	utilexec "k8s.io/kubernetes/pkg/util/exec"
 	"k8s.io/kubernetes/pkg/util/flowcontrol"
@@ -205,7 +206,6 @@ type KubeletConfig struct {
 	OSInterface             kubecontainer.OSInterface
 	PodConfig               *config.PodConfig
 	Recorder                record.EventRecorder
-	Reservation             kubetypes.Reservation
 	TLSOptions              *server.TLSOptions
 	Writer                  kubeio.Writer
 	VolumePlugins           []volume.VolumePlugin
@@ -297,6 +297,11 @@ func NewMainKubelet(kc_old *KubeletConfig, kc_new *componentconfig.KubeletConfig
 		PressureTransitionPeriod: kc_new.EvictionPressureTransitionPeriod.Duration,
 		MaxPodGracePeriodSeconds: int64(kc_new.EvictionMaxPodGracePeriod),
 		Thresholds:               thresholds,
+	}
+
+	reservation, err := ParseReservation(kc_new.KubeReserved, kc_new.SystemReserved)
+	if err != nil {
+		return nil, err
 	}
 
 	var dockerExecHandler dockertools.ExecHandler
@@ -434,7 +439,7 @@ func NewMainKubelet(kc_old *KubeletConfig, kc_new *componentconfig.KubeletConfig
 		nodeIP:                     net.ParseIP(kc_new.NodeIP),
 		clock:                      util.RealClock{},
 		outOfDiskTransitionFrequency: kc_new.OutOfDiskTransitionFrequency.Duration,
-		reservation:                  kc_old.Reservation,
+		reservation:                  *reservation,
 		enableCustomMetrics:          kc_new.EnableCustomMetrics,
 		babysitDaemons:               kc_new.BabysitDaemons,
 		enableControllerAttachDetach: kc_new.EnableControllerAttachDetach,
@@ -3664,4 +3669,40 @@ func (kl *Kubelet) ListenAndServeReadOnly(address net.IP, port uint) {
 func isSyncPodWorthy(event *pleg.PodLifecycleEvent) bool {
 	// ContatnerRemoved doesn't affect pod state
 	return event.Type != pleg.ContainerRemoved
+}
+
+func parseResourceList(m utilconfig.ConfigurationMap) (api.ResourceList, error) {
+	rl := make(api.ResourceList)
+	for k, v := range m {
+		switch api.ResourceName(k) {
+		// Only CPU and memory resources are supported.
+		case api.ResourceCPU, api.ResourceMemory:
+			q, err := resource.ParseQuantity(v)
+			if err != nil {
+				return nil, err
+			}
+			if q.Sign() == -1 {
+				return nil, fmt.Errorf("resource quantity for %q cannot be negative: %v", k, v)
+			}
+			rl[api.ResourceName(k)] = q
+		default:
+			return nil, fmt.Errorf("cannot reserve %q resource", k)
+		}
+	}
+	return rl, nil
+}
+
+func ParseReservation(kubeReserved, systemReserved utilconfig.ConfigurationMap) (*kubetypes.Reservation, error) {
+	reservation := new(kubetypes.Reservation)
+	if rl, err := parseResourceList(kubeReserved); err != nil {
+		return nil, err
+	} else {
+		reservation.Kubernetes = rl
+	}
+	if rl, err := parseResourceList(systemReserved); err != nil {
+		return nil, err
+	} else {
+		reservation.System = rl
+	}
+	return reservation, nil
 }
