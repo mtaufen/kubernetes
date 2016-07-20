@@ -58,7 +58,6 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/config"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/dockertools"
-	"k8s.io/kubernetes/pkg/kubelet/eviction"
 	"k8s.io/kubernetes/pkg/kubelet/server"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/util"
@@ -128,16 +127,6 @@ func UnsecuredKubeletConfig(s *options.KubeletServer) (*kubelet.KubeletConfig, e
 		return nil, err
 	}
 
-	thresholds, err := eviction.ParseThresholdConfig(s.EvictionHard, s.EvictionSoft, s.EvictionSoftGracePeriod)
-	if err != nil {
-		return nil, err
-	}
-	evictionConfig := eviction.Config{
-		PressureTransitionPeriod: s.EvictionPressureTransitionPeriod.Duration,
-		MaxPodGracePeriodSeconds: int64(s.EvictionMaxPodGracePeriod),
-		Thresholds:               thresholds,
-	}
-
 	return &kubelet.KubeletConfig{
 		Auth:              nil, // default does not enforce auth[nz]
 		CAdvisorInterface: nil, // launches background processes, not set here
@@ -153,7 +142,6 @@ func UnsecuredKubeletConfig(s *options.KubeletServer) (*kubelet.KubeletConfig, e
 		TLSOptions:        tlsOptions,
 		Writer:            writer,
 		VolumePlugins:     ProbeVolumePlugins(s.VolumePluginDir),
-		EvictionConfig:    evictionConfig,
 	}, nil
 }
 
@@ -427,9 +415,9 @@ func SimpleKubelet(client *clientset.Clientset,
 	// 	DockerFreeDiskMB: 256,
 	// 	RootFreeDiskMB:   256,
 	// }
-	evictionConfig := eviction.Config{
-		PressureTransitionPeriod: evictionPressureTransitionPeriod,
-	}
+	// evictionConfig := eviction.Config{
+	// 	PressureTransitionPeriod: evictionPressureTransitionPeriod,
+	// }
 
 	// TODO: Transfer the default values from kcfg into
 	//       this KubeletConfiguration e.g. CgroupRoot = ""
@@ -493,7 +481,7 @@ func SimpleKubelet(client *clientset.Clientset,
 		VolumePlugins: volumePlugins,
 		Writer:        &kubeio.StdWriter{},
 		// OutOfDiskTransitionFrequency: outOfDiskTransitionFrequency,
-		EvictionConfig: evictionConfig,
+		// EvictionConfig: evictionConfig,
 		// PodsPerCore:    podsPerCore,
 	}
 	return &kcfg
