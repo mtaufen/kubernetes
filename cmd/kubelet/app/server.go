@@ -28,6 +28,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path"
+	// "reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -65,6 +66,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/network"
 	"k8s.io/kubernetes/pkg/kubelet/server"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
+	"k8s.io/kubernetes/pkg/runtime"
 	utilconfig "k8s.io/kubernetes/pkg/util/config"
 	"k8s.io/kubernetes/pkg/util/configz"
 	"k8s.io/kubernetes/pkg/util/crypto"
@@ -74,7 +76,7 @@ import (
 	nodeutil "k8s.io/kubernetes/pkg/util/node"
 	"k8s.io/kubernetes/pkg/util/oom"
 	"k8s.io/kubernetes/pkg/util/rlimit"
-	"k8s.io/kubernetes/pkg/util/runtime"
+	utilruntime "k8s.io/kubernetes/pkg/util/runtime"
 	"k8s.io/kubernetes/pkg/util/wait"
 	"k8s.io/kubernetes/pkg/version"
 	"k8s.io/kubernetes/pkg/volume"
@@ -289,6 +291,151 @@ func UnsecuredKubeletConfig(s *options.KubeletServer) (*KubeletConfig, error) {
 	}, nil
 }
 
+// TODO(mtaufen): should probably redo this to generate clientset less often,
+// but this will suffice for now.
+func getKubeClient(s *options.KubeletServer) (*clientset.Clientset, error) {
+	clientConfig, err := CreateAPIServerClientConfig(s)
+	if err == nil {
+		kubeClient, err := clientset.NewForConfig(clientConfig)
+		if err != nil {
+			return nil, err
+		}
+		return kubeClient, nil
+	}
+	return nil, err
+}
+
+// Tries to download the KubeletConfig via the API server and returns a JSON string or error
+// Will try <node-name>-kubelet-configuration, then global-kubelet-configuration
+func getRemoteKubeletConfig(s *options.KubeletServer, kcfg *KubeletConfig) (string, error) {
+	// check API server for configs
+	// if no config via API server, or no API server, return an error
+	// else return the config you got
+
+	kubeClient, err := getKubeClient(s)
+	if err != nil {
+		return "", err
+	}
+
+	configmap, err := func() (*api.ConfigMap, error) {
+		var nodename string
+		hostname := nodeutil.GetHostname(s.HostnameOverride)
+
+		if kcfg != nil && kcfg.Cloud != nil {
+			instances, ok := kcfg.Cloud.Instances()
+			if !ok { // TODO(mtaufen): This could be a reason to try to use hostname as well
+				err = fmt.Errorf("failed to get instances from cloud provider, can't determine nodename.")
+				return nil, err
+			}
+			nodename, err = instances.CurrentNodeName(hostname)
+			if err != nil {
+				err = fmt.Errorf("error fetching current instance name from cloud provider: %v", err)
+				return nil, err
+			}
+			// look for <node-name>-kubelet-configuration
+			configmap, err := kubeClient.CoreClient.ConfigMaps("default").Get(fmt.Sprintf("%s-kubelet-configuration", nodename))
+			if err != nil {
+				return nil, err
+			}
+			return configmap, nil
+		}
+		// No cloud provider yet, so can't get the nodename via Cloud.Instances().CurrentNodeName(hostname), try just using the hostname
+		configmap, err := kubeClient.CoreClient.ConfigMaps("default").Get(fmt.Sprintf("%s-kubelet-configuration", hostname))
+		if err != nil {
+			return nil, fmt.Errorf("Cloud provider was nil, and attempt to use hostname to find config resulted in: %v", err)
+		}
+		return configmap, nil
+	}()
+	if err != nil {
+		glog.Errorf("Couldn't find node-specific Kubelet configuration for this node, trying global-kubelet-configuration. Error was %v", err)
+		configmap, err = kubeClient.CoreClient.ConfigMaps("default").Get("global-kubelet-configuration")
+		if err != nil {
+			return "", err
+		}
+	}
+
+	// When you create a configmap, put the raw bytes in a key. Then when you want it back, pull
+	// the raw bytes out from that key.
+	jsonstr, ok := configmap.Data["json"] // gimme the raw json bytes. This is by convention when you post the configmap.
+	if !ok {
+		return "", fmt.Errorf("KubeletConfiguration configmap did not contain a value with key `json`")
+	}
+	glog.Infof("Raw JSON: %v", jsonstr) // TODO(mtaufen): Remove later
+
+	return jsonstr, nil
+}
+
+// TODO(mtaufen):
+// NOTE: A configmap looks like this:
+// type ConfigMap struct {
+// 	unversioned.TypeMeta `json:",inline"`
+// 	ObjectMeta           `json:"metadata,omitempty"`
+
+// 	// Data contains the configuration data.
+// 	// Each key must be a valid DNS_SUBDOMAIN with an optional leading dot.
+// 	Data map[string]string `json:"data,omitempty"`
+// }
+
+// Just comparing against the last config map we got for now. No need to convert to the internal type
+// to do that comparison.
+func startKubeletConfigSyncLoop(s *options.KubeletServer, currentKC string) {
+	// if loose contact with API server, don't restart?
+	glog.Infof("starting loopz")
+	go func() {
+		wait.PollInfinite(10*time.Second, func() (bool, error) {
+			glog.Infof("polling from loopz")
+			remoteKC, err := getRemoteKubeletConfig(s, nil)
+			if err == nil {
+				glog.Infof("currentKC: %#v, remoteKC: %#v", currentKC, remoteKC)
+				// Detect if the config is new
+				// TODO: Just comparing json strings for now. Might make this more advanced someday.
+				if remoteKC != currentKC {
+					// There is new config, restart.
+					glog.Info("Found new config, restarting!")
+					os.Exit(0) // Use 1 or 0? Is "stale config" wrong enough to be considered an error condition
+				}
+			} else {
+				glog.Infof("Error getting config: %v", err)
+			}
+			return false, nil // Always return (false, nil) so we keep polling.
+		})
+	}()
+}
+
+// Try to check for config on the API server, return that config if we get it, and start
+// a background thread that checks for updates to configs.
+func icanhazdynamicconfigz(s *options.KubeletServer) (*componentconfig.KubeletConfiguration, error) {
+	jsonstr, err := getRemoteKubeletConfig(s, nil)
+	if err == nil {
+		// We got something from the API server. Return it.
+		// Check future API server values against most recent value from API server.
+		startKubeletConfigSyncLoop(s, jsonstr)
+		// Convert configmap from API server to external type, and convert that to internal type
+
+		// TODO(mtaufen): Make this generic to the version of the object.
+		extKC := kubeExternal.KubeletConfiguration{}
+		err := runtime.DecodeInto(api.Codecs.UniversalDecoder(), []byte(jsonstr), &extKC)
+		if err != nil {
+			return nil, err
+		}
+		glog.Infof("external type: %#v", extKC) // TODO(mtaufen): Remove later
+
+		kc := componentconfig.KubeletConfiguration{}
+		err = api.Scheme.Convert(&extKC, &kc)
+		if err != nil {
+			return nil, err
+		}
+		glog.Infof("internal type: %#v", kc) // TODO(mtaufen): Remove later
+
+		return &kc, nil
+	} else {
+		// Couldn't get something from the API server yet, return err.
+		// Restart as soon as anything comes back from the API server.
+		startKubeletConfigSyncLoop(s, "")
+		return nil, err
+	}
+}
+
 // Run runs the specified KubeletServer for the given KubeletConfig.  This should never exit.
 // The kcfg argument may be nil - if so, it is initialized from the settings on KubeletServer.
 // Otherwise, the caller is assumed to have set up the KubeletConfig object and all defaults
@@ -319,8 +466,10 @@ func run(s *options.KubeletServer, kcfg *KubeletConfig) (err error) {
 			}
 		}
 	}
-	if c, err := configz.New("componentconfig"); err == nil {
-		c.Set(s.KubeletConfiguration)
+
+	configzz, err := configz.New("componentconfig")
+	if err == nil {
+		configzz.Set(s.KubeletConfiguration)
 	} else {
 		glog.Errorf("unable to register configz: %s", err)
 	}
@@ -335,6 +484,21 @@ func run(s *options.KubeletServer, kcfg *KubeletConfig) (err error) {
 	}
 
 	if kcfg == nil {
+
+		// Look for config on the API server. If it exists, replace s.KubeletConfiguration
+		// with it and continue. This also starts the background thread that checks for new config.
+
+		// For now we only do this when kcfg is nil because we don't want
+		// to mess things up if the values in the KubeletServer and KubeletConfig
+		// passed into this function have any relationship to each other.
+		remoteKC, err := icanhazdynamicconfigz(s)
+		if err == nil {
+			// We got something from the API server, so update the config with what we got.
+			s.KubeletConfiguration = *remoteKC
+			// update configz
+			configzz.Set(s.KubeletConfiguration)
+		}
+
 		cfg, err := UnsecuredKubeletConfig(s)
 		if err != nil {
 			return err
@@ -396,7 +560,7 @@ func run(s *options.KubeletServer, kcfg *KubeletConfig) (err error) {
 		}
 	}
 
-	runtime.ReallyCrash = s.ReallyCrashForTesting
+	utilruntime.ReallyCrash = s.ReallyCrashForTesting
 	rand.Seed(time.Now().UTC().UnixNano())
 
 	// TODO(vmarmol): Do this through container config.
