@@ -61,6 +61,7 @@ import (
 	"k8s.io/kubernetes/pkg/volume"
 
 	"encoding/json"
+	"k8s.io/kubernetes/pkg/apis/componentconfig"
 	kcapiV1ALPHA1 "k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1" // TODO remane the imported-as name
 )
 
@@ -635,14 +636,20 @@ func (s *Server) getRun(request *restful.Request, response *restful.Response) {
 
 //getConfig handles config requests against the Kubelet (Warning: Alpha feature subject to change)
 func (s *Server) getConfig(request *restful.Request, response *restful.Response) {
-	config := &kcapiV1ALPHA1.KubeletConfiguration{
-		HostnameOverride: "IT WORKS!!!!!!",
-	}
+
+	// This is just to get some valid settings on the config we
+	// output to the endpoint.
+	external := &kcapiV1ALPHA1.KubeletConfiguration{}
+	internal := &componentconfig.KubeletConfiguration{}
+	final := &kcapiV1ALPHA1.KubeletConfiguration{}
+
+	api.Scheme.Convert(external, internal)
+	api.Scheme.Convert(internal, final)
 
 	// TODO: Where to get the config from?
 	// TODO: Might have to convert from sparse internal stuff
 
-	data, err := json.Marshal(config)
+	data, err := json.Marshal(final)
 	if err != nil {
 		response.WriteError(http.StatusInternalServerError, err)
 	}
