@@ -348,7 +348,7 @@ function start_kubelet {
       if [[ -n "${NET_PLUGIN}" ]]; then
         net_plugin_args="--network-plugin=${NET_PLUGIN}"
       fi
-      
+
       net_plugin_dir_args=""
       if [[ -n "${NET_PLUGIN_DIR}" ]]; then
         net_plugin_dir_args="--network-plugin-dir=${NET_PLUGIN_DIR}"
@@ -359,23 +359,30 @@ function start_kubelet {
         kubenet_plugin_args="--reconcile-cidr=true "
       fi
 
-      sudo -E "${GO_OUT}/hyperkube" kubelet ${priv_arg}\
-        --v=${LOG_LEVEL} \
-        --chaos-chance="${CHAOS_CHANCE}" \
-        --container-runtime="${CONTAINER_RUNTIME}" \
-        --rkt-path="${RKT_PATH}" \
-        --rkt-stage1-image="${RKT_STAGE1_IMAGE}" \
-        --hostname-override="${HOSTNAME_OVERRIDE}" \
-        --cloud-provider="${CLOUD_PROVIDER}" \
-        --address="${KUBELET_HOST}" \
-        --api-servers="${API_HOST}:${API_PORT}" \
-        --cpu-cfs-quota=${CPU_CFS_QUOTA} \
-        ${dns_args} \
-        ${net_plugin_dir_args} \
-        ${net_plugin_args} \
-        ${kubenet_plugin_args} \
-        --port="$KUBELET_PORT" >"${KUBELET_LOG}" 2>&1 &
+      echo "NOT DOCKERIZED!"
+
+      while true; do \
+        sudo -E "${GO_OUT}/hyperkube" kubelet ${priv_arg}\
+          --v=${LOG_LEVEL} \
+          --chaos-chance="${CHAOS_CHANCE}" \
+          --container-runtime="${CONTAINER_RUNTIME}" \
+          --rkt-path="${RKT_PATH}" \
+          --rkt-stage1-image="${RKT_STAGE1_IMAGE}" \
+          --hostname-override="${HOSTNAME_OVERRIDE}" \
+          --cloud-provider="${CLOUD_PROVIDER}" \
+          --address="${KUBELET_HOST}" \
+          --api-servers="${API_HOST}:${API_PORT}" \
+          --cpu-cfs-quota=${CPU_CFS_QUOTA} \
+          ${dns_args} \
+          ${net_plugin_dir_args} \
+          ${net_plugin_args} \
+          ${kubenet_plugin_args} \
+          --port="$KUBELET_PORT" >"${KUBELET_LOG}" 2>&1
+          echo "Kubelet exited with code $?. Restarting."
+          sleep 1
+        done &
       KUBELET_PID=$!
+      echo $KUBELET_PID
     else
       # Docker won't run a container with a cidfile (container id file)
       # unless that file does not already exist; clean up an existing
