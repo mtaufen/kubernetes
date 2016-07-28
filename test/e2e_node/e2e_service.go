@@ -105,6 +105,11 @@ func (es *e2eService) start() error {
 	if err != nil {
 		return err
 	}
+	rcs, err := es.restartOnExit(cmd)
+	if err != nil {
+		return err
+	}
+	cmd.restartCmdChans = rcs
 	es.killCmds = append(es.killCmds, cmd)
 	es.rmDirs = append(es.rmDirs, es.context.PodConfigPath)
 
@@ -349,14 +354,63 @@ func (es *e2eService) startServer(cmd *healthCheckCommand) error {
 	return fmt.Errorf("Timeout waiting for service %s", cmd)
 }
 
+func (es *e2eService) restartOnExit(k *killCmd) (*restartCmdChans, error) {
+	q := make(chan int)   // Send to this channel to stop monitoring the KubeletServer.
+	ack := make(chan int) // Recv from this channel to confirm that monitoring has stopped.
+	rcs := &restartCmdChans{
+		stopRestarting: q,
+		ackStop:        ack,
+	}
+
+	if k.cmd == nil {
+		return nil, fmt.Errorf("Cannot monitor a nil Cmd")
+	}
+	if k.cmd.Process == nil {
+		return nil, fmt.Errorf("Cannot monitor a nil Process")
+	}
+	go func() {
+		for {
+			// TODO(mtaufen): handle potential errors from Wait() and Run() more cleanly and completely
+			// handle errors
+
+			// Wait on Kubelet process here. If it exits, then we proceed.
+			_, err := k.cmd.Process.Wait()
+			if err != nil {
+				glog.Errorf("Could not wait on process: %#v, Error: %v", k.cmd.Process, err)
+			}
+
+			select {
+			case <-q:
+				ack <- 0
+				return
+			default:
+				// We only get here if the Kubelet died, restart it.
+				// Run the command
+				err := k.cmd.Run() // TODO(mtaufen): What should I do when this fails? Keep trying to restart? Meter the attempt rate?
+				if err != nil {
+					glog.Errorf("Could not restart Cmd: %#v, Error: %v", k.cmd, err)
+				}
+
+			}
+		}
+	}()
+	return rcs, nil
+}
+
 // killCmd is a struct to kill a given cmd. The cmd member specifies a command
 // to find the pid of and attempt to kill.
 // If the override field is set, that will be used instead to kill the command.
 // name is only used for logging
 type killCmd struct {
-	name     string
-	cmd      *exec.Cmd
-	override *exec.Cmd
+	name            string
+	cmd             *exec.Cmd
+	override        *exec.Cmd
+	restartCmdChans *restartCmdChans
+}
+
+type restartCmdChans struct {
+	stopRestarting chan int
+	ackStop        chan int
 }
 
 func (k *killCmd) Kill() error {
@@ -378,6 +432,12 @@ func (k *killCmd) Kill() error {
 	pid := cmd.Process.Pid
 	if pid <= 1 {
 		return fmt.Errorf("invalid PID %d for %s", pid, name)
+	}
+
+	// Stop any restart loops prior to trying to shut down the process.
+	if k.restartCmdChans != nil {
+		k.restartCmdChans.stopRestarting <- 0
+		<-k.restartCmdChans.ackStop
 	}
 
 	// Attempt to shut down the process in a friendly manner before forcing it.
