@@ -363,7 +363,7 @@ function start_kubelet {
       if [[ -n "${NET_PLUGIN}" ]]; then
         net_plugin_args="--network-plugin=${NET_PLUGIN}"
       fi
-      
+
       net_plugin_dir_args=""
       if [[ -n "${NET_PLUGIN_DIR}" ]]; then
         net_plugin_dir_args="--network-plugin-dir=${NET_PLUGIN_DIR}"
@@ -374,7 +374,10 @@ function start_kubelet {
         kubenet_plugin_args="--reconcile-cidr=true "
       fi
 
-      sudo -E "${GO_OUT}/hyperkube" kubelet ${priv_arg}\
+      echo "NOT DOCKERIZED!"
+
+      while true; do \
+        sudo -E "${GO_OUT}/hyperkube" kubelet ${priv_arg}\
         --v=${LOG_LEVEL} \
         --chaos-chance="${CHAOS_CHANCE}" \
         --container-runtime="${CONTAINER_RUNTIME}" \
@@ -390,15 +393,19 @@ function start_kubelet {
         ${net_plugin_dir_args} \
         ${net_plugin_args} \
         ${kubenet_plugin_args} \
-        --port="$KUBELET_PORT" >"${KUBELET_LOG}" 2>&1 &
+        --port="$KUBELET_PORT" >"${KUBELET_LOG}" 2>&1
+          echo "Kubelet exited with code $?. Restarting."
+          sleep 1
+        done &
       KUBELET_PID=$!
+      echo $KUBELET_PID
     else
       # Docker won't run a container with a cidfile (container id file)
       # unless that file does not already exist; clean up an existing
       # dockerized kubelet that might be running.
       cleanup_dockerized_kubelet
       cred_bind=""
-      # path to cloud credentails. 
+      # path to cloud credentails.
       cloud_cred=""
       if [ "${CLOUD_PROVIDER}" == "aws" ]; then
           cloud_cred="${HOME}/.aws/credentials"
