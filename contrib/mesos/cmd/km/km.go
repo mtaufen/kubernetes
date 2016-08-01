@@ -27,12 +27,16 @@ func main() {
 		Long: "This is an all-in-one binary that can run any of the various Kubernetes-Mesos servers.",
 	}
 
+	hk.AddServer(NewKubectlServer())
 	hk.AddServer(NewKubeAPIServer())
-	hk.AddServer(NewControllerManager())
+	hk.AddServer(NewKubeControllerManager())
 	hk.AddServer(NewScheduler())
-	hk.AddServer(NewKubeletExecutor())
+	hk.AddServer(NewKubelet())
 	hk.AddServer(NewKubeProxy())
-	hk.AddServer(NewMinion())
+
+	//Federation servers
+	hk.AddServer(NewFederationAPIServer())
+	hk.AddServer(NewFederationCMServer())
 
 	hk.RunToExit(os.Args)
 }
