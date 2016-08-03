@@ -305,8 +305,7 @@ func getKubeClient(s *options.KubeletServer) (*clientset.Clientset, error) {
 	return nil, err
 }
 
-// Tries to download the KubeletConfig via the API server and returns a JSON string or error
-// Will try <node-name>-kubelet-configuration, then global-kubelet-configuration
+// Tries to download the <node-name>-kubelet-configuration via the API server and returns a JSON string or error
 func getRemoteKubeletConfig(s *options.KubeletServer, kcfg *KubeletConfig) (string, error) {
 	// check API server for configs
 	// if no config via API server, or no API server, return an error
@@ -347,11 +346,7 @@ func getRemoteKubeletConfig(s *options.KubeletServer, kcfg *KubeletConfig) (stri
 		return configmap, nil
 	}()
 	if err != nil {
-		glog.Errorf("Couldn't find node-specific Kubelet configuration for this node, trying global-kubelet-configuration. Error was %v", err)
-		configmap, err = kubeClient.CoreClient.ConfigMaps("default").Get("global-kubelet-configuration")
-		if err != nil {
-			return "", err
-		}
+		return "", err
 	}
 
 	// When you create a configmap, put the raw bytes in a key. Then when you want it back, pull
