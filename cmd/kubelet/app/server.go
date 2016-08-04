@@ -307,10 +307,6 @@ func getKubeClient(s *options.KubeletServer) (*clientset.Clientset, error) {
 
 // Tries to download the <node-name>-kubelet-configuration via the API server and returns a JSON string or error
 func getRemoteKubeletConfig(s *options.KubeletServer, kcfg *KubeletConfig) (string, error) {
-	// check API server for configs
-	// if no config via API server, or no API server, return an error
-	// else return the config you got
-
 	kubeClient, err := getKubeClient(s)
 	if err != nil {
 		return "", err
@@ -341,7 +337,7 @@ func getRemoteKubeletConfig(s *options.KubeletServer, kcfg *KubeletConfig) (stri
 		// No cloud provider yet, so can't get the nodename via Cloud.Instances().CurrentNodeName(hostname), try just using the hostname
 		configmap, err := kubeClient.CoreClient.ConfigMaps("default").Get(fmt.Sprintf("%s-kubelet-configuration", hostname))
 		if err != nil {
-			return nil, fmt.Errorf("Cloud provider was nil, and attempt to use hostname to find config resulted in: %v", err)
+			return nil, fmt.Errorf("cloud provider was nil, and attempt to use hostname to find config resulted in: %v", err)
 		}
 		return configmap, nil
 	}()
@@ -349,82 +345,66 @@ func getRemoteKubeletConfig(s *options.KubeletServer, kcfg *KubeletConfig) (stri
 		return "", err
 	}
 
-	// When you create a configmap, put the raw bytes in a key. Then when you want it back, pull
-	// the raw bytes out from that key.
-	jsonstr, ok := configmap.Data["json"] // gimme the raw json bytes. This is by convention when you post the configmap.
+	// When you create the KubeletConfiguration configmap, put the json representation of the config in a `json` key.
+	// Then when you we it back, we pull the string from that key.
+	jsonstr, ok := configmap.Data["json"]
 	if !ok {
 		return "", fmt.Errorf("KubeletConfiguration configmap did not contain a value with key `json`")
 	}
-	glog.Infof("Raw JSON: %v", jsonstr) // TODO(mtaufen): Remove later
 
 	return jsonstr, nil
 }
-
-// TODO(mtaufen):
-// NOTE: A configmap looks like this:
-// type ConfigMap struct {
-// 	unversioned.TypeMeta `json:",inline"`
-// 	ObjectMeta           `json:"metadata,omitempty"`
-
-// 	// Data contains the configuration data.
-// 	// Each key must be a valid DNS_SUBDOMAIN with an optional leading dot.
-// 	Data map[string]string `json:"data,omitempty"`
-// }
 
 // Just comparing against the last config map we got for now. No need to convert to the internal type
 // to do that comparison.
 func startKubeletConfigSyncLoop(s *options.KubeletServer, currentKC string) {
 	// if loose contact with API server, don't restart?
-	glog.Infof("starting loopz")
+	glog.Infof("Starting Kubelet configuration sync loop")
 	go func() {
 		wait.PollInfinite(10*time.Second, func() (bool, error) {
-			glog.Infof("polling from loopz")
+			glog.Infof("Checking API server for new Kubelet configuration.")
 			remoteKC, err := getRemoteKubeletConfig(s, nil)
 			if err == nil {
-				glog.Infof("currentKC: %#v, remoteKC: %#v", currentKC, remoteKC)
 				// Detect if the config is new
-				// TODO: Just comparing json strings for now. Might make this more advanced someday.
+				// TODO(mtaufen): Just comparing json strings for now. Might make this more advanced someday.
+				//                But this is a nice, simple, fast way to do it for now.
 				if remoteKC != currentKC {
-					// There is new config, restart.
-					glog.Info("Found new config, restarting!")
-					os.Exit(0) // Use 1 or 0? Is "stale config" wrong enough to be considered an error condition
+					glog.Info("Found new Kubelet configuration via API server, restarting!")
+					os.Exit(0) // TODO(mtaufen): Use 1 or 0? Is "stale config" wrong enough to be considered an error condition?
 				}
 			} else {
-				glog.Infof("Error getting config: %v", err)
+				glog.Infof("Did not find a configuration for this Kubelet via API server: %v", err)
 			}
-			return false, nil // Always return (false, nil) so we keep polling.
+			return false, nil // Always return (false, nil) so we poll forever.
 		})
 	}()
 }
 
 // Try to check for config on the API server, return that config if we get it, and start
 // a background thread that checks for updates to configs.
-func icanhazdynamicconfigz(s *options.KubeletServer) (*componentconfig.KubeletConfiguration, error) {
+func initKubeletConfigSync(s *options.KubeletServer) (*componentconfig.KubeletConfiguration, error) {
 	jsonstr, err := getRemoteKubeletConfig(s, nil)
 	if err == nil {
-		// We got something from the API server. Return it.
-		// Check future API server values against most recent value from API server.
+		// We got a configuration from the API server.
+		// We will compare future API server config against the config we just got (jsonstr):
 		startKubeletConfigSyncLoop(s, jsonstr)
-		// Convert configmap from API server to external type, and convert that to internal type
 
-		// TODO(mtaufen): Make this generic to the version of the object.
+		// Convert json from API server to external type struct, and convert that to internal type struct
+		// TODO(mtaufen): Make this generic to the version of the object. Presently, kubeExternal
+		// is the v1alpha1 version.
 		extKC := kubeExternal.KubeletConfiguration{}
 		err := runtime.DecodeInto(api.Codecs.UniversalDecoder(), []byte(jsonstr), &extKC)
 		if err != nil {
 			return nil, err
 		}
-		glog.Infof("external type: %#v", extKC) // TODO(mtaufen): Remove later
-
 		kc := componentconfig.KubeletConfiguration{}
 		err = api.Scheme.Convert(&extKC, &kc)
 		if err != nil {
 			return nil, err
 		}
-		glog.Infof("internal type: %#v", kc) // TODO(mtaufen): Remove later
-
 		return &kc, nil
 	} else {
-		// Couldn't get something from the API server yet, return err.
+		// Couldn't get a configuration from the API server yet.
 		// Restart as soon as anything comes back from the API server.
 		startKubeletConfigSyncLoop(s, "")
 		return nil, err
@@ -462,11 +442,11 @@ func run(s *options.KubeletServer, kcfg *KubeletConfig) (err error) {
 		}
 	}
 
-	configzz, err := configz.New("componentconfig")
+	cfgz, err := configz.New("componentconfig")
 	if err == nil {
 		tmp := kubeExternal.KubeletConfiguration{}
 		api.Scheme.Convert(&s.KubeletConfiguration, &tmp)
-		configzz.Set(tmp)
+		cfgz.Set(tmp)
 	} else {
 		glog.Errorf("unable to register configz: %s", err)
 	}
@@ -483,19 +463,20 @@ func run(s *options.KubeletServer, kcfg *KubeletConfig) (err error) {
 	if kcfg == nil {
 
 		// Look for config on the API server. If it exists, replace s.KubeletConfiguration
-		// with it and continue. This also starts the background thread that checks for new config.
+		// with it and continue. initKubeletConfigSync also starts the background thread that checks for new config.
 
 		// For now we only do this when kcfg is nil because we don't want
 		// to mess things up if the values in the KubeletServer and KubeletConfig
 		// passed into this function have any relationship to each other.
-		remoteKC, err := icanhazdynamicconfigz(s)
+		remoteKC, err := initKubeletConfigSync(s)
 		if err == nil {
 			// We got something from the API server, so update the config with what we got.
+			// Make sure we expose the external type.
 			s.KubeletConfiguration = *remoteKC
 			tmp := kubeExternal.KubeletConfiguration{}
 			api.Scheme.Convert(&s.KubeletConfiguration, &tmp)
 			// update configz
-			configzz.Set(tmp)
+			cfgz.Set(tmp)
 		}
 
 		cfg, err := UnsecuredKubeletConfig(s)
