@@ -464,7 +464,9 @@ func run(s *options.KubeletServer, kcfg *KubeletConfig) (err error) {
 
 	configzz, err := configz.New("componentconfig")
 	if err == nil {
-		configzz.Set(s.KubeletConfiguration)
+		tmp := kubeExternal.KubeletConfiguration{}
+		api.Scheme.Convert(&s.KubeletConfiguration, &tmp)
+		configzz.Set(tmp)
 	} else {
 		glog.Errorf("unable to register configz: %s", err)
 	}
@@ -490,8 +492,10 @@ func run(s *options.KubeletServer, kcfg *KubeletConfig) (err error) {
 		if err == nil {
 			// We got something from the API server, so update the config with what we got.
 			s.KubeletConfiguration = *remoteKC
+			tmp := kubeExternal.KubeletConfiguration{}
+			api.Scheme.Convert(&s.KubeletConfiguration, &tmp)
 			// update configz
-			configzz.Set(s.KubeletConfiguration)
+			configzz.Set(tmp)
 		}
 
 		cfg, err := UnsecuredKubeletConfig(s)
