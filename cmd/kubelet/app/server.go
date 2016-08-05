@@ -345,11 +345,11 @@ func getRemoteKubeletConfig(s *options.KubeletServer, kcfg *KubeletConfig) (stri
 		return "", err
 	}
 
-	// When you create the KubeletConfiguration configmap, put the json representation of the config in a `json` key.
+	// When you create the KubeletConfiguration configmap, put a json string representation of the config in a `kubelet.config` key.
 	// Then when you we it back, we pull the string from that key.
-	jsonstr, ok := configmap.Data["json"]
+	jsonstr, ok := configmap.Data["kubelet.config"]
 	if !ok {
-		return "", fmt.Errorf("KubeletConfiguration configmap did not contain a value with key `json`")
+		return "", fmt.Errorf("KubeletConfiguration configmap did not contain a value with key `kubelet.config`")
 	}
 
 	return jsonstr, nil
