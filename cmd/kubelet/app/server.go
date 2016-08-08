@@ -318,7 +318,7 @@ func getRemoteKubeletConfig(s *options.KubeletServer, kcfg *KubeletConfig) (stri
 
 		if kcfg != nil && kcfg.Cloud != nil {
 			instances, ok := kcfg.Cloud.Instances()
-			if !ok { // TODO(mtaufen): This could be a reason to try to use hostname as well
+			if !ok {
 				err = fmt.Errorf("failed to get instances from cloud provider, can't determine nodename.")
 				return nil, err
 			}
@@ -328,14 +328,14 @@ func getRemoteKubeletConfig(s *options.KubeletServer, kcfg *KubeletConfig) (stri
 				return nil, err
 			}
 			// look for <node-name>-kubelet-configuration
-			configmap, err := kubeClient.CoreClient.ConfigMaps("default").Get(fmt.Sprintf("%s-kubelet-configuration", nodename))
+			configmap, err := kubeClient.CoreClient.ConfigMaps("kube-system").Get(fmt.Sprintf("%s-kubelet-configuration", nodename))
 			if err != nil {
 				return nil, err
 			}
 			return configmap, nil
 		}
 		// No cloud provider yet, so can't get the nodename via Cloud.Instances().CurrentNodeName(hostname), try just using the hostname
-		configmap, err := kubeClient.CoreClient.ConfigMaps("default").Get(fmt.Sprintf("%s-kubelet-configuration", hostname))
+		configmap, err := kubeClient.CoreClient.ConfigMaps("kube-system").Get(fmt.Sprintf("%s-kubelet-configuration", hostname))
 		if err != nil {
 			return nil, fmt.Errorf("cloud provider was nil, and attempt to use hostname to find config resulted in: %v", err)
 		}
@@ -345,8 +345,8 @@ func getRemoteKubeletConfig(s *options.KubeletServer, kcfg *KubeletConfig) (stri
 		return "", err
 	}
 
-	// When you create the KubeletConfiguration configmap, put a json string representation of the config in a `kubelet.config` key.
-	// Then when you we it back, we pull the string from that key.
+	// When we create the KubeletConfiguration configmap, we put a json string
+	// representation of the config in a `kubelet.config` key.
 	jsonstr, ok := configmap.Data["kubelet.config"]
 	if !ok {
 		return "", fmt.Errorf("KubeletConfiguration configmap did not contain a value with key `kubelet.config`")
