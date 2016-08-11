@@ -465,19 +465,23 @@ func run(s *options.KubeletServer, kcfg *KubeletConfig) (err error) {
 		// Look for config on the API server. If it exists, replace s.KubeletConfiguration
 		// with it and continue. initKubeletConfigSync also starts the background thread that checks for new config.
 
-		// For now we only do this when kcfg is nil because we don't want
-		// to mess things up if the values in the KubeletServer and KubeletConfig
-		// passed into this function have any relationship to each other.
-		remoteKC, err := initKubeletConfigSync(s)
-		if err == nil {
-			// We got something from the API server, so update the config with what we got.
-			// Make sure we expose the external type.
-			s.KubeletConfiguration = *remoteKC
-			tmp := kubeExternal.KubeletConfiguration{}
-			api.Scheme.Convert(&s.KubeletConfiguration, &tmp)
-			// update configz
-			cfgz.Set(tmp)
+		// Don't do dynamic Kubelet configuration in runonce mode
+		if s.RunOnce == false {
+			// For now we only do this when kcfg is nil because we don't want
+			// to mess things up if the values in the KubeletServer and KubeletConfig
+			// passed into this function have any relationship to each other.
+			remoteKC, err := initKubeletConfigSync(s)
+			if err == nil {
+				// We got something from the API server, so update the config with what we got.
+				// Make sure we expose the external type.
+				s.KubeletConfiguration = *remoteKC
+			}
 		}
+
+		// update configz with whatever will be used for config
+		tmp := kubeExternal.KubeletConfiguration{}
+		api.Scheme.Convert(&s.KubeletConfiguration, &tmp)
+		cfgz.Set(tmp)
 
 		cfg, err := UnsecuredKubeletConfig(s)
 		if err != nil {
