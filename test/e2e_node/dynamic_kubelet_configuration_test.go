@@ -59,7 +59,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Disruptive]", func(
 
 			resp := pollConfigz(2*time.Minute, 5*time.Second)
 			glog.Infof("Response was: %+v", resp)
-			kubeCfg, err := decodeResponse(resp)
+			kubeCfg, err := decodeConfigz(resp)
 			if err != nil {
 				glog.Fatalf("Failed to decode response from /configz, err: %v", err)
 			}
@@ -84,7 +84,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Disruptive]", func(
 
 			// Poll the configz endpoint to get the new config.
 			resp = pollConfigz(2*time.Minute, 5*time.Second)
-			kubeCfg, err = decodeResponse(resp)
+			kubeCfg, err = decodeConfigz(resp)
 			if err != nil {
 				glog.Fatalf("Failed to decode response from /configz, err: %v", err)
 			}
@@ -134,8 +134,16 @@ func pollConfigz(timeout time.Duration, pollInterval time.Duration) *http.Respon
 
 // Decodes the http response and returns a componentconfig.KubeletConfiguration (internal type)
 // Causes the test to fail if it encounters a problem.
-func decodeResponse(resp *http.Response) (*componentconfig.KubeletConfiguration, error) {
-	kubeCfgExt := v1alpha1.KubeletConfiguration{}
+func decodeConfigz(resp *http.Response) (*componentconfig.KubeletConfiguration, error) {
+
+	// TODO(mtaufen): Clean up this hacky decoding.
+
+	// This hack because /configz reports {"componentconfig": {the JSON representation of v1alpha1.KubeletConfiguration}}
+	type componentconfigWrapper struct {
+		ComponentConfig v1alpha1.KubeletConfiguration `json:"componentconfig"`
+	}
+
+	configz := componentconfigWrapper{}
 	kubeCfg := componentconfig.KubeletConfiguration{}
 
 	contentsBytes, err := ioutil.ReadAll(resp.Body)
@@ -145,14 +153,15 @@ func decodeResponse(resp *http.Response) (*componentconfig.KubeletConfiguration,
 	contents := string(contentsBytes)
 	glog.Infof("Contents: %v", contents)
 	decoder := json.NewDecoder(strings.NewReader(contents))
-	err = decoder.Decode(&kubeCfgExt)
+	err = decoder.Decode(&configz) // TODO(mtaufen): This decoder ain't working properly. "Downloaded this..." is reporting nil and 0s.....
+	//                 I think this might be because json coming down looks like Contents: {"componentconfig":{  and we want what's in here!
 	if err != nil {
 		return nil, err
 	}
 
-	glog.Infof("Downloaded this configuration: %+v", kubeCfgExt)
+	glog.Infof("Downloaded this configz: %+v", configz)
 
-	err = api.Scheme.Convert(&kubeCfgExt, &kubeCfg)
+	err = api.Scheme.Convert(&configz.ComponentConfig, &kubeCfg)
 	if err != nil {
 		return nil, err
 	}
