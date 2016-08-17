@@ -22,7 +22,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	// "strconv"
-	"strings"
+	// "strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -63,6 +63,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Disruptive]", func(
 			if err != nil {
 				glog.Fatalf("Failed to decode response from /configz, err: %v", err)
 			}
+			glog.Infof("And the first one came out like this: %+v", *kubeCfg)
 
 			// TODO: Might be best to just create a spurrious node label and see if it shows up.
 			// Change a safe value e.g. file check frequency. And make sure we're actually providing a new value
@@ -88,6 +89,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Disruptive]", func(
 			if err != nil {
 				glog.Fatalf("Failed to decode response from /configz, err: %v", err)
 			}
+			glog.Infof("And the second one came out like this: %+v", *kubeCfg)
 
 			// We expect to see the value that we just set in the new config.
 			Expect(kubeCfg.FileCheckFrequency.Duration).To(Equal(newFileCheckFrequency))
@@ -139,11 +141,11 @@ func decodeConfigz(resp *http.Response) (*componentconfig.KubeletConfiguration, 
 	// TODO(mtaufen): Clean up this hacky decoding.
 
 	// This hack because /configz reports {"componentconfig": {the JSON representation of v1alpha1.KubeletConfiguration}}
-	type componentconfigWrapper struct {
+	type configzWrapper struct {
 		ComponentConfig v1alpha1.KubeletConfiguration `json:"componentconfig"`
 	}
 
-	configz := componentconfigWrapper{}
+	configz := configzWrapper{}
 	kubeCfg := componentconfig.KubeletConfiguration{}
 
 	contentsBytes, err := ioutil.ReadAll(resp.Body)
@@ -152,9 +154,11 @@ func decodeConfigz(resp *http.Response) (*componentconfig.KubeletConfiguration, 
 	}
 	contents := string(contentsBytes)
 	glog.Infof("Contents: %v", contents)
-	decoder := json.NewDecoder(strings.NewReader(contents))
-	err = decoder.Decode(&configz) // TODO(mtaufen): This decoder ain't working properly. "Downloaded this..." is reporting nil and 0s.....
+	// decoder := json.NewDecoder(strings.NewReader(contents))
+	// err = decoder.Decode(&configz) // TODO(mtaufen): This decoder ain't working properly. "Downloaded this..." is reporting nil and 0s.....
 	//                 I think this might be because json coming down looks like Contents: {"componentconfig":{  and we want what's in here!
+
+	err = json.Unmarshal(contentsBytes, &configz)
 	if err != nil {
 		return nil, err
 	}
@@ -165,6 +169,8 @@ func decodeConfigz(resp *http.Response) (*componentconfig.KubeletConfiguration, 
 	if err != nil {
 		return nil, err
 	}
+	glog.Infof("Converted to internal type with this result: %+v", kubeCfg)
+
 	return &kubeCfg, nil
 }
 
@@ -172,7 +178,7 @@ func decodeConfigz(resp *http.Response) (*componentconfig.KubeletConfiguration, 
 // create it in the "kube-system" namespace for you
 func createConfigMap(f *framework.Framework, kubeCfg *componentconfig.KubeletConfiguration) (*api.ConfigMap, error) {
 	kubeCfgExt := v1alpha1.KubeletConfiguration{}
-	api.Scheme.Convert(&kubeCfg, &kubeCfgExt)
+	api.Scheme.Convert(kubeCfg, &kubeCfgExt)
 	glog.Infof("About to create this configuration: %+v", kubeCfgExt)
 	bytes, err := json.Marshal(kubeCfgExt)
 	if err != nil {
@@ -195,7 +201,7 @@ func createConfigMap(f *framework.Framework, kubeCfg *componentconfig.KubeletCon
 
 func updateConfigMap(f *framework.Framework, kubeCfg *componentconfig.KubeletConfiguration) (*api.ConfigMap, error) {
 	kubeCfgExt := v1alpha1.KubeletConfiguration{}
-	api.Scheme.Convert(&kubeCfg, &kubeCfgExt)
+	api.Scheme.Convert(kubeCfg, &kubeCfgExt)
 	glog.Infof("About to update this configuration: %+v", kubeCfgExt)
 	bytes, err := json.Marshal(kubeCfgExt)
 	if err != nil {
