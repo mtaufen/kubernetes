@@ -332,7 +332,7 @@ func (es *e2eService) startServer(cmd *healthCheckCommand) error {
 		cmd.Cmd.SysProcAttr = attrs
 
 		// Run the command
-		err = cmd.Run()
+		err = cmd.Start()
 		if err != nil {
 			cmdErrorChan <- fmt.Errorf("%s Failed with error \"%v\".  Output written to: %s", cmd, err, outPath)
 			return
@@ -342,8 +342,10 @@ func (es *e2eService) startServer(cmd *healthCheckCommand) error {
 	endTime := time.Now().Add(*serverStartTimeout)
 	for endTime.After(time.Now()) {
 		select {
-		case err := <-cmdErrorChan:
-			return err
+		// TODO(mtaufen): Now that we're using cmd.Start(), had to comment this out to prevent
+		//                a read from a closed channel (cmdErrorChan).
+		// case err := <-cmdErrorChan:
+		// 	return err
 		case <-time.After(time.Second):
 			resp, err := http.Get(cmd.HealthCheckUrl)
 			if err == nil && resp.StatusCode == http.StatusOK {
@@ -363,7 +365,7 @@ func (es *e2eService) restartOnExit(k *killCmd) (*restartCmdChans, error) {
 	}
 
 	if k.cmd == nil {
-		return nil, fmt.Errorf("Cannot monitor a nil Cmd")
+		return nil, fmt.Errorf("Cannot monitor a nil cmd")
 	}
 	if k.cmd.Process == nil {
 		return nil, fmt.Errorf("Cannot monitor a nil Process")
@@ -373,11 +375,21 @@ func (es *e2eService) restartOnExit(k *killCmd) (*restartCmdChans, error) {
 			// TODO(mtaufen): handle potential errors from Wait() and Run() more cleanly and completely
 			// handle errors
 
-			// Wait on Kubelet process here. If it exits, then we proceed.
-			_, err := k.cmd.Process.Wait()
+			// Wait on Kubelet cmd here. If it exits, then we proceed.
+			// TODO(mtaufen): Might be able to use cmd.Process.Wait() to get around the
+			//                "wait already called" issue. Ultimately, cmd.Process.Wait()
+			//                relies on the wait4 syscall, and I haven't looked deep enough
+			//                to figure out if you can only do one of those on a given process.
+			err := k.cmd.Wait()
 			if err != nil {
+				// TODO(mtaufen): I'm getting a ton of "could not wait on process". Why? A TON means it
+				//                is either because the restart isn't working or isn't being reached.
+				//                It's being reached but it's not working. The last thing in the Kubelet log
+				//                is that the Kubelet saw a new configuration on the API server.
+				//                The test somehow gets another poll in to the Kubelet... even though no new logs.
 				glog.Errorf("Could not wait on process: %#v, Error: %v", k.cmd.Process, err)
 			}
+			time.Sleep(1 * time.Second) // TODO(mtaufen): Wait 10 seconds before restarting the Kubelet
 
 			select {
 			case <-q:
@@ -385,10 +397,42 @@ func (es *e2eService) restartOnExit(k *killCmd) (*restartCmdChans, error) {
 				return
 			default:
 				// We only get here if the Kubelet died, restart it.
-				// Run the command
-				err := k.cmd.Run() // TODO(mtaufen): What should I do when this fails? Keep trying to restart? Meter the attempt rate?
+				// Need to create a new Cmd object to call Start again,
+				// because this Cmd thinks it was already started.
+
+				// TODO(mtaufen): And we probably want to add the healthz check to this as well
+
+				// TODO(mtaufen): Find a better way to copy this?
+				// Only need to copy the following to restart Kubelet, will need
+				// to investigate other functions (e.g. startEtcd) to see if additional
+				// things need to be copied:
+				// Path - set by exec.Command
+				// Args - set by exec.Command
+				// Stderr - set by startServer
+				// Stdout - set by startServer
+				// SysProcAttr - set by startServer
+				// TODO(mtaufen): Might need to copy more things e.g. Dir, if we want this to work
+				//                for more than just Kubelet
+
+				glog.Infof("Kubelet exited with state: %s, restarting cmd: %+v.", k.cmd.ProcessState.String(), k.cmd)
+
+				k.cmd = &exec.Cmd{
+					Path:        k.cmd.Path,
+					Args:        k.cmd.Args,
+					Env:         k.cmd.Env,
+					Stdout:      k.cmd.Stdout,
+					Stderr:      k.cmd.Stderr,
+					SysProcAttr: k.cmd.SysProcAttr, // TODO(mtaufen): Maybe try &syscall.SysProcAttr{}?
+				}
+
+				// TODO(mtaufen): It's exiting poorly because we're pushing a bad config in the test.
+				// I think. We're pulling down a configuration with legit values, but they are falling
+				// to defaults somewhere before we get it into an actual go struct.
+
+				// Start the command
+				err := k.cmd.Start() // TODO(mtaufen): What should I do when this fails? Keep trying to restart? For now a failed restart is fatal.
 				if err != nil {
-					glog.Errorf("Could not restart Cmd: %#v, Error: %v", k.cmd, err)
+					glog.Fatalf("Could not restart Cmd: %#v, Error: %v", k.cmd, err)
 				}
 
 			}
@@ -437,7 +481,7 @@ func (k *killCmd) Kill() error {
 	// Stop any restart loops prior to trying to shut down the process.
 	if k.restartCmdChans != nil {
 		k.restartCmdChans.stopRestarting <- 0
-		<-k.restartCmdChans.ackStop
+		<-k.restartCmdChans.ackStop // TODO(mtaufen): Need to wait on the ack after trying to kill the
 	}
 
 	// Attempt to shut down the process in a friendly manner before forcing it.

@@ -145,7 +145,8 @@ func decodeResponse(resp *http.Response) (*componentconfig.KubeletConfiguration,
 	contents := string(contentsBytes)
 	glog.Infof("Contents: %v", contents)
 	decoder := json.NewDecoder(strings.NewReader(contents))
-	err = decoder.Decode(&kubeCfgExt)
+	err = decoder.Decode(&kubeCfgExt) // TODO(mtaufen): This decoder ain't working properly. "Downloaded this..." is reporting nil and 0s.....
+	//                 I think this might be because json coming down looks like Contents: {"componentconfig":{  and we want what's in here!
 	if err != nil {
 		return nil, err
 	}
