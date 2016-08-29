@@ -344,6 +344,7 @@ func DeepCopy_componentconfig_KubeletConfiguration(in interface{}, out interface
 		} else {
 			out.AllowedUnsafeSysctls = nil
 		}
+		out.KubeletConfigFile = in.KubeletConfigFile
 		return nil
 	}
 }

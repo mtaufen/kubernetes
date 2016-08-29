@@ -421,6 +421,9 @@ type KubeletConfiguration struct {
 	IPTablesDropBit int32 `json:"iptablesDropBit"`
 	// Whitelist of unsafe sysctls or sysctl patterns (ending in *).
 	AllowedUnsafeSysctls []string `json:"experimentalAllowedUnsafeSysctls,omitempty"`
+	// Path to a JSON file that contains a serialized representation of the external KubeletConfiguration type.
+	// If it exists, this file will be prioritized over flags as the source of KubeletConfiguration.
+	KubeletConfigFile string `json:"kubeletConfigFile"`
 }
 
 type KubeSchedulerConfiguration struct {

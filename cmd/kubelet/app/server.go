@@ -160,6 +160,32 @@ func getKubeClient(s *options.KubeletServer) (*clientset.Clientset, error) {
 	return nil, err
 }
 
+// Takes a path to a JSON file containing a serialized representation of the external KubeletConfiguration type, and
+// either deserializes and converts the data into the returned internal KubeletConfiguration struct, or returns an error.
+func loadKubeletConfigFile(path string) (*componentconfig.KubeletConfiguration, error) {
+	// TODO(mtaufen): Absolute vs relative paths? For now will require absolute path to file.
+	//                I am not sure what a relative path would be relative to yet.
+
+	// path -> loaded bytes
+	bytes, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	// bytes -> external type struct
+	extKC := v1alpha1.KubeletConfiguration{}
+	err = runtime.DecodeInto(api.Codecs.UniversalDecoder(), bytes, &extKC)
+	if err != nil {
+		return nil, err
+	}
+	// external type struct -> internal type struct
+	kc := componentconfig.KubeletConfiguration{}
+	err = api.Scheme.Convert(&extKC, &kc, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &kc, nil
+}
+
 // Tries to download the kubelet-<node-name> configmap from "kube-system" namespace via the API server and returns a JSON string or error
 func getRemoteKubeletConfig(s *options.KubeletServer, kubeDeps *kubelet.KubeletDeps) (string, error) {
 	// TODO(mtaufen): should probably cache clientset and pass into this function rather than regenerate on every request
@@ -335,6 +361,20 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.KubeletDeps) (err error) {
 					glog.Errorf("was unable to register configz before due to %s, will not be able to set now", cfgzErr)
 				} else {
 					setConfigz(cfgz, &s.KubeletConfiguration)
+				}
+			} else if s.KubeletConfigFile != "" {
+				localKC, err := loadKubeletConfigFile(s.KubeletConfigFile)
+				if err == nil {
+					// Update s (KubeletServer) with new config from disk
+					s.KubeletConfiguration = *localKC
+					// Ensure that /configz is up to date with the new config
+					if cfgzErr != nil {
+						glog.Errorf("was unable to register configz before due to %s, will not be able to set now", cfgzErr)
+					} else {
+						setConfigz(cfgz, &s.KubeletConfiguration)
+					}
+				} else {
+					glog.Errorf("unable to load KubeletConfigFile from path: %s, error: %v", s.KubeletConfigFile, err)
 				}
 			}
 		}

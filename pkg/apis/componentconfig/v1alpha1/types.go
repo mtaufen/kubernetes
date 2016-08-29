@@ -477,4 +477,7 @@ type KubeletConfiguration struct {
 	// Whitelist of unsafe sysctls or sysctl patterns (ending in *). Use these at your own risk.
 	// Resource isolation might be lacking and pod might influence each other on the same node.
 	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls,omitempty"`
+	// Path to a JSON file that contains a serialized representation of the external KubeletConfiguration type.
+	// If it exists, this file will be prioritized over flags as the source of KubeletConfiguration.
+	KubeletConfigFile string `json:"kubeletConfigFile"`
 }
