@@ -376,6 +376,7 @@ func (es *e2eService) startKubeletServer() (*server, error) {
 		"--eviction-hard", framework.TestContext.EvictionHard,
 		"--eviction-pressure-transition-period", "30s",
 		"--feature-gates", "DynamicKubeletConfig=true", // TODO(mtaufen): Eventually replace with a value from the framework.TestContext
+		"--kubelet-config-file", "/tmp/kubeletconfig/testfile.json",
 	)
 	if framework.TestContext.CgroupsPerQOS {
 		// TODO: enable this when the flag is stable and available in kubelet.
