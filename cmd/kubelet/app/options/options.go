@@ -78,6 +78,9 @@ func NewKubeletServer() *KubeletServer {
 
 // AddFlags adds flags for a specific KubeletServer to the specified FlagSet
 func (s *KubeletServer) AddFlags(fs *pflag.FlagSet) {
+	// TODO(#34726:1.6.0): Remove the opt-in for failing when swap is enabled.
+	fs.BoolVar(&s.FailSwapOn, "fail-swap-on", s.FailSwapOn, "Makes the Kubelet fail to start if swap is enabled on the node. This is a temporary opton to maintain legacy behavior, and will be removed in v1.6.0.")
+
 	fs.Var(&s.KubeConfig, "kubeconfig", "Path to a kubeconfig file, specifying how to connect to the API server. --api-servers will be used for the location unless --require-kubeconfig is set.")
 	fs.BoolVar(&s.RequireKubeConfig, "require-kubeconfig", s.RequireKubeConfig, "If true the Kubelet will exit if there are configuration errors, and will ignore the value of --api-servers in favor of the server defined in the kubeconfig file.")
 

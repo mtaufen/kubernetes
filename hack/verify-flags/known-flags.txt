@@ -199,6 +199,7 @@ external-etcd-keyfile
 external-hostname
 external-ip
 extra-peer-dirs
+fail-swap-on
 failover-timeout
 failure-domains
 fake-clientset
