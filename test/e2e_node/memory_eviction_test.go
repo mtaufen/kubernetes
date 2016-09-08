@@ -18,12 +18,15 @@ package e2e_node
 
 import (
 	"fmt"
+	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/resource"
+	"k8s.io/kubernetes/pkg/apis/componentconfig"
 	"k8s.io/kubernetes/test/e2e/framework"
 
 	. "github.com/onsi/ginkgo"
@@ -33,8 +36,104 @@ import (
 // Eviction Policy is described here:
 // https://github.com/kubernetes/kubernetes/blob/master/docs/proposals/kubelet-eviction.md
 
+// TODO(mtaufen): Roll KubeletConfiguration management from here and the dynamic kubelet configuration
+// test into a utility library for node e2e tests.
+
+// Returns the current KubeletConfiguration
+func getCurrentKubeletConfig() (*componentconfig.KubeletConfiguration, error) {
+	resp := pollConfigz(5*time.Minute, 5*time.Second)
+	kubeCfg, err := decodeConfigz(resp)
+	if err != nil {
+		return nil, err
+	}
+	return kubeCfg, nil
+}
+
+func getCurrentKubeletConfigMap(f *framework.Framework) (*api.ConfigMap, error) {
+	return f.Client.ConfigMaps("kube-system").Get(fmt.Sprintf("kubelet-%s", framework.TestContext.NodeName))
+}
+
+// Creates or updates the configmap for KubeletConfiguration, waits for the Kubelet to restart
+// with the new configuration. Returns an error if the configuration after waiting 40 seconds
+// doesn't match what you attempted to set.
+func setKubeletConfiguration(f *framework.Framework, kubeCfg *componentconfig.KubeletConfiguration) error {
+	const (
+		restartGap = 40 * time.Second
+	)
+	// Check whether a configmap for KubeletConfiguration already exists
+	_, err := getCurrentKubeletConfigMap(f)
+	if err != nil {
+		// TODO(mtaufen): Find the actual error message for resources not existing, and only
+		// attempt to create the configmap when it doesn't exist, not when we get some other error.
+		_, err := createConfigMap(f, kubeCfg)
+		if err != nil {
+			return err
+		}
+	} else {
+		// The configmap exists, update it instead of creating it.
+		_, err := updateConfigMap(f, kubeCfg)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Wait for the Kubelet to restart.
+	time.Sleep(restartGap)
+
+	// Retrieve the new config and compare it to the one we attempted to set
+	newKubeCfg, err := getCurrentKubeletConfig()
+	if err != nil {
+		return err
+	}
+
+	// TODO(mtaufen): Do a deep comparison here, return error if they don't match.
+	if !reflect.DeepEqual(*kubeCfg, *newKubeCfg) {
+		return fmt.Errorf("The Kubelet does NOT have the configuration you tried to set for this test! Something went wrong!")
+	}
+	return nil
+}
+
 var _ = framework.KubeDescribe("MemoryEviction [Slow] [Serial] [Disruptive]", func() {
 	f := framework.NewDefaultFramework("eviction-test")
+	var initialKubeletConfiguration componentconfig.KubeletConfiguration
+
+	BeforeEach(func() {
+		const (
+			threshold = " memory.available<40%"
+		)
+		kubeCfg, err := getCurrentKubeletConfig()
+		framework.ExpectNoError(err)
+		initialKubeletConfiguration = *kubeCfg // Copy into initialKubeletConfiguration
+
+		// If EvictionHard contains a memory eviction threshold, edit it.
+		// Otherwise append the desired threshold.
+		edited := false
+		settings := strings.Split(kubeCfg.EvictionHard, ",")
+		// TODO(mtaufen): This assumes that there is only one memory.available threshold in the list.
+		//                Need to double-check whether there can be more than one.
+		for i, str := range settings {
+			if strings.Contains(str, "memory.available") {
+				settings[i] = threshold
+				edited = true
+				break
+			}
+		}
+		if !edited {
+			settings = append(settings, threshold)
+		}
+		kubeCfg.EvictionHard = strings.Join(settings, ",")
+
+		err = setKubeletConfiguration(f, kubeCfg)
+		framework.ExpectNoError(err)
+	})
+	// AfterEach blocks run in deep to shallow order, so the AfterEach in the Context
+	// block below will be run prior to this AfterEach.
+	AfterEach(func() {
+		// TODO(mtaufen): Restore initial kubelet configuration here
+		Expect(initialKubeletConfiguration).NotTo(BeNil())
+		err := setKubeletConfiguration(f, &initialKubeletConfiguration)
+		framework.ExpectNoError(err)
+	})
 
 	Context("when there is memory pressure", func() {
 		AfterEach(func() {
