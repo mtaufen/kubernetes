@@ -18,7 +18,6 @@ package e2e_node
 
 import (
 	"fmt"
-	"os/exec"
 	"strconv"
 	"time"
 
@@ -52,7 +51,7 @@ type VolumeTestConfig struct {
 // Starts a container specified by config.serverImage and exports all
 // config.serverPorts from it. The returned pod should be used to get the server
 // IP address and create appropriate VolumeSource.
-func startVolumeServer(f *framework.Framework, config VolumeTestConfig) *api.Pod {
+func startVolumeServer(f *framework.Framework, config VolumeTestConfig, exportText string) *api.Pod {
 	podClient := f.PodClient()
 
 	portCount := len(config.serverPorts)
@@ -126,6 +125,14 @@ func startVolumeServer(f *framework.Framework, config VolumeTestConfig) *api.Pod
 
 	By("sleeping a bit to give the server time to start")
 	time.Sleep(20 * time.Second)
+
+	By("server pod is probably running, inject some text into /export/index.html if provided")
+	if exportText != "" {
+		_, stderr, err := f.ExecCommandInPodWithFullOutput(serverPod.Name, fmt.Sprintf("echo \"%s\" > /export/index.html"))
+		if err != nil {
+			framework.Logf("framework.ExecCommandInPodWithFullOutput stderr: %q", stderr)
+		}
+	}
 	return pod
 }
 
@@ -176,12 +183,12 @@ func testVolumeClient(f *framework.Framework, config VolumeTestConfig, volume ap
 					Command: []string{
 						"/bin/sh",
 						"-c",
-						"while true ; do cat /opt/index.html ; sleep 2 ; ls -altrh /opt/  ; sleep 2 ; done ",
+						"while true ; do cat /tmp/index.html ; sleep 2 ; ls -altrh /tmp/  ; sleep 2 ; done ",
 					},
 					VolumeMounts: []api.VolumeMount{
 						{
 							Name:      config.prefix + "-volume",
-							MountPath: "/opt/",
+							MountPath: "/tmp/",
 						},
 					},
 				},
@@ -207,12 +214,30 @@ func testVolumeClient(f *framework.Framework, config VolumeTestConfig, volume ap
 	clientPod = podClient.CreateSync(clientPod)
 
 	By("Checking that text file contents are perfect.")
-	_, err := framework.LookForStringInPodExec(f.Namespace.Name, clientPod.Name, []string{"cat", "/opt/index.html"}, expectedContent, time.Minute)
+	_, err := framework.LookForString(expectedContent, time.Minute, func() string {
+		// DEBUG HACK:
+		stdout, stderr, err := f.ExecCommandInPodWithFullOutput(clientPod.Name, "ls /tmp/")
+		framework.Logf("framework.ExecCommandInPodWithFullOutput stdout: %q", stdout)
+		framework.Logf("framework.ExecCommandInPodWithFullOutput stderr: %q", stderr)
+		// What we actually want
+		stdout, stderr, err = f.ExecCommandInPodWithFullOutput(clientPod.Name, "cat /tmp/index.html")
+		if err != nil {
+			framework.Logf("framework.ExecCommandInPodWithFullOutput stderr: %q", stderr)
+		}
+		return stdout
+	})
 	Expect(err).NotTo(HaveOccurred(), "failed: finding the contents of the mounted file.")
 
+	// TODO(mtaufen): Not sure if this works yet.
 	if fsGroup != nil {
 		By("Checking fsGroup is correct.")
-		_, err := framework.LookForStringInPodExec(f.Namespace.Name, clientPod.Name, []string{"ls", "-ld", "/opt"}, strconv.Itoa(int(*fsGroup)), time.Minute)
+		_, err := framework.LookForString(strconv.Itoa(int(*fsGroup)), time.Minute, func() string {
+			stdout, stderr, err := f.ExecCommandInPodWithFullOutput(clientPod.Name, "ls -ld /tmp")
+			if err != nil {
+				framework.Logf("framework.ExecCommandInPodWithFullOutput stderr: %q", stderr)
+			}
+			return stdout
+		})
 		Expect(err).NotTo(HaveOccurred(), "failed: getting the right priviliges in the file %v", int(*fsGroup))
 	}
 }
@@ -229,43 +254,41 @@ var _ = framework.KubeDescribe("NodeVolumes", func() {
 	// NFS
 	////////////////////////////////////////////////////////////////////////
 
-	// TODO: uncomment NFS test
+	framework.KubeDescribe("NFS", func() {
+		It("should be mountable", func() {
+			config := VolumeTestConfig{
+				prefix:      "nfs",
+				serverImage: "eatnumber1/nfs",
+				serverPorts: []int{2049, 111, 1067, 1066},
+			}
 
-	// framework.KubeDescribe("NFS", func() {
-	// 	It("should be mountable", func() {
-	// 		config := VolumeTestConfig{
-	// 			prefix:      "nfs",
-	// 			serverImage: "gcr.io/google_containers/volume-nfs:0.6",
-	// 			serverPorts: []int{2049},
-	// 		}
+			defer func() {
+				if clean {
+					volumeTestCleanup(f, config)
+				}
+			}()
+			pod := startVolumeServer(f, config, "Hello from NFS!")
+			serverIP := pod.Status.PodIP
+			framework.Logf("NFS server IP address: %v", serverIP)
 
-	// 		defer func() {
-	// 			if clean {
-	// 				volumeTestCleanup(f, config)
-	// 			}
-	// 		}()
-	// 		pod := startVolumeServer(f, config)
-	// 		serverIP := pod.Status.PodIP
-	// 		framework.Logf("NFS server IP address: %v", serverIP)
-
-	// 		volume := api.VolumeSource{
-	// 			NFS: &api.NFSVolumeSource{
-	// 				Server:   serverIP,
-	// 				Path:     "/",
-	// 				ReadOnly: true,
-	// 			},
-	// 		}
-	// 		// Must match content of test/images/volumes-tester/nfs/index.html
-	// 		testVolumeClient(f, config, volume, nil, "Hello from NFS!")
-	// 	})
-	// })
+			volume := api.VolumeSource{
+				NFS: &api.NFSVolumeSource{
+					Server:   serverIP,
+					Path:     "/",
+					ReadOnly: true,
+				},
+			}
+			// Must match content of test/images/volumes-tester/nfs/index.html
+			testVolumeClient(f, config, volume, nil, "Hello from NFS!")
+		})
+	})
 
 	////////////////////////////////////////////////////////////////////////
 	// Gluster
 	////////////////////////////////////////////////////////////////////////
 
 	framework.KubeDescribe("GlusterFS", func() {
-		It("should be mountable", func() {
+		PIt("should be mountable", func() {
 			config := VolumeTestConfig{
 				prefix:      "gluster",
 				serverImage: "gcr.io/google_containers/volume-gluster:0.2",
@@ -277,25 +300,42 @@ var _ = framework.KubeDescribe("NodeVolumes", func() {
 					volumeTestCleanup(f, config)
 				}
 			}()
-			pod := startVolumeServer(f, config)
+
+			// This is the right way to do it, but today is a day of breaking the rules (10:48am)
+			pod := startVolumeServer(f, config, "")
 			serverIP := pod.Status.PodIP
 			framework.Logf("Gluster server IP address: %v", serverIP)
 
+			// TODO: Make sure gluster is installed on the node first, error if not
+
+			// Hack: just start the container by hand with the ports published and 1:1 mapped to the host:
+			// runCmd := exec.Command("sudo", "docker", "run", "-d", "--privileged",
+			// 	"-p", "24007:24007",
+			// 	"-p", "24008:24008",
+			// 	"-p", "49152:49152",
+			// 	"gcr.io/google_containers/volume-gluster:0.2")
+			// err := runCmd.Run()
+			// if err != nil {
+			// 	framework.Logf("Error running docker container %+v", runCmd)
+			// 	framework.ExpectNoError(err)
+			// }
+
 			// Hack: just try to mount it and see if it succeeds
 			//       this won't work on GCI because the root filesystem is read only
-			mkdirCmd := exec.Command("sudo", "mkdir", "/my_mnt")
-			err := mkdirCmd.Run()
+			// mkdirCmd := exec.Command("sudo", "mkdir", "/my_mnt")
+			// err = mkdirCmd.Run()
 			// Hack: dont worry about the error just assume its there, so we don't have to restart node across test runs
 			// if err != nil {
 			// 	framework.Logf("Error running mkdir %+v", mkdirCmd)
 			// 	framework.ExpectNoError(err)
 			// }
-			mountCmd := exec.Command("sudo", "mount", "-t", "glusterfs", fmt.Sprintf("%s:test_vol", serverIP), "/my_mnt")
-			err = mkdirCmd.Run()
-			if err != nil {
-				framework.Logf("Error running mount %+v", mountCmd)
-				framework.ExpectNoError(err)
-			}
+			// remember to umount this when done
+			// mountCmd := exec.Command("sudo", "mount", "-t", "glusterfs", "127.0.0.1:test_vol", "/my_mnt")
+			// err = mountCmd.Run()
+			// if err != nil {
+			// 	framework.Logf("Error running mount %+v", mountCmd)
+			// 	framework.ExpectNoError(err)
+			// }
 
 			// create Endpoints for the server
 			endpoints := api.Endpoints{
