@@ -183,12 +183,12 @@ func testVolumeClient(f *framework.Framework, config VolumeTestConfig, volume ap
 					Command: []string{
 						"/bin/sh",
 						"-c",
-						"while true ; do cat /tmp/index.html ; sleep 2 ; ls -altrh /tmp/  ; sleep 2 ; done ",
+						"while true ; do cat /opt/index.html ; sleep 2 ; ls -altrh /opt/  ; sleep 2 ; done ",
 					},
 					VolumeMounts: []api.VolumeMount{
 						{
 							Name:      config.prefix + "-volume",
-							MountPath: "/tmp/",
+							MountPath: "/opt/",
 						},
 					},
 				},
@@ -216,11 +216,11 @@ func testVolumeClient(f *framework.Framework, config VolumeTestConfig, volume ap
 	By("Checking that text file contents are perfect.")
 	_, err := framework.LookForString(expectedContent, time.Minute, func() string {
 		// DEBUG HACK:
-		stdout, stderr, err := f.ExecCommandInPodWithFullOutput(clientPod.Name, "ls /tmp/")
+		stdout, stderr, err := f.ExecCommandInPodWithFullOutput(clientPod.Name, "ls /opt/")
 		framework.Logf("framework.ExecCommandInPodWithFullOutput stdout: %q", stdout)
 		framework.Logf("framework.ExecCommandInPodWithFullOutput stderr: %q", stderr)
 		// What we actually want
-		stdout, stderr, err = f.ExecCommandInPodWithFullOutput(clientPod.Name, "cat /tmp/index.html")
+		stdout, stderr, err = f.ExecCommandInPodWithFullOutput(clientPod.Name, "cat /opt/index.html")
 		if err != nil {
 			framework.Logf("framework.ExecCommandInPodWithFullOutput stderr: %q", stderr)
 		}
@@ -274,7 +274,7 @@ var _ = framework.KubeDescribe("NodeVolumes", func() {
 			volume := api.VolumeSource{
 				NFS: &api.NFSVolumeSource{
 					Server:   serverIP,
-					Path:     "/",
+					Path:     "/export", // TODO: Should this be /export with eatnumber1's image?
 					ReadOnly: true,
 				},
 			}
