@@ -254,41 +254,46 @@ var _ = framework.KubeDescribe("NodeVolumes", func() {
 	// NFS
 	////////////////////////////////////////////////////////////////////////
 
-	framework.KubeDescribe("NFS", func() {
-		It("should be mountable", func() {
-			config := VolumeTestConfig{
-				prefix:      "nfs",
-				serverImage: "eatnumber1/nfs",
-				serverPorts: []int{2049, 111, 1067, 1066},
-			}
+	// TODO(mtaufen): Update this portion once we have Jing's https://github.com/kubernetes/kubernetes/pull/34983
 
-			defer func() {
-				if clean {
-					volumeTestCleanup(f, config)
-				}
-			}()
-			pod := startVolumeServer(f, config, "Hello from NFS!")
-			serverIP := pod.Status.PodIP
-			framework.Logf("NFS server IP address: %v", serverIP)
+	// framework.KubeDescribe("NFS", func() {
+	// 	It("should be mountable", func() {
+	// 		config := VolumeTestConfig{
+	// 			prefix:      "nfs",
+	// 			serverImage: "eatnumber1/nfs",
+	// 			serverPorts: []int{2049, 111, 1067, 1066},
+	// 		}
 
-			volume := api.VolumeSource{
-				NFS: &api.NFSVolumeSource{
-					Server:   serverIP,
-					Path:     "/export", // TODO: Should this be /export with eatnumber1's image?
-					ReadOnly: true,
-				},
-			}
-			// Must match content of test/images/volumes-tester/nfs/index.html
-			testVolumeClient(f, config, volume, nil, "Hello from NFS!")
-		})
-	})
+	// 		defer func() {
+	// 			if clean {
+	// 				volumeTestCleanup(f, config)
+	// 			}
+	// 		}()
+	// 		pod := startVolumeServer(f, config, "Hello from NFS!")
+	// 		serverIP := pod.Status.PodIP
+	// 		framework.Logf("NFS server IP address: %v", serverIP)
+
+	// 		volume := api.VolumeSource{
+	// 			NFS: &api.NFSVolumeSource{
+	// 				Server:   serverIP,
+	// 				Path:     "/export", // TODO: Should this be /export with eatnumber1's image?
+	// 				ReadOnly: true,
+	// 			},
+	// 		}
+	// 		// Must match content of test/images/volumes-tester/nfs/index.html
+	// 		testVolumeClient(f, config, volume, nil, "Hello from NFS!")
+	// 	})
+	// })
 
 	////////////////////////////////////////////////////////////////////////
 	// Gluster
 	////////////////////////////////////////////////////////////////////////
 
+	// TODO(mtaufen): Want to check if these nodes come up with rkt to see if gci configure.sh gets run on the node
+	// for node e2e tests. My money is on no but we'll see.
+
 	framework.KubeDescribe("GlusterFS", func() {
-		PIt("should be mountable", func() {
+		It("should be mountable", func() {
 			config := VolumeTestConfig{
 				prefix:      "gluster",
 				serverImage: "gcr.io/google_containers/volume-gluster:0.2",
@@ -364,7 +369,7 @@ var _ = framework.KubeDescribe("NodeVolumes", func() {
 				},
 			}
 
-			endClient := f.Client.Endpoints(f.Namespace.Name)
+			endClient := f.ClientSet.Core().Endpoints(f.Namespace.Name)
 
 			defer func() {
 				if clean {
