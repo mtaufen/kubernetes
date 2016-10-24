@@ -290,7 +290,8 @@ var _ = framework.KubeDescribe("NodeVolumes", func() {
 	////////////////////////////////////////////////////////////////////////
 
 	// TODO(mtaufen): Want to check if these nodes come up with rkt to see if gci configure.sh gets run on the node
-	// for node e2e tests. My money is on no but we'll see.
+	//     for node e2e tests. My money is on no but we'll see.
+	//     Ugh. NO its not there. We will have to rely on the e2e volumes test to test this.
 
 	framework.KubeDescribe("GlusterFS", func() {
 		It("should be mountable", func() {
