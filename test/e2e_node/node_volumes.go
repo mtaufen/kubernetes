@@ -374,7 +374,7 @@ var _ = framework.KubeDescribe("NodeVolumes", func() {
 
 			defer func() {
 				if clean {
-					endClient.Delete(config.prefix+"-server", api.DeleteOptions{})
+					endClient.Delete(config.prefix+"-server", &api.DeleteOptions{})
 				}
 			}()
 
