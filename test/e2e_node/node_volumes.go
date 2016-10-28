@@ -193,11 +193,11 @@ func testVolumeClient(f *framework.Framework, config VolumeTestConfig, volume ap
 					},
 				},
 			},
-			SecurityContext: &api.PodSecurityContext{
-				SELinuxOptions: &api.SELinuxOptions{
-					Level: "s0:c0,c1",
-				},
-			},
+			// SecurityContext: &api.PodSecurityContext{
+			// 	SELinuxOptions: &api.SELinuxOptions{
+			// 		Level: "s0:c0,c1",
+			// 	},
+			// },
 			Volumes: []api.Volume{
 				{
 					Name:         config.prefix + "-volume",
@@ -289,9 +289,7 @@ var _ = framework.KubeDescribe("NodeVolumes", func() {
 	// Gluster
 	////////////////////////////////////////////////////////////////////////
 
-	// TODO(mtaufen): Want to check if these nodes come up with rkt to see if gci configure.sh gets run on the node
-	//     for node e2e tests. My money is on no but we'll see.
-	//     Ugh. NO its not there. We will have to rely on the e2e volumes test to test this.
+	// TODO(mtaufen): Mount a host path into
 
 	framework.KubeDescribe("GlusterFS", func() {
 		It("should be mountable", func() {
@@ -307,41 +305,9 @@ var _ = framework.KubeDescribe("NodeVolumes", func() {
 				}
 			}()
 
-			// This is the right way to do it, but today is a day of breaking the rules (10:48am)
 			pod := startVolumeServer(f, config, "")
 			serverIP := pod.Status.PodIP
 			framework.Logf("Gluster server IP address: %v", serverIP)
-
-			// TODO: Make sure gluster is installed on the node first, error if not
-
-			// Hack: just start the container by hand with the ports published and 1:1 mapped to the host:
-			// runCmd := exec.Command("sudo", "docker", "run", "-d", "--privileged",
-			// 	"-p", "24007:24007",
-			// 	"-p", "24008:24008",
-			// 	"-p", "49152:49152",
-			// 	"gcr.io/google_containers/volume-gluster:0.2")
-			// err := runCmd.Run()
-			// if err != nil {
-			// 	framework.Logf("Error running docker container %+v", runCmd)
-			// 	framework.ExpectNoError(err)
-			// }
-
-			// Hack: just try to mount it and see if it succeeds
-			//       this won't work on GCI because the root filesystem is read only
-			// mkdirCmd := exec.Command("sudo", "mkdir", "/my_mnt")
-			// err = mkdirCmd.Run()
-			// Hack: dont worry about the error just assume its there, so we don't have to restart node across test runs
-			// if err != nil {
-			// 	framework.Logf("Error running mkdir %+v", mkdirCmd)
-			// 	framework.ExpectNoError(err)
-			// }
-			// remember to umount this when done
-			// mountCmd := exec.Command("sudo", "mount", "-t", "glusterfs", "127.0.0.1:test_vol", "/my_mnt")
-			// err = mountCmd.Run()
-			// if err != nil {
-			// 	framework.Logf("Error running mount %+v", mountCmd)
-			// 	framework.ExpectNoError(err)
-			// }
 
 			// create Endpoints for the server
 			endpoints := api.Endpoints{
