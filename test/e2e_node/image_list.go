@@ -46,7 +46,7 @@ var NodeImageWhiteList = sets.NewString(
 	"gcr.io/google_containers/serve_hostname:v1.4",
 	"gcr.io/google_containers/netexec:1.7",
 	"eatnumber1/nfs",
-	"gcr.io/google_containers/volume-gluster:0.2",
+	"gcr.io/google_containers/volume-gluster:0.3",
 	framework.GetPauseImageNameForHostArch(),
 )
 

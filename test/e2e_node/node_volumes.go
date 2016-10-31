@@ -295,7 +295,7 @@ var _ = framework.KubeDescribe("NodeVolumes", func() {
 		It("should be mountable", func() {
 			config := VolumeTestConfig{
 				prefix:      "gluster",
-				serverImage: "gcr.io/google_containers/volume-gluster:0.2",
+				serverImage: "gcr.io/google_containers/volume-gluster:0.3",
 				serverPorts: []int{24007, 24008, 49152},
 			}
 
