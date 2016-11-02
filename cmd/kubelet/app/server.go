@@ -446,7 +446,7 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.KubeletDeps) (err error) {
 				CgroupRoot:             s.CgroupRoot,
 				ProtectKernelDefaults:  s.ProtectKernelDefaults,
 				RuntimeIntegrationType: s.ExperimentalRuntimeIntegrationType,
-			}, s.FailSwapOn)
+			}, s.ExperimentalFailSwapOn)
 
 		if err != nil {
 			return err

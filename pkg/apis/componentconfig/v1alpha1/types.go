@@ -498,9 +498,9 @@ type KubeletConfiguration struct {
 	// using the new Container Runtine Interface.
 	// +optional
 	ExperimentalRuntimeIntegrationType string `json:"experimentalRuntimeIntegrationType,omitempty"`
-	// TODO(#34726:1.6.0): Remove the opt-in for failing when swap is enabled.
+	// TODO(#34726:1.8.0): Remove the opt-in for failing when swap is enabled.
 	// Tells the Kubelet to fail to start if swap is enabled on the node.
-	FailSwapOn bool `json:"failSwapOn,omitempty"`
+	ExperimentalFailSwapOn bool `json:"experimentalFailSwapOn,omitempty"`
 }
 
 type KubeletAuthorizationMode string

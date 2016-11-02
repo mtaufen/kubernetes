@@ -167,30 +167,36 @@ func validateSystemRequirements(mountUtil mount.Interface) (features, error) {
 // Takes the absolute name of the specified containers.
 // Empty container name disables use of the specified container.
 func NewContainerManager(mountUtil mount.Interface, cadvisorInterface cadvisor.Interface, nodeConfig NodeConfig, failSwapOn bool) (ContainerManager, error) {
-	if failSwapOn {
-		// Check whether swap is enabled. The Kubelet does not support running with swap enabled.
-		// TODO(#34726:1.6.0): Remove the opt-in for failing when swap is enabled.
-		//     Running with swap enabled should be considered an error, but in order to maintain legacy
-		//     behavior we have to require an opt-in to this error for a period of time.
-		cmd := exec.Command("cat", "/proc/swaps")
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			return nil, err
-		}
-		if err := cmd.Start(); err != nil {
-			return nil, err
-		}
-		var buf []string
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() { // Splits on newlines by default
-			buf = append(buf, scanner.Text())
-		}
-		// If there is more than one line (table headers) in /proc/swaps, swap is enabled and we should error out.
-		if len(buf) > 1 {
-			return nil, fmt.Errorf("Swap must be disabled to use memory eviction, but /proc/swaps contained: %v", buf)
-		}
-		if err := cmd.Wait(); err != nil { // Clean up
-			return nil, err
+	// Check whether swap is enabled. The Kubelet does not support running with swap enabled.
+	cmd := exec.Command("cat", "/proc/swaps")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	var buf []string
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() { // Splits on newlines by default
+		buf = append(buf, scanner.Text())
+	}
+	if err := cmd.Wait(); err != nil { // Clean up
+		return nil, err
+	}
+
+	// TODO(#34726:1.8.0): Remove the opt-in for failing when swap is enabled.
+	//     Running with swap enabled should be considered an error, but in order to maintain legacy
+	//     behavior we have to require an opt-in to this error for a period of time.
+
+	// If there is more than one line (table headers) in /proc/swaps, swap is enabled and we should error out.
+	if len(buf) > 1 {
+		if failSwapOn {
+			return nil, fmt.Errorf("Running with swap on is not supported, please disable swap! /proc/swaps contained: %v", buf)
+		} else {
+			glog.Warningf("Running with swap on is not supported, please disable swap! " +
+				"This will be a fatal error by default starting in K8s v1.6! " +
+				"You can opt-in to this error after turning off swap by enabling --experimental-fail-swap-on.")
 		}
 	}
 

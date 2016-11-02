@@ -389,7 +389,7 @@ func DeepCopy_componentconfig_KubeletConfiguration(in interface{}, out interface
 		}
 		out.FeatureGates = in.FeatureGates
 		out.ExperimentalRuntimeIntegrationType = in.ExperimentalRuntimeIntegrationType
-		out.FailSwapOn = in.FailSwapOn
+		out.ExperimentalFailSwapOn = in.ExperimentalFailSwapOn
 		return nil
 	}
 }
