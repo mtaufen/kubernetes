@@ -12,7 +12,7 @@ Possible scenatios (depends on the kind of component):
 
 Possible categories:
 - gen: value may be set on more than one instance of the object (can be shared via a layer)
-- nogen: value must be unique cluster-wide (can never be shared via a layer)
+- nogen: value must be unique cluster-wide (can never be shared via a layer, thought technically in some cases it may be ok to gen with only the empty value (e.g. HostnameOverride))
 - todo: I'm not sure and I'll come back to it
 
 Might be an argument that typically only the Kubelet has nogen fields today.
@@ -59,53 +59,53 @@ type KubeProxyConfiguration struct {
 	// healthzPort is the port to bind the health check server. Use 0 to disable.
 	HealthzPort int32 `json:"healthzPort"` //gen
 	// hostnameOverride, if non-empty, will be used as the identity instead of the actual hostname.
-	HostnameOverride string `json:"hostnameOverride"` //nogen
+	HostnameOverride string `json:"hostnameOverride"` //nogen//can/is this taken from KubeletConfig?
 	// iptablesMasqueradeBit is the bit of the iptables fwmark space to use for SNAT if using
 	// the pure iptables proxy mode. Values must be within the range [0, 31].
-	IPTablesMasqueradeBit *int32 `json:"iptablesMasqueradeBit"` //
+	IPTablesMasqueradeBit *int32 `json:"iptablesMasqueradeBit"` //todo
 	// iptablesSyncPeriod is the period that iptables rules are refreshed (e.g. '5s', '1m',
 	// '2h22m').  Must be greater than 0.
-	IPTablesSyncPeriod metav1.Duration `json:"iptablesSyncPeriodSeconds"`
+	IPTablesSyncPeriod metav1.Duration `json:"iptablesSyncPeriodSeconds"` //gen
 	// iptablesMinSyncPeriod is the minimum period that iptables rules are refreshed (e.g. '5s', '1m',
 	// '2h22m').
-	IPTablesMinSyncPeriod metav1.Duration `json:"iptablesMinSyncPeriodSeconds"`
+	IPTablesMinSyncPeriod metav1.Duration `json:"iptablesMinSyncPeriodSeconds"` //gen
 	// kubeconfigPath is the path to the kubeconfig file with authorization information (the
 	// master location is set by the master flag).
-	KubeconfigPath string `json:"kubeconfigPath"`
+	KubeconfigPath string `json:"kubeconfigPath"` //gen
 	// masqueradeAll tells kube-proxy to SNAT everything if using the pure iptables proxy mode.
-	MasqueradeAll bool `json:"masqueradeAll"`
+	MasqueradeAll bool `json:"masqueradeAll"` //gen
 	// master is the address of the Kubernetes API server (overrides any value in kubeconfig)
-	Master string `json:"master"`
+	Master string `json:"master"` //gen
 	// oomScoreAdj is the oom-score-adj value for kube-proxy process. Values must be within
 	// the range [-1000, 1000]
-	OOMScoreAdj *int32 `json:"oomScoreAdj"`
+	OOMScoreAdj *int32 `json:"oomScoreAdj"` //gen
 	// mode specifies which proxy mode to use.
-	Mode ProxyMode `json:"mode"`
+	Mode ProxyMode `json:"mode"` //gen
 	// portRange is the range of host ports (beginPort-endPort, inclusive) that may be consumed
 	// in order to proxy service traffic. If unspecified (0-0) then ports will be randomly chosen.
-	PortRange string `json:"portRange"`
+	PortRange string `json:"portRange"` //gen
 	// resourceContainer is the bsolute name of the resource-only container to create and run
 	// the Kube-proxy in (Default: /kube-proxy).
-	ResourceContainer string `json:"resourceContainer"`
+	ResourceContainer string `json:"resourceContainer"` //gen
 	// udpIdleTimeout is how long an idle UDP connection will be kept open (e.g. '250ms', '2s').
 	// Must be greater than 0. Only applicable for proxyMode=userspace.
-	UDPIdleTimeout metav1.Duration `json:"udpTimeoutMilliseconds"`
+	UDPIdleTimeout metav1.Duration `json:"udpTimeoutMilliseconds"` //gen
 	// conntrackMax is the maximum number of NAT connections to track (0 to
 	// leave as-is).  This takes precedence over conntrackMaxPerCore and conntrackMin.
-	ConntrackMax int32 `json:"conntrackMax"`
+	ConntrackMax int32 `json:"conntrackMax"` //gen
 	// conntrackMaxPerCore is the maximum number of NAT connections to track
 	// per CPU core (0 to leave the limit as-is and ignore conntrackMin).
-	ConntrackMaxPerCore int32 `json:"conntrackMaxPerCore"`
+	ConntrackMaxPerCore int32 `json:"conntrackMaxPerCore"` //gen
 	// conntrackMin is the minimum value of connect-tracking records to allocate,
 	// regardless of conntrackMaxPerCore (set conntrackMaxPerCore=0 to leave the limit as-is).
-	ConntrackMin int32 `json:"conntrackMin"`
+	ConntrackMin int32 `json:"conntrackMin"` //gen
 	// conntrackTCPEstablishedTimeout is how long an idle TCP connection
 	// will be kept open (e.g. '2s').  Must be greater than 0.
-	ConntrackTCPEstablishedTimeout metav1.Duration `json:"conntrackTCPEstablishedTimeout"`
+	ConntrackTCPEstablishedTimeout metav1.Duration `json:"conntrackTCPEstablishedTimeout"` //gen
 	// conntrackTCPCloseWaitTimeout is how long an idle conntrack entry
 	// in CLOSE_WAIT state will remain in the conntrack
 	// table. (e.g. '60s'). Must be greater than 0 to set.
-	ConntrackTCPCloseWaitTimeout metav1.Duration `json:"conntrackTCPCloseWaitTimeout"`
+	ConntrackTCPCloseWaitTimeout metav1.Duration `json:"conntrackTCPCloseWaitTimeout"` //gen
 }
 
 // Currently two modes of proxying are available: 'userspace' (older, stable) or 'iptables'
