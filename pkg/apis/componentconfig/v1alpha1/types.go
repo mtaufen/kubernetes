@@ -125,35 +125,35 @@ type KubeSchedulerConfiguration struct {
 	metav1.TypeMeta
 
 	// port is the port that the scheduler's http service runs on.
-	Port int `json:"port"`
+	Port int `json:"port"` //gen
 	// address is the IP address to serve on.
-	Address string `json:"address"`
+	Address string `json:"address"` //todo but I think gen
 	// algorithmProvider is the scheduling algorithm provider to use.
-	AlgorithmProvider string `json:"algorithmProvider"`
+	AlgorithmProvider string `json:"algorithmProvider"` //gen
 	// policyConfigFile is the filepath to the scheduler policy configuration.
-	PolicyConfigFile string `json:"policyConfigFile"`
+	PolicyConfigFile string `json:"policyConfigFile"` //gen
 	// enableProfiling enables profiling via web interface.
-	EnableProfiling *bool `json:"enableProfiling"`
+	EnableProfiling *bool `json:"enableProfiling"` //gen
 	// enableContentionProfiling enables lock contention profiling, if enableProfiling is true.
-	EnableContentionProfiling bool `json:"enableContentionProfiling"`
+	EnableContentionProfiling bool `json:"enableContentionProfiling"` //gen
 	// contentType is contentType of requests sent to apiserver.
-	ContentType string `json:"contentType"`
+	ContentType string `json:"contentType"` //gen
 	// kubeAPIQPS is the QPS to use while talking with kubernetes apiserver.
-	KubeAPIQPS float32 `json:"kubeAPIQPS"`
+	KubeAPIQPS float32 `json:"kubeAPIQPS"` //gen
 	// kubeAPIBurst is the QPS burst to use while talking with kubernetes apiserver.
-	KubeAPIBurst int `json:"kubeAPIBurst"`
+	KubeAPIBurst int `json:"kubeAPIBurst"` //gen
 	// schedulerName is name of the scheduler, used to select which pods
 	// will be processed by this scheduler, based on pod's annotation with
 	// key 'scheduler.alpha.kubernetes.io/name'.
-	SchedulerName string `json:"schedulerName"`
+	SchedulerName string `json:"schedulerName"` //nogen
 	// RequiredDuringScheduling affinity is not symmetric, but there is an implicit PreferredDuringScheduling affinity rule
 	// corresponding to every RequiredDuringScheduling affinity rule.
 	// HardPodAffinitySymmetricWeight represents the weight of implicit PreferredDuringScheduling affinity rule, in the range 0-100.
-	HardPodAffinitySymmetricWeight int `json:"hardPodAffinitySymmetricWeight"`
+	HardPodAffinitySymmetricWeight int `json:"hardPodAffinitySymmetricWeight"` //gen
 	// Indicate the "all topologies" set for empty topologyKey when it's used for PreferredDuringScheduling pod anti-affinity.
 	FailureDomains string `json:"failureDomains"`
 	// leaderElection defines the configuration of leader election client.
-	LeaderElection LeaderElectionConfiguration `json:"leaderElection"`
+	LeaderElection LeaderElectionConfiguration `json:"leaderElection"` //todo depends on LeaderElectionConfiguration type; if even one nogen field in there, this is nogen? no, can still gen via a layer with just the gen fields...
 }
 
 // HairpinMode denotes how the kubelet should configure networking to handle
