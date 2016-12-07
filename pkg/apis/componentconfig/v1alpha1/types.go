@@ -153,7 +153,7 @@ type KubeSchedulerConfiguration struct {
 	// Indicate the "all topologies" set for empty topologyKey when it's used for PreferredDuringScheduling pod anti-affinity.
 	FailureDomains string `json:"failureDomains"`
 	// leaderElection defines the configuration of leader election client.
-	LeaderElection LeaderElectionConfiguration `json:"leaderElection"` //todo depends on LeaderElectionConfiguration type; if even one nogen field in there, this is nogen? no, can still gen via a layer with just the gen fields...
+	LeaderElection LeaderElectionConfiguration `json:"leaderElection"` //gen
 }
 
 // HairpinMode denotes how the kubelet should configure networking to handle
@@ -180,23 +180,23 @@ type LeaderElectionConfiguration struct {
 	// leaderElect enables a leader election client to gain leadership
 	// before executing the main loop. Enable this when running replicated
 	// components for high availability.
-	LeaderElect *bool `json:"leaderElect"`
+	LeaderElect *bool `json:"leaderElect"` //gen
 	// leaseDuration is the duration that non-leader candidates will wait
 	// after observing a leadership renewal until attempting to acquire
 	// leadership of a led but unrenewed leader slot. This is effectively the
 	// maximum duration that a leader can be stopped before it is replaced
 	// by another candidate. This is only applicable if leader election is
 	// enabled.
-	LeaseDuration metav1.Duration `json:"leaseDuration"`
+	LeaseDuration metav1.Duration `json:"leaseDuration"` //gen
 	// renewDeadline is the interval between attempts by the acting master to
 	// renew a leadership slot before it stops leading. This must be less
 	// than or equal to the lease duration. This is only applicable if leader
 	// election is enabled.
-	RenewDeadline metav1.Duration `json:"renewDeadline"`
+	RenewDeadline metav1.Duration `json:"renewDeadline"` //gen
 	// retryPeriod is the duration the clients should wait between attempting
 	// acquisition and renewal of a leadership. This is only applicable if
 	// leader election is enabled.
-	RetryPeriod metav1.Duration `json:"retryPeriod"`
+	RetryPeriod metav1.Duration `json:"retryPeriod"` //gen
 }
 
 type KubeletConfiguration struct {
@@ -204,83 +204,83 @@ type KubeletConfiguration struct {
 
 	// podManifestPath is the path to the directory containing pod manifests to
 	// run, or the path to a single manifest file
-	PodManifestPath string `json:"podManifestPath"` // Gen
+	PodManifestPath string `json:"podManifestPath"` //gen
 	// syncFrequency is the max period between synchronizing running
 	// containers and config
-	SyncFrequency metav1.Duration `json:"syncFrequency"`
+	SyncFrequency metav1.Duration `json:"syncFrequency"` //gen
 	// fileCheckFrequency is the duration between checking config files for
 	// new data
-	FileCheckFrequency metav1.Duration `json:"fileCheckFrequency"`
+	FileCheckFrequency metav1.Duration `json:"fileCheckFrequency"` //gen
 	// httpCheckFrequency is the duration between checking http for new data
-	HTTPCheckFrequency metav1.Duration `json:"httpCheckFrequency"`
+	HTTPCheckFrequency metav1.Duration `json:"httpCheckFrequency"` //gen
 	// manifestURL is the URL for accessing the container manifest
-	ManifestURL string `json:"manifestURL"`
+	ManifestURL string `json:"manifestURL"` //todo
 	// manifestURLHeader is the HTTP header to use when accessing the manifest
 	// URL, with the key separated from the value with a ':', as in 'key:value'
-	ManifestURLHeader string `json:"manifestURLHeader"`
+	ManifestURLHeader string `json:"manifestURLHeader"` //gen
 	// enableServer enables the Kubelet's server
-	EnableServer *bool `json:"enableServer"`
+	EnableServer *bool `json:"enableServer"` //gen
 	// address is the IP address for the Kubelet to serve on (set to 0.0.0.0
 	// for all interfaces)
-	Address string `json:"address"`
+	Address string `json:"address"` //gen
 	// port is the port for the Kubelet to serve on.
-	Port int32 `json:"port"`
+	Port int32 `json:"port"` //gen
 	// readOnlyPort is the read-only port for the Kubelet to serve on with
 	// no authentication/authorization (set to 0 to disable)
-	ReadOnlyPort int32 `json:"readOnlyPort"`
+	ReadOnlyPort int32 `json:"readOnlyPort"` //gen
 	// tlsCertFile is the file containing x509 Certificate for HTTPS.  (CA cert,
 	// if any, concatenated after server cert). If tlsCertFile and
 	// tlsPrivateKeyFile are not provided, a self-signed certificate
 	// and key are generated for the public address and saved to the directory
 	// passed to certDir.
-	TLSCertFile string `json:"tlsCertFile"`
+	TLSCertFile string `json:"tlsCertFile"` //gen
 	// tlsPrivateKeyFile is the ile containing x509 private key matching
 	// tlsCertFile.
-	TLSPrivateKeyFile string `json:"tlsPrivateKeyFile"`
+	TLSPrivateKeyFile string `json:"tlsPrivateKeyFile"` //gen
 	// certDirectory is the directory where the TLS certs are located (by
 	// default /var/run/kubernetes). If tlsCertFile and tlsPrivateKeyFile
 	// are provided, this flag will be ignored.
-	CertDirectory string `json:"certDirectory"`
+	CertDirectory string `json:"certDirectory"` //gen
 	// authentication specifies how requests to the Kubelet's server are authenticated
-	Authentication KubeletAuthentication `json:"authentication"`
+	Authentication KubeletAuthentication `json:"authentication"` //todo
 	// authorization specifies how requests to the Kubelet's server are authorized
-	Authorization KubeletAuthorization `json:"authorization"`
+	Authorization KubeletAuthorization `json:"authorization"` //todo
 	// hostnameOverride is the hostname used to identify the kubelet instead
 	// of the actual hostname.
-	HostnameOverride string `json:"hostnameOverride"`
+	HostnameOverride string `json:"hostnameOverride"` //nogen
 	// podInfraContainerImage is the image whose network/ipc namespaces
 	// containers in each pod will use.
-	PodInfraContainerImage string `json:"podInfraContainerImage"`
+	PodInfraContainerImage string `json:"podInfraContainerImage"` //gen
 	// dockerEndpoint is the path to the docker endpoint to communicate with.
-	DockerEndpoint string `json:"dockerEndpoint"`
+	DockerEndpoint string `json:"dockerEndpoint"` //gen
 	// rootDirectory is the directory path to place kubelet files (volume
 	// mounts,etc).
-	RootDirectory string `json:"rootDirectory"`
+	RootDirectory string `json:"rootDirectory"` //gen
 	// seccompProfileRoot is the directory path for seccomp profiles.
-	SeccompProfileRoot string `json:"seccompProfileRoot"`
+	SeccompProfileRoot string `json:"seccompProfileRoot"` //gen
 	// allowPrivileged enables containers to request privileged mode.
 	// Defaults to false.
-	AllowPrivileged *bool `json:"allowPrivileged"`
+	AllowPrivileged *bool `json:"allowPrivileged"` //gen
 	// hostNetworkSources is a comma-separated list of sources from which the
 	// Kubelet allows pods to use of host network. Defaults to "*". Valid
 	// options are "file", "http", "api", and "*" (all sources).
-	HostNetworkSources []string `json:"hostNetworkSources"`
+	HostNetworkSources []string `json:"hostNetworkSources"` //gen
 	// hostPIDSources is a comma-separated list of sources from which the
 	// Kubelet allows pods to use the host pid namespace. Defaults to "*".
-	HostPIDSources []string `json:"hostPIDSources"`
+	HostPIDSources []string `json:"hostPIDSources"` //todo
 	// hostIPCSources is a comma-separated list of sources from which the
 	// Kubelet allows pods to use the host ipc namespace. Defaults to "*".
-	HostIPCSources []string `json:"hostIPCSources"`
+	HostIPCSources []string `json:"hostIPCSources"` //todo
 	// registryPullQPS is the limit of registry pulls per second. If 0,
 	// unlimited. Set to 0 for no limit. Defaults to 5.0.
-	RegistryPullQPS *int32 `json:"registryPullQPS"`
+	RegistryPullQPS *int32 `json:"registryPullQPS"` //gen
 	// registryBurst is the maximum size of a bursty pulls, temporarily allows
 	// pulls to burst to this number, while still not exceeding registryQps.
 	// Only used if registryQPS > 0.
-	RegistryBurst int32 `json:"registryBurst"`
+	RegistryBurst int32 `json:"registryBurst"` //gen
 	// eventRecordQPS is the maximum event creations per second. If 0, there
 	// is no limit enforced.
-	EventRecordQPS *int32 `json:"eventRecordQPS"`
+	EventRecordQPS *int32 `json:"eventRecordQPS"` //gen
 	// eventBurst is the maximum size of a bursty event records, temporarily
 	// allows event records to burst to this number, while still not exceeding
 	// event-qps. Only used if eventQps > 0
