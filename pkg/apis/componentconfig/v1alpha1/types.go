@@ -1,4 +1,26 @@
 /*
+Below, find the componentconfig/v1alpha1/types.go file from 12/07~14:23 PST
+
+I will add a comment immediately after each type noting
+whether the field is generalizable or non-generalizable.
+
+Possible scenatios (depends on the kind of component):
+- configuration of component is eventually consistent cluster-wide
+- configuration might have small differences per group of nodes or even per-node, but can still work under a deployment (kube-proxy)
+- configuration needs values unique to a given node
+
+
+Possible categories:
+- gen: value may be set on more than one instance of the object (can be shared via a layer)
+- nogen: value must be unique cluster-wide (can never be shared via a layer)
+- todo: I'm not sure and I'll come back to it
+
+Might be an argument that typically only the Kubelet has nogen fields today.
+Maybe.
+
+*/
+
+/*
 Copyright 2015 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,21 +48,21 @@ type KubeProxyConfiguration struct {
 
 	// bindAddress is the IP address for the proxy server to serve on (set to 0.0.0.0
 	// for all interfaces)
-	BindAddress string `json:"bindAddress"`
+	BindAddress string `json:"bindAddress"` //gen
 	// clusterCIDR is the CIDR range of the pods in the cluster. It is used to
 	// bridge traffic coming from outside of the cluster. If not provided,
 	// no off-cluster bridging will be performed.
-	ClusterCIDR string `json:"clusterCIDR"`
+	ClusterCIDR string `json:"clusterCIDR"` //gen
 	// healthzBindAddress is the IP address for the health check server to serve on,
 	// defaulting to 127.0.0.1 (set to 0.0.0.0 for all interfaces)
 	HealthzBindAddress string `json:"healthzBindAddress"`
 	// healthzPort is the port to bind the health check server. Use 0 to disable.
-	HealthzPort int32 `json:"healthzPort"`
+	HealthzPort int32 `json:"healthzPort"` //gen
 	// hostnameOverride, if non-empty, will be used as the identity instead of the actual hostname.
-	HostnameOverride string `json:"hostnameOverride"`
+	HostnameOverride string `json:"hostnameOverride"` //nogen
 	// iptablesMasqueradeBit is the bit of the iptables fwmark space to use for SNAT if using
 	// the pure iptables proxy mode. Values must be within the range [0, 31].
-	IPTablesMasqueradeBit *int32 `json:"iptablesMasqueradeBit"`
+	IPTablesMasqueradeBit *int32 `json:"iptablesMasqueradeBit"` //
 	// iptablesSyncPeriod is the period that iptables rules are refreshed (e.g. '5s', '1m',
 	// '2h22m').  Must be greater than 0.
 	IPTablesSyncPeriod metav1.Duration `json:"iptablesSyncPeriodSeconds"`
@@ -182,7 +204,7 @@ type KubeletConfiguration struct {
 
 	// podManifestPath is the path to the directory containing pod manifests to
 	// run, or the path to a single manifest file
-	PodManifestPath string `json:"podManifestPath"`
+	PodManifestPath string `json:"podManifestPath"` // Gen
 	// syncFrequency is the max period between synchronizing running
 	// containers and config
 	SyncFrequency metav1.Duration `json:"syncFrequency"`
