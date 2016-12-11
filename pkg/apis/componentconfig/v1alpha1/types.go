@@ -480,75 +480,75 @@ type KubeletConfiguration struct {
 	SerializeImagePulls *bool `json:"serializeImagePulls"` //gen -- note concerns that depend on docker version
 	// outOfDiskTransitionFrequency is duration for which the kubelet has to
 	// wait before transitioning out of out-of-disk node condition status.
-	OutOfDiskTransitionFrequency metav1.Duration `json:"outOfDiskTransitionFrequency"` //
+	OutOfDiskTransitionFrequency metav1.Duration `json:"outOfDiskTransitionFrequency"` //gen
 	// nodeIP is IP address of the node. If set, kubelet will use this IP
 	// address for the node.
-	NodeIP string `json:"nodeIP"`
+	NodeIP string `json:"nodeIP"` //nogen
 	// nodeLabels to add when registering the node in the cluster.
-	NodeLabels map[string]string `json:"nodeLabels"`
+	NodeLabels map[string]string `json:"nodeLabels"` //todo -- idkfs but could be gen or nogen depending on the label
 	// nonMasqueradeCIDR configures masquerading: traffic to IPs outside this range will use IP masquerade.
-	NonMasqueradeCIDR string `json:"nonMasqueradeCIDR"`
+	NonMasqueradeCIDR string `json:"nonMasqueradeCIDR"` //gen
 	// enable gathering custom metrics.
-	EnableCustomMetrics bool `json:"enableCustomMetrics"`
+	EnableCustomMetrics bool `json:"enableCustomMetrics"` //gen
 	// Comma-delimited list of hard eviction expressions.  For example, 'memory.available<300Mi'.
-	EvictionHard *string `json:"evictionHard"`
+	EvictionHard *string `json:"evictionHard"` //gen
 	// Comma-delimited list of soft eviction expressions.  For example, 'memory.available<300Mi'.
-	EvictionSoft string `json:"evictionSoft"`
+	EvictionSoft string `json:"evictionSoft"` //gen
 	// Comma-delimeted list of grace periods for each soft eviction signal.  For example, 'memory.available=30s'.
-	EvictionSoftGracePeriod string `json:"evictionSoftGracePeriod"`
+	EvictionSoftGracePeriod string `json:"evictionSoftGracePeriod"` //gen
 	// Duration for which the kubelet has to wait before transitioning out of an eviction pressure condition.
-	EvictionPressureTransitionPeriod metav1.Duration `json:"evictionPressureTransitionPeriod"`
+	EvictionPressureTransitionPeriod metav1.Duration `json:"evictionPressureTransitionPeriod"` //gen
 	// Maximum allowed grace period (in seconds) to use when terminating pods in response to a soft eviction threshold being met.
-	EvictionMaxPodGracePeriod int32 `json:"evictionMaxPodGracePeriod"`
+	EvictionMaxPodGracePeriod int32 `json:"evictionMaxPodGracePeriod"` //gen
 	// Comma-delimited list of minimum reclaims (e.g. imagefs.available=2Gi) that describes the minimum amount of resource the kubelet will reclaim when performing a pod eviction if that resource is under pressure.
-	EvictionMinimumReclaim string `json:"evictionMinimumReclaim"`
+	EvictionMinimumReclaim string `json:"evictionMinimumReclaim"` //gen
 	// Maximum number of pods per core. Cannot exceed MaxPods
-	PodsPerCore int32 `json:"podsPerCore"`
+	PodsPerCore int32 `json:"podsPerCore"` //gen
 	// enableControllerAttachDetach enables the Attach/Detach controller to
 	// manage attachment/detachment of volumes scheduled to this node, and
 	// disables kubelet from executing any attach/detach operations
-	EnableControllerAttachDetach *bool `json:"enableControllerAttachDetach"`
+	EnableControllerAttachDetach *bool `json:"enableControllerAttachDetach"` //gen
 	// A set of ResourceName=ResourceQuantity (e.g. cpu=200m,memory=150G) pairs
 	// that describe resources reserved for non-kubernetes components.
 	// Currently only cpu and memory are supported. [default=none]
 	// See http://kubernetes.io/docs/user-guide/compute-resources for more detail.
-	SystemReserved map[string]string `json:"systemReserved"`
+	SystemReserved map[string]string `json:"systemReserved"` //gen
 	// A set of ResourceName=ResourceQuantity (e.g. cpu=200m,memory=150G) pairs
 	// that describe resources reserved for kubernetes system components.
 	// Currently only cpu and memory are supported. [default=none]
 	// See http://kubernetes.io/docs/user-guide/compute-resources for more detail.
-	KubeReserved map[string]string `json:"kubeReserved"`
+	KubeReserved map[string]string `json:"kubeReserved"` //gen
 	// Default behaviour for kernel tuning
-	ProtectKernelDefaults bool `json:"protectKernelDefaults"`
+	ProtectKernelDefaults bool `json:"protectKernelDefaults"` //gen
 	// If true, Kubelet ensures a set of iptables rules are present on host.
 	// These rules will serve as utility rules for various components, e.g. KubeProxy.
 	// The rules will be created based on IPTablesMasqueradeBit and IPTablesDropBit.
-	MakeIPTablesUtilChains *bool `json:"makeIPTablesUtilChains"`
+	MakeIPTablesUtilChains *bool `json:"makeIPTablesUtilChains"` //gen
 	// iptablesMasqueradeBit is the bit of the iptables fwmark space to mark for SNAT
 	// Values must be within the range [0, 31]. Must be different from other mark bits.
 	// Warning: Please match the value of corresponding parameter in kube-proxy
 	// TODO: clean up IPTablesMasqueradeBit in kube-proxy
-	IPTablesMasqueradeBit *int32 `json:"iptablesMasqueradeBit"`
+	IPTablesMasqueradeBit *int32 `json:"iptablesMasqueradeBit"` //nogen -- cross-component dependency
 	// iptablesDropBit is the bit of the iptables fwmark space to mark for dropping packets.
 	// Values must be within the range [0, 31]. Must be different from other mark bits.
-	IPTablesDropBit *int32 `json:"iptablesDropBit"`
+	IPTablesDropBit *int32 `json:"iptablesDropBit"` //nogen -- cross-node dependency? what does it mean by "must be different from other mark bits"?
 	// Whitelist of unsafe sysctls or sysctl patterns (ending in *). Use these at your own risk.
 	// Resource isolation might be lacking and pod might influence each other on the same node.
 	// +optional
-	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls,omitempty"`
+	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls,omitempty"` //gen
 	// featureGates is a string of comma-separated key=value pairs that describe feature
 	// gates for alpha/experimental features.
-	FeatureGates string `json:"featureGates,omitempty"`
+	FeatureGates string `json:"featureGates,omitempty"` //gen -- potential cross-component dependency (which was the point of how we implemented FeatureGates)
 	// Enable Container Runtime Interface (CRI) integration.
 	// +optional
-	EnableCRI bool `json:"enableCRI,omitempty"`
+	EnableCRI bool `json:"enableCRI,omitempty"` //gen
 	// TODO(#34726:1.8.0): Remove the opt-in for failing when swap is enabled.
 	// Tells the Kubelet to fail to start if swap is enabled on the node.
-	ExperimentalFailSwapOn bool `json:"experimentalFailSwapOn,omitempty"`
+	ExperimentalFailSwapOn bool `json:"experimentalFailSwapOn,omitempty"` //gen
 	// This flag, if set, enables a check prior to mount operations to verify that the required components
 	// (binaries, etc.) to mount the volume are available on the underlying node. If the check is enabled
 	// and fails the mount operation fails.
-	ExperimentalCheckNodeCapabilitiesBeforeMount bool `json:"ExperimentalCheckNodeCapabilitiesBeforeMount,omitempty"`
+	ExperimentalCheckNodeCapabilitiesBeforeMount bool `json:"ExperimentalCheckNodeCapabilitiesBeforeMount,omitempty"` //gen
 }
 
 type KubeletAuthorizationMode string
