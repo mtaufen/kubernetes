@@ -18,6 +18,14 @@ Possible categories:
 Might be an argument that typically only the Kubelet has nogen fields today.
 Maybe.
 
+Is this true?
+gen <=> non-identifying information
+nogen <=> identifying information
+maybe...
+
+And I think we have a third category:
+Information that should not be in config at all, but should be discovered from the node
+
 */
 
 /*
@@ -284,137 +292,137 @@ type KubeletConfiguration struct {
 	// eventBurst is the maximum size of a bursty event records, temporarily
 	// allows event records to burst to this number, while still not exceeding
 	// event-qps. Only used if eventQps > 0
-	EventBurst int32 `json:"eventBurst"`
+	EventBurst int32 `json:"eventBurst"` //gen
 	// enableDebuggingHandlers enables server endpoints for log collection
 	// and local running of containers and commands
-	EnableDebuggingHandlers *bool `json:"enableDebuggingHandlers"`
+	EnableDebuggingHandlers *bool `json:"enableDebuggingHandlers"` //gen
 	// minimumGCAge is the minimum age for a finished container before it is
 	// garbage collected.
-	MinimumGCAge metav1.Duration `json:"minimumGCAge"`
+	MinimumGCAge metav1.Duration `json:"minimumGCAge"` //gen
 	// maxPerPodContainerCount is the maximum number of old instances to
 	// retain per container. Each container takes up some disk space.
-	MaxPerPodContainerCount int32 `json:"maxPerPodContainerCount"`
+	MaxPerPodContainerCount int32 `json:"maxPerPodContainerCount"` //gen
 	// maxContainerCount is the maximum number of old instances of containers
 	// to retain globally. Each container takes up some disk space.
-	MaxContainerCount *int32 `json:"maxContainerCount"`
+	MaxContainerCount *int32 `json:"maxContainerCount"` //gen
 	// cAdvisorPort is the port of the localhost cAdvisor endpoint
-	CAdvisorPort int32 `json:"cAdvisorPort"`
+	CAdvisorPort int32 `json:"cAdvisorPort"` //gen - probable cross-component dep
 	// healthzPort is the port of the localhost healthz endpoint
-	HealthzPort int32 `json:"healthzPort"`
+	HealthzPort int32 `json:"healthzPort"` //gen - probable cross-component dep
 	// healthzBindAddress is the IP address for the healthz server to serve
 	// on.
-	HealthzBindAddress string `json:"healthzBindAddress"`
+	HealthzBindAddress string `json:"healthzBindAddress"` //gen
 	// oomScoreAdj is The oom-score-adj value for kubelet process. Values
 	// must be within the range [-1000, 1000].
-	OOMScoreAdj *int32 `json:"oomScoreAdj"`
+	OOMScoreAdj *int32 `json:"oomScoreAdj"` //gen
 	// registerNode enables automatic registration with the apiserver.
-	RegisterNode *bool `json:"registerNode"`
+	RegisterNode *bool `json:"registerNode"` //gen
 	// clusterDomain is the DNS domain for this cluster. If set, kubelet will
 	// configure all containers to search this domain in addition to the
 	// host's search domains.
-	ClusterDomain string `json:"clusterDomain"`
+	ClusterDomain string `json:"clusterDomain"` //gen - probable cross-component dep
 	// masterServiceNamespace is The namespace from which the kubernetes
 	// master services should be injected into pods.
-	MasterServiceNamespace string `json:"masterServiceNamespace"`
+	MasterServiceNamespace string `json:"masterServiceNamespace"` //gen
 	// clusterDNS is the IP address for a cluster DNS server.  If set, kubelet
 	// will configure all containers to use this for DNS resolution in
 	// addition to the host's DNS servers
-	ClusterDNS string `json:"clusterDNS"`
+	ClusterDNS string `json:"clusterDNS"` //gen - probable cross-component dep
 	// streamingConnectionIdleTimeout is the maximum time a streaming connection
 	// can be idle before the connection is automatically closed.
-	StreamingConnectionIdleTimeout metav1.Duration `json:"streamingConnectionIdleTimeout"`
+	StreamingConnectionIdleTimeout metav1.Duration `json:"streamingConnectionIdleTimeout"` //gen
 	// nodeStatusUpdateFrequency is the frequency that kubelet posts node
 	// status to master. Note: be cautious when changing the constant, it
 	// must work with nodeMonitorGracePeriod in nodecontroller.
-	NodeStatusUpdateFrequency metav1.Duration `json:"nodeStatusUpdateFrequency"`
+	NodeStatusUpdateFrequency metav1.Duration `json:"nodeStatusUpdateFrequency"` //gen - cross-component dep
 	// imageMinimumGCAge is the minimum age for an unused image before it is
 	// garbage collected.
-	ImageMinimumGCAge metav1.Duration `json:"imageMinimumGCAge"`
+	ImageMinimumGCAge metav1.Duration `json:"imageMinimumGCAge"` //gen
 	// imageGCHighThresholdPercent is the percent of disk usage after which
 	// image garbage collection is always run. The percent is calculated as
 	// this field value out of 100.
-	ImageGCHighThresholdPercent *int32 `json:"imageGCHighThresholdPercent"`
+	ImageGCHighThresholdPercent *int32 `json:"imageGCHighThresholdPercent"` //gen
 	// imageGCLowThresholdPercent is the percent of disk usage before which
 	// image garbage collection is never run. Lowest disk usage to garbage
 	// collect to. The percent is calculated as this field value out of 100.
-	ImageGCLowThresholdPercent *int32 `json:"imageGCLowThresholdPercent"`
+	ImageGCLowThresholdPercent *int32 `json:"imageGCLowThresholdPercent"` //gen
 	// lowDiskSpaceThresholdMB is the absolute free disk space, in MB, to
 	// maintain. When disk space falls below this threshold, new pods would
 	// be rejected.
-	LowDiskSpaceThresholdMB int32 `json:"lowDiskSpaceThresholdMB"`
+	LowDiskSpaceThresholdMB int32 `json:"lowDiskSpaceThresholdMB"` //gen
 	// How frequently to calculate and cache volume disk usage for all pods
-	VolumeStatsAggPeriod metav1.Duration `json:"volumeStatsAggPeriod"`
+	VolumeStatsAggPeriod metav1.Duration `json:"volumeStatsAggPeriod"` //gen
 	// networkPluginName is the name of the network plugin to be invoked for
 	// various events in kubelet/pod lifecycle
-	NetworkPluginName string `json:"networkPluginName"`
+	NetworkPluginName string `json:"networkPluginName"` //gen
 	// networkPluginDir is the full path of the directory in which to search
 	// for network plugins (and, for backwards-compat, CNI config files)
-	NetworkPluginDir string `json:"networkPluginDir"`
+	NetworkPluginDir string `json:"networkPluginDir"` //gen
 	// CNIConfDir is the full path of the directory in which to search for
 	// CNI config files
-	CNIConfDir string `json:"cniConfDir"`
+	CNIConfDir string `json:"cniConfDir"` //gen
 	// CNIBinDir is the full path of the directory in which to search for
 	// CNI plugin binaries
-	CNIBinDir string `json:"cniBinDir"`
+	CNIBinDir string `json:"cniBinDir"` //gen
 	// networkPluginMTU is the MTU to be passed to the network plugin,
 	// and overrides the default MTU for cases where it cannot be automatically
 	// computed (such as IPSEC).
-	NetworkPluginMTU int32 `json:"networkPluginMTU"`
+	NetworkPluginMTU int32 `json:"networkPluginMTU"` //todo
 	// volumePluginDir is the full path of the directory in which to search
 	// for additional third party volume plugins
-	VolumePluginDir string `json:"volumePluginDir"`
+	VolumePluginDir string `json:"volumePluginDir"` //gen
 	// cloudProvider is the provider for cloud services.
-	CloudProvider string `json:"cloudProvider"`
+	CloudProvider string `json:"cloudProvider"` //gen
 	// cloudConfigFile is the path to the cloud provider configuration file.
-	CloudConfigFile string `json:"cloudConfigFile"`
+	CloudConfigFile string `json:"cloudConfigFile"` //gen
 	// kubeletCgroups is the absolute name of cgroups to isolate the kubelet in.
-	KubeletCgroups string `json:"kubeletCgroups"`
+	KubeletCgroups string `json:"kubeletCgroups"` //todo
 	// runtimeCgroups are cgroups that container runtime is expected to be isolated in.
-	RuntimeCgroups string `json:"runtimeCgroups"`
+	RuntimeCgroups string `json:"runtimeCgroups"` //todo
 	// systemCgroups is absolute name of cgroups in which to place
 	// all non-kernel processes that are not already in a container. Empty
 	// for no container. Rolling back the flag requires a reboot.
-	SystemCgroups string `json:"systemCgroups"`
+	SystemCgroups string `json:"systemCgroups"` //todo
 	// cgroupRoot is the root cgroup to use for pods. This is handled by the
 	// container runtime on a best effort basis.
-	CgroupRoot string `json:"cgroupRoot"`
+	CgroupRoot string `json:"cgroupRoot"` //todo - but probably gen
 	// Enable QoS based Cgroup hierarchy: top level cgroups for QoS Classes
 	// And all Burstable and BestEffort pods are brought up under their
 	// specific top level QoS cgroup.
 	// +optional
-	ExperimentalCgroupsPerQOS *bool `json:"experimentalCgroupsPerQOS,omitempty"`
+	ExperimentalCgroupsPerQOS *bool `json:"experimentalCgroupsPerQOS,omitempty"` //gen - but this may depend on values of other possibly nogen cgroups flags
 	// driver that the kubelet uses to manipulate cgroups on the host (cgroupfs or systemd)
 	// +optional
-	CgroupDriver string `json:"cgroupDriver,omitempty"`
+	CgroupDriver string `json:"cgroupDriver,omitempty"` //gen
 	// containerRuntime is the container runtime to use.
-	ContainerRuntime string `json:"containerRuntime"`
+	ContainerRuntime string `json:"containerRuntime"` //gen
 	// remoteRuntimeEndpoint is the endpoint of remote runtime service
-	RemoteRuntimeEndpoint string `json:"remoteRuntimeEndpoint"`
+	RemoteRuntimeEndpoint string `json:"remoteRuntimeEndpoint"` //todo
 	// remoteImageEndpoint is the endpoint of remote image service
-	RemoteImageEndpoint string `json:"remoteImageEndpoint"`
+	RemoteImageEndpoint string `json:"remoteImageEndpoint"` //todo
 	// runtimeRequestTimeout is the timeout for all runtime requests except long running
 	// requests - pull, logs, exec and attach.
-	RuntimeRequestTimeout metav1.Duration `json:"runtimeRequestTimeout"`
+	RuntimeRequestTimeout metav1.Duration `json:"runtimeRequestTimeout"` //gen
 	// rktPath is the  path of rkt binary. Leave empty to use the first rkt in
 	// $PATH.
-	RktPath string `json:"rktPath"`
+	RktPath string `json:"rktPath"` //gen
 	// experimentalMounterPath is the path to mounter binary. If not set, kubelet will attempt to use mount
 	// binary that is available via $PATH,
-	ExperimentalMounterPath string `json:"experimentalMounterPath,omitempty"`
+	ExperimentalMounterPath string `json:"experimentalMounterPath,omitempty"` //gen
 	// rktApiEndpoint is the endpoint of the rkt API service to communicate with.
-	RktAPIEndpoint string `json:"rktAPIEndpoint"`
+	RktAPIEndpoint string `json:"rktAPIEndpoint"` //gen
 	// rktStage1Image is the image to use as stage1. Local paths and
 	// http/https URLs are supported.
-	RktStage1Image string `json:"rktStage1Image"`
+	RktStage1Image string `json:"rktStage1Image"` //gen
 	// lockFilePath is the path that kubelet will use to as a lock file.
 	// It uses this file as a lock to synchronize with other kubelet processes
 	// that may be running.
-	LockFilePath *string `json:"lockFilePath"`
+	LockFilePath *string `json:"lockFilePath"` //gen
 	// ExitOnLockContention is a flag that signifies to the kubelet that it is running
 	// in "bootstrap" mode. This requires that 'LockFilePath' has been set.
 	// This will cause the kubelet to listen to inotify events on the lock file,
 	// releasing it and exiting when another process tries to open that file.
-	ExitOnLockContention bool `json:"exitOnLockContention"`
+	ExitOnLockContention bool `json:"exitOnLockContention"` //gen
 	// How should the kubelet configure the container bridge for hairpin packets.
 	// Setting this flag allows endpoints in a Service to loadbalance back to
 	// themselves if they should try to access their own Service. Values:
@@ -423,56 +431,56 @@ type KubeletConfiguration struct {
 	//   "none":               do nothing.
 	// Generally, one must set --hairpin-mode=veth-flag to achieve hairpin NAT,
 	// because promiscous-bridge assumes the existence of a container bridge named cbr0.
-	HairpinMode string `json:"hairpinMode"`
+	HairpinMode string `json:"hairpinMode"` //gen
 	// The node has babysitter process monitoring docker and kubelet.
-	BabysitDaemons bool `json:"babysitDaemons"`
+	BabysitDaemons bool `json:"babysitDaemons"` //todo - maybe gen? or should this depend on local discovery?
 	// maxPods is the number of pods that can run on this Kubelet.
-	MaxPods int32 `json:"maxPods"`
+	MaxPods int32 `json:"maxPods"` //gen
 	// nvidiaGPUs is the number of NVIDIA GPU devices on this node.
-	NvidiaGPUs int32 `json:"nvidiaGPUs"`
+	NvidiaGPUs int32 `json:"nvidiaGPUs"` //todo - this is weird - technically it's not nogen, but it is really something that should be supported based on feature discovery...
 	// dockerExecHandlerName is the handler to use when executing a command
 	// in a container. Valid values are 'native' and 'nsenter'. Defaults to
 	// 'native'.
-	DockerExecHandlerName string `json:"dockerExecHandlerName"`
+	DockerExecHandlerName string `json:"dockerExecHandlerName"` //gen
 	// The CIDR to use for pod IP addresses, only used in standalone mode.
 	// In cluster mode, this is obtained from the master.
-	PodCIDR string `json:"podCIDR"`
+	PodCIDR string `json:"podCIDR"` //gen -- actually kind of irrelevant given that it's a standalone-only flag, thus forced homogeneous in cluster mode
 	// ResolverConfig is the resolver configuration file used as the basis
 	// for the container DNS resolution configuration."), []
-	ResolverConfig string `json:"resolvConf"`
+	ResolverConfig string `json:"resolvConf"` //gen (todo: is this a path to a file?)
 	// cpuCFSQuota is Enable CPU CFS quota enforcement for containers that
 	// specify CPU limits
-	CPUCFSQuota *bool `json:"cpuCFSQuota"`
+	CPUCFSQuota *bool `json:"cpuCFSQuota"` //gen
 	// containerized should be set to true if kubelet is running in a container.
-	Containerized *bool `json:"containerized"`
+	Containerized *bool `json:"containerized"` //gen -- todo: but does anyone actually use this?
 	// maxOpenFiles is Number of files that can be opened by Kubelet process.
-	MaxOpenFiles int64 `json:"maxOpenFiles"`
+	MaxOpenFiles int64 `json:"maxOpenFiles"` //gen
 	// reconcileCIDR is Reconcile node CIDR with the CIDR specified by the
 	// API server. Won't have any effect if register-node is false.
-	ReconcileCIDR *bool `json:"reconcileCIDR"`
+	ReconcileCIDR *bool `json:"reconcileCIDR"` //gen
 	// registerSchedulable tells the kubelet to register the node as
 	// schedulable. Won't have any effect if register-node is false.
 	// DEPRECATED: use registerWithTaints instead
-	RegisterSchedulable *bool `json:"registerSchedulable"`
+	RegisterSchedulable *bool `json:"registerSchedulable"` //gen -- also deprecated it might be time to drop this
 	// registerWithTaints are an array of taints to add to a node object when
 	// the kubelet registers itself. This only takes effect when registerNode
 	// is true and upon the initial registration of the node.
-	RegisterWithTaints []v1.Taint `json:"registerWithTaints"`
+	RegisterWithTaints []v1.Taint `json:"registerWithTaints"` //gen
 	// contentType is contentType of requests sent to apiserver.
-	ContentType string `json:"contentType"`
+	ContentType string `json:"contentType"` //gen
 	// kubeAPIQPS is the QPS to use while talking with kubernetes apiserver
-	KubeAPIQPS *int32 `json:"kubeAPIQPS"`
+	KubeAPIQPS *int32 `json:"kubeAPIQPS"` //gen
 	// kubeAPIBurst is the burst to allow while talking with kubernetes
 	// apiserver
-	KubeAPIBurst int32 `json:"kubeAPIBurst"`
+	KubeAPIBurst int32 `json:"kubeAPIBurst"` //gen
 	// serializeImagePulls when enabled, tells the Kubelet to pull images one
 	// at a time. We recommend *not* changing the default value on nodes that
 	// run docker daemon with version  < 1.9 or an Aufs storage backend.
 	// Issue #10959 has more details.
-	SerializeImagePulls *bool `json:"serializeImagePulls"`
+	SerializeImagePulls *bool `json:"serializeImagePulls"` //gen -- note concerns that depend on docker version
 	// outOfDiskTransitionFrequency is duration for which the kubelet has to
 	// wait before transitioning out of out-of-disk node condition status.
-	OutOfDiskTransitionFrequency metav1.Duration `json:"outOfDiskTransitionFrequency"`
+	OutOfDiskTransitionFrequency metav1.Duration `json:"outOfDiskTransitionFrequency"` //
 	// nodeIP is IP address of the node. If set, kubelet will use this IP
 	// address for the node.
 	NodeIP string `json:"nodeIP"`
