@@ -65,7 +65,7 @@ type KubeProxyConfiguration struct {
 	ClusterCIDR string `json:"clusterCIDR"` //gen
 	// healthzBindAddress is the IP address for the health check server to serve on,
 	// defaulting to 127.0.0.1 (set to 0.0.0.0 for all interfaces)
-	HealthzBindAddress string `json:"healthzBindAddress"`
+	HealthzBindAddress string `json:"healthzBindAddress"` //gen
 	// healthzPort is the port to bind the health check server. Use 0 to disable.
 	HealthzPort int32 `json:"healthzPort"` //gen
 	// hostnameOverride, if non-empty, will be used as the identity instead of the actual hostname.
@@ -331,7 +331,7 @@ type KubeletConfiguration struct {
 	// httpCheckFrequency is the duration between checking http for new data
 	HTTPCheckFrequency metav1.Duration `json:"httpCheckFrequency"` //gen
 	// manifestURL is the URL for accessing the container manifest
-	ManifestURL string `json:"manifestURL"` //todo
+	ManifestURL string `json:"manifestURL"` //gen -- but using the same for all nodes is considered an antipattern (should use DaemonSet instead) -- and this is the inbetween case where it *could* cause an issue if you aren't careful
 	// manifestURLHeader is the HTTP header to use when accessing the manifest
 	// URL, with the key separated from the value with a ':', as in 'key:value'
 	ManifestURLHeader string `json:"manifestURLHeader"` //gen

@@ -56,9 +56,9 @@ import (
 type KubeProxyConfiguration struct {
 	metav1.TypeMeta
 
-	BindAddress                    string          `json:"bindAddress"` //gen
-	ClusterCIDR                    string          `json:"clusterCIDR"` //gen
-	HealthzBindAddress             string          `json:"healthzBindAddress"`
+	BindAddress                    string          `json:"bindAddress"`                    //gen
+	ClusterCIDR                    string          `json:"clusterCIDR"`                    //gen
+	HealthzBindAddress             string          `json:"healthzBindAddress"`             //gen
 	HealthzPort                    int32           `json:"healthzPort"`                    //gen
 	HostnameOverride               string          `json:"hostnameOverride"`               //nogen//can/is this taken from KubeletConfig?
 	IPTablesMasqueradeBit          *int32          `json:"iptablesMasqueradeBit"`          //todo
