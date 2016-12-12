@@ -52,6 +52,7 @@ import (
 )
 
 // Old:
+
 type KubeProxyConfiguration struct {
 	metav1.TypeMeta
 
@@ -82,47 +83,27 @@ type KubeProxyConfiguration struct {
 // New from #34727:
 // ClientConnectionConfiguration contains details for constructing a client.
 type ClientConnectionConfiguration struct { //gen
-	// KubeConfigFile is the path to a kubeconfig file.
-	KubeConfigFile string `json:"kubeconfig"` //gen
-	// AcceptContentTypes defines the Accept header sent by clients when connecting to a server, overriding the
-	// default value of 'application/json'. This field will control all connections to the server used by a particular
-	// client.
-	AcceptContentTypes string `json:"acceptContentTypes"` //gen
-	// ContentType is the content type used when sending data to the server from this client.
-	ContentType string `json:"contentType"` //gen
-	// QPS controls the number of queries per second allowed for this connection.
-	QPS float32 `json:"qps"` //gen
-	// Burst allows extra queries to accumulate when a client is exceeding its rate.
-	Burst int32 `json:"burst"` //gen
+	KubeConfigFile     string  `json:"kubeconfig"`         //gen
+	AcceptContentTypes string  `json:"acceptContentTypes"` //gen
+	ContentType        string  `json:"contentType"`        //gen
+	QPS                float32 `json:"qps"`                //gen
+	Burst              int32   `json:"burst"`              //gen
 }
 
 // KubeProxyIPTablesConfiguration contains iptables-related configuration
 // details for the Kubernetes proxy server.
 type KubeProxyIPTablesConfiguration struct { //todo
-	// masqueradeBit is the bit of the iptables fwmark space to use for SNAT if using
-	// the pure iptables proxy mode. Values must be within the range [0, 31].
-	MasqueradeBit *int32 `json:"masqueradeBit"` //todo I need to learn more about masquerade
-	// masqueradeAll tells kube-proxy to SNAT everything if using the pure iptables proxy mode.
-	MasqueradeAll bool `json:"masqueradeAll"` //gen
-	// syncPeriod is the period that iptables rules are refreshed (e.g. '5s', '1m',
-	// '2h22m').  Must be greater than 0.
-	SyncPeriod unversioned.Duration `json:"syncPeriod"` //gen
+	MasqueradeBit *int32               `json:"masqueradeBit"` //todo I need to learn more about masquerade
+	MasqueradeAll bool                 `json:"masqueradeAll"` //gen
+	SyncPeriod    unversioned.Duration `json:"syncPeriod"`    //gen
 }
 
 // KubeProxyConntrackConfiguration contains conntrack settings for
 // the Kubernetes proxy server.
 type KubeProxyConntrackConfiguration struct { //gen
-	// max is the maximum number of NAT connections to track (0 to
-	// leave as-is).  This takes precedence over conntrackMaxPerCore and conntrackMin.
-	Max int32 `json:"max"` //gen
-	// maxPerCore is the maximum number of NAT connections to track
-	// per CPU core (0 to leave the limit as-is and ignore conntrackMin).
-	MaxPerCore int32 `json:"maxPerCore"` //gen
-	// min is the minimum value of connect-tracking records to allocate,
-	// regardless of conntrackMaxPerCore (set conntrackMaxPerCore=0 to leave the limit as-is).
-	Min int32 `json:"min"` //gen
-	// tcpEstablishedTimeout is how long an idle TCP connection will be kept open
-	// (e.g. '250ms', '2s').  Must be greater than 0.
+	Max                   int32                `json:"max"`                   //gen
+	MaxPerCore            int32                `json:"maxPerCore"`            //gen
+	Min                   int32                `json:"min"`                   //gen
 	TCPEstablishedTimeout unversioned.Duration `json:"tcpEstablishedTimeout"` //gen
 }
 
@@ -131,56 +112,20 @@ type KubeProxyConntrackConfiguration struct { //gen
 type KubeProxyConfiguration struct {
 	unversioned.TypeMeta
 
-	// featureGates is a comma-separated list of key=value pairs that control
-	// which alpha/beta features are enabled.
-	//
-	// TODO this really should be a map but that requires refactoring all
-	// components to use config files because local-up-cluster.sh only supports
-	// the --feature-gates flag right now, which is comma-separated key=value
-	// pairs.
-	FeatureGates string `json:"featureGates"` //gen
-	// bindAddress is the IP address for the proxy server to serve on (set to 0.0.0.0
-	// for all interfaces)
-	BindAddress string `json:"bindAddress"` //gen
-	// healthzBindAddress is the IP address and port for the health check server to serve on,
-	// defaulting to 127.0.0.1:10249 (set to 0.0.0.0 for all interfaces)
-	HealthzBindAddress string `json:"healthzBindAddress"` //gen
-	// clusterCIDR is the CIDR range of the pods in the cluster. It is used to
-	// bridge traffic coming from outside of the cluster. If not provided,
-	// no off-cluster bridging will be performed.
-	ClusterCIDR string `json:"clusterCIDR"` //gen
-	// hostnameOverride, if non-empty, will be used as the identity instead of the actual hostname.
-	HostnameOverride string `json:"hostnameOverride"` //nogen can this be taken from KubeletConfig?
-	// clientConnection specifies the kubeconfig file and client connection
-	// settings for the proxy server to use when communicating with the apiserver.
-	ClientConnection ClientConnectionConfiguration `json:"clientConnection"` //gen
-	// iptables contains iptables-related configuration options.
-	IPTables KubeProxyIPTablesConfiguration `json:"iptables"` //todo - depends on decision wrt masquerade bits
-	// oomScoreAdj is the oom-score-adj value for kube-proxy process. Values must be within
-	// the range [-1000, 1000]
-	OOMScoreAdj *int32 `json:"oomScoreAdj"` //gen
-	// mode specifies which proxy mode to use: 'userspace' (older) or 'iptables'
-	// (faster). If blank, look at the Node object on the Kubernetes API and
-	// respect the '"+ExperimentalProxyModeAnnotation+"' annotation if provided.
-	// Otherwise use the best-available proxy (currently iptables). If the
-	// iptables proxy is selected, regardless of how, but the system's kernel or
-	// iptables versions are insufficient, this always falls back to the userspace
-	// proxy.
-	Mode ProxyMode `json:"mode"` //gen
-	// portRange is the range of host ports (beginPort-endPort, inclusive) that may be consumed
-	// in order to proxy service traffic. If unspecified (0-0) then ports will be randomly chosen.
-	PortRange string `json:"portRange"` //gen
-	// resourceContainer is the absolute name of the resource-only container to create and run
-	// the Kube-proxy in (Default: /kube-proxy).
-	ResourceContainer string `json:"resourceContainer"` //gen?
-	// udpIdleTimeout is how long an idle UDP connection will be kept open (e.g. '250ms', '2s').
-	// Must be greater than 0. Only applicable for proxyMode=userspace.
-	UDPIdleTimeout unversioned.Duration `json:"udpTimeoutMilliseconds"` //gen
-	// conntrack contains conntrack-related configuration options.
-	Conntrack KubeProxyConntrackConfiguration `json:"conntrack"` //gen
-	// configSyncPeriod is how often configuration from the apiserver is
-	// refreshed.  Must be greater than 0.
-	ConfigSyncPeriod unversioned.Duration `json:"configSyncPeriod"` //gen
+	FeatureGates       string                          `json:"featureGates"`           //gen
+	BindAddress        string                          `json:"bindAddress"`            //gen
+	HealthzBindAddress string                          `json:"healthzBindAddress"`     //gen
+	ClusterCIDR        string                          `json:"clusterCIDR"`            //gen
+	HostnameOverride   string                          `json:"hostnameOverride"`       //nogen can this be taken from KubeletConfig?
+	ClientConnection   ClientConnectionConfiguration   `json:"clientConnection"`       //gen
+	IPTables           KubeProxyIPTablesConfiguration  `json:"iptables"`               //todo - depends on decision wrt masquerade bits
+	OOMScoreAdj        *int32                          `json:"oomScoreAdj"`            //gen
+	Mode               ProxyMode                       `json:"mode"`                   //gen
+	PortRange          string                          `json:"portRange"`              //gen
+	ResourceContainer  string                          `json:"resourceContainer"`      //gen?
+	UDPIdleTimeout     unversioned.Duration            `json:"udpTimeoutMilliseconds"` //gen
+	Conntrack          KubeProxyConntrackConfiguration `json:"conntrack"`              //gen
+	ConfigSyncPeriod   unversioned.Duration            `json:"configSyncPeriod"`       //gen
 }
 
 //---
@@ -252,8 +197,8 @@ type KubeletConfiguration struct {
 	TLSCertFile                                  string                `json:"tlsCertFile"`                                            //gen
 	TLSPrivateKeyFile                            string                `json:"tlsPrivateKeyFile"`                                      //gen
 	CertDirectory                                string                `json:"certDirectory"`                                          //gen
-	Authentication                               KubeletAuthentication `json:"authentication"`                                         //todo
-	Authorization                                KubeletAuthorization  `json:"authorization"`                                          //todo
+	Authentication                               KubeletAuthentication `json:"authentication"`                                         //gen
+	Authorization                                KubeletAuthorization  `json:"authorization"`                                          //gen
 	HostnameOverride                             string                `json:"hostnameOverride"`                                       //nogen
 	PodInfraContainerImage                       string                `json:"podInfraContainerImage"`                                 //gen
 	DockerEndpoint                               string                `json:"dockerEndpoint"`                                         //gen
@@ -360,32 +305,32 @@ const (
 	KubeletAuthorizationModeWebhook     KubeletAuthorizationMode = "Webhook"
 )
 
-type KubeletAuthorization struct {
-	Mode KubeletAuthorizationMode `json:"mode"`
+type KubeletAuthorization struct { //gen
+	Mode KubeletAuthorizationMode `json:"mode"` //gen
 
-	Webhook KubeletWebhookAuthorization `json:"webhook"`
+	Webhook KubeletWebhookAuthorization `json:"webhook"` //gen
 }
 
-type KubeletWebhookAuthorization struct {
-	CacheAuthorizedTTL   metav1.Duration `json:"cacheAuthorizedTTL"`
-	CacheUnauthorizedTTL metav1.Duration `json:"cacheUnauthorizedTTL"`
+type KubeletWebhookAuthorization struct { //gen
+	CacheAuthorizedTTL   metav1.Duration `json:"cacheAuthorizedTTL"`   //gen
+	CacheUnauthorizedTTL metav1.Duration `json:"cacheUnauthorizedTTL"` //gen
 }
 
-type KubeletAuthentication struct {
-	X509      KubeletX509Authentication      `json:"x509"`
-	Webhook   KubeletWebhookAuthentication   `json:"webhook"`
-	Anonymous KubeletAnonymousAuthentication `json:"anonymous"`
+type KubeletAuthentication struct { //gen
+	X509      KubeletX509Authentication      `json:"x509"`      //gen
+	Webhook   KubeletWebhookAuthentication   `json:"webhook"`   //gen
+	Anonymous KubeletAnonymousAuthentication `json:"anonymous"` //gen
 }
 
-type KubeletX509Authentication struct {
-	ClientCAFile string `json:"clientCAFile"`
+type KubeletX509Authentication struct { //gen
+	ClientCAFile string `json:"clientCAFile"` //gen
 }
 
-type KubeletWebhookAuthentication struct {
-	Enabled  *bool           `json:"enabled"`
-	CacheTTL metav1.Duration `json:"cacheTTL"`
+type KubeletWebhookAuthentication struct { //gen
+	Enabled  *bool           `json:"enabled"`  //gen
+	CacheTTL metav1.Duration `json:"cacheTTL"` //gen
 }
 
-type KubeletAnonymousAuthentication struct {
-	Enabled *bool `json:"enabled"`
+type KubeletAnonymousAuthentication struct { //gen
+	Enabled *bool `json:"enabled"` //gen
 }
