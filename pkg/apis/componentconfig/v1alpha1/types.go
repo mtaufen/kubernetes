@@ -24,7 +24,9 @@ nogen <=> identifying information
 maybe...
 
 And I think we have a third category:
-Information that should not be in config at all, but should be discovered from the node
+Information that should not be in config at all, but should be discovered from the node, i.e. the number of GPUs.
+Things like that should never be passed via Kubelet flags, it makes NO sense. Telling the Kubelet that there are
+more GPUs than actually exist will NOT make it true.
 
 */
 
@@ -384,10 +386,10 @@ type KubeletConfiguration struct {
 	HostNetworkSources []string `json:"hostNetworkSources"` //gen
 	// hostPIDSources is a comma-separated list of sources from which the
 	// Kubelet allows pods to use the host pid namespace. Defaults to "*".
-	HostPIDSources []string `json:"hostPIDSources"` //todo
+	HostPIDSources []string `json:"hostPIDSources"` //gen
 	// hostIPCSources is a comma-separated list of sources from which the
 	// Kubelet allows pods to use the host ipc namespace. Defaults to "*".
-	HostIPCSources []string `json:"hostIPCSources"` //todo
+	HostIPCSources []string `json:"hostIPCSources"` //gen
 	// registryPullQPS is the limit of registry pulls per second. If 0,
 	// unlimited. Set to 0 for no limit. Defaults to 5.0.
 	RegistryPullQPS *int32 `json:"registryPullQPS"` //gen
@@ -476,7 +478,7 @@ type KubeletConfiguration struct {
 	// networkPluginMTU is the MTU to be passed to the network plugin,
 	// and overrides the default MTU for cases where it cannot be automatically
 	// computed (such as IPSEC).
-	NetworkPluginMTU int32 `json:"networkPluginMTU"` //todo
+	NetworkPluginMTU int32 `json:"networkPluginMTU"` //gen
 	// volumePluginDir is the full path of the directory in which to search
 	// for additional third party volume plugins
 	VolumePluginDir string `json:"volumePluginDir"` //gen
@@ -485,16 +487,16 @@ type KubeletConfiguration struct {
 	// cloudConfigFile is the path to the cloud provider configuration file.
 	CloudConfigFile string `json:"cloudConfigFile"` //gen
 	// kubeletCgroups is the absolute name of cgroups to isolate the kubelet in.
-	KubeletCgroups string `json:"kubeletCgroups"` //todo
+	KubeletCgroups string `json:"kubeletCgroups"` //gen
 	// runtimeCgroups are cgroups that container runtime is expected to be isolated in.
-	RuntimeCgroups string `json:"runtimeCgroups"` //todo
+	RuntimeCgroups string `json:"runtimeCgroups"` //gen
 	// systemCgroups is absolute name of cgroups in which to place
 	// all non-kernel processes that are not already in a container. Empty
 	// for no container. Rolling back the flag requires a reboot.
-	SystemCgroups string `json:"systemCgroups"` //todo
+	SystemCgroups string `json:"systemCgroups"` //gen
 	// cgroupRoot is the root cgroup to use for pods. This is handled by the
 	// container runtime on a best effort basis.
-	CgroupRoot string `json:"cgroupRoot"` //todo - but probably gen
+	CgroupRoot string `json:"cgroupRoot"` //gen
 	// Enable QoS based Cgroup hierarchy: top level cgroups for QoS Classes
 	// And all Burstable and BestEffort pods are brought up under their
 	// specific top level QoS cgroup.
@@ -542,11 +544,11 @@ type KubeletConfiguration struct {
 	// because promiscous-bridge assumes the existence of a container bridge named cbr0.
 	HairpinMode string `json:"hairpinMode"` //gen
 	// The node has babysitter process monitoring docker and kubelet.
-	BabysitDaemons bool `json:"babysitDaemons"` //todo - maybe gen? or should this depend on local discovery?
+	BabysitDaemons bool `json:"babysitDaemons"` //gen
 	// maxPods is the number of pods that can run on this Kubelet.
 	MaxPods int32 `json:"maxPods"` //gen
 	// nvidiaGPUs is the number of NVIDIA GPU devices on this node.
-	NvidiaGPUs int32 `json:"nvidiaGPUs"` //todo - this is weird - technically it's not nogen, but it is really something that should be supported based on feature discovery...
+	NvidiaGPUs int32 `json:"nvidiaGPUs"` //gen - this is weird - technically it's not nogen, but it is really something that should be supported based on feature discovery...
 	// dockerExecHandlerName is the handler to use when executing a command
 	// in a container. Valid values are 'native' and 'nsenter'. Defaults to
 	// 'native'.
@@ -556,12 +558,12 @@ type KubeletConfiguration struct {
 	PodCIDR string `json:"podCIDR"` //gen -- actually kind of irrelevant given that it's a standalone-only flag, thus forced homogeneous in cluster mode
 	// ResolverConfig is the resolver configuration file used as the basis
 	// for the container DNS resolution configuration."), []
-	ResolverConfig string `json:"resolvConf"` //gen (todo: is this a path to a file?)
+	ResolverConfig string `json:"resolvConf"` //gen
 	// cpuCFSQuota is Enable CPU CFS quota enforcement for containers that
 	// specify CPU limits
 	CPUCFSQuota *bool `json:"cpuCFSQuota"` //gen
 	// containerized should be set to true if kubelet is running in a container.
-	Containerized *bool `json:"containerized"` //gen -- todo: but does anyone actually use this?
+	Containerized *bool `json:"containerized"` //gen
 	// maxOpenFiles is Number of files that can be opened by Kubelet process.
 	MaxOpenFiles int64 `json:"maxOpenFiles"` //gen
 	// reconcileCIDR is Reconcile node CIDR with the CIDR specified by the
@@ -594,7 +596,7 @@ type KubeletConfiguration struct {
 	// address for the node.
 	NodeIP string `json:"nodeIP"` //nogen
 	// nodeLabels to add when registering the node in the cluster.
-	NodeLabels map[string]string `json:"nodeLabels"` //todo -- idkfs but could be gen or nogen depending on the label
+	NodeLabels map[string]string `json:"nodeLabels"` //gen
 	// nonMasqueradeCIDR configures masquerading: traffic to IPs outside this range will use IP masquerade.
 	NonMasqueradeCIDR string `json:"nonMasqueradeCIDR"` //gen
 	// enable gathering custom metrics.
