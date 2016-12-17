@@ -508,9 +508,9 @@ type KubeletConfiguration struct {
 	// containerRuntime is the container runtime to use.
 	ContainerRuntime string `json:"containerRuntime"` //gen
 	// remoteRuntimeEndpoint is the endpoint of remote runtime service
-	RemoteRuntimeEndpoint string `json:"remoteRuntimeEndpoint"` //todo
+	RemoteRuntimeEndpoint string `json:"remoteRuntimeEndpoint"` //gen
 	// remoteImageEndpoint is the endpoint of remote image service
-	RemoteImageEndpoint string `json:"remoteImageEndpoint"` //todo
+	RemoteImageEndpoint string `json:"remoteImageEndpoint"` //gen
 	// runtimeRequestTimeout is the timeout for all runtime requests except long running
 	// requests - pull, logs, exec and attach.
 	RuntimeRequestTimeout metav1.Duration `json:"runtimeRequestTimeout"` //gen
