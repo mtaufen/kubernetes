@@ -74,7 +74,7 @@ type KubeProxyConfiguration struct {
 	HostnameOverride string `json:"hostnameOverride"` //nogen//can/is this taken from KubeletConfig?
 	// iptablesMasqueradeBit is the bit of the iptables fwmark space to use for SNAT if using
 	// the pure iptables proxy mode. Values must be within the range [0, 31].
-	IPTablesMasqueradeBit *int32 `json:"iptablesMasqueradeBit"` //todo
+	IPTablesMasqueradeBit *int32 `json:"iptablesMasqueradeBit"` //gen
 	// iptablesSyncPeriod is the period that iptables rules are refreshed (e.g. '5s', '1m',
 	// '2h22m').  Must be greater than 0.
 	IPTablesSyncPeriod metav1.Duration `json:"iptablesSyncPeriodSeconds"` //gen
@@ -140,10 +140,10 @@ type ClientConnectionConfiguration struct { //gen
 
 // KubeProxyIPTablesConfiguration contains iptables-related configuration
 // details for the Kubernetes proxy server.
-type KubeProxyIPTablesConfiguration struct { //todo
+type KubeProxyIPTablesConfiguration struct { //gen
 	// masqueradeBit is the bit of the iptables fwmark space to use for SNAT if using
 	// the pure iptables proxy mode. Values must be within the range [0, 31].
-	MasqueradeBit *int32 `json:"masqueradeBit"` //todo I need to learn more about masquerade
+	MasqueradeBit *int32 `json:"masqueradeBit"` //gen I need to learn more about masquerade
 	// masqueradeAll tells kube-proxy to SNAT everything if using the pure iptables proxy mode.
 	MasqueradeAll bool `json:"masqueradeAll"` //gen
 	// syncPeriod is the period that iptables rules are refreshed (e.g. '5s', '1m',
@@ -197,7 +197,7 @@ type KubeProxyConfiguration struct {
 	// settings for the proxy server to use when communicating with the apiserver.
 	ClientConnection ClientConnectionConfiguration `json:"clientConnection"` //gen
 	// iptables contains iptables-related configuration options.
-	IPTables KubeProxyIPTablesConfiguration `json:"iptables"` //todo - depends on decision wrt masquerade bits
+	IPTables KubeProxyIPTablesConfiguration `json:"iptables"` //gen
 	// oomScoreAdj is the oom-score-adj value for kube-proxy process. Values must be within
 	// the range [-1000, 1000]
 	OOMScoreAdj *int32 `json:"oomScoreAdj"` //gen
@@ -639,10 +639,10 @@ type KubeletConfiguration struct {
 	// Values must be within the range [0, 31]. Must be different from other mark bits.
 	// Warning: Please match the value of corresponding parameter in kube-proxy
 	// TODO: clean up IPTablesMasqueradeBit in kube-proxy
-	IPTablesMasqueradeBit *int32 `json:"iptablesMasqueradeBit"` //nogen -- cross-component dependency
+	IPTablesMasqueradeBit *int32 `json:"iptablesMasqueradeBit"` //gen -- cross-component dependency -- "different" is internal to node
 	// iptablesDropBit is the bit of the iptables fwmark space to mark for dropping packets.
 	// Values must be within the range [0, 31]. Must be different from other mark bits.
-	IPTablesDropBit *int32 `json:"iptablesDropBit"` //nogen -- cross-node dependency? what does it mean by "must be different from other mark bits"?
+	IPTablesDropBit *int32 `json:"iptablesDropBit"` //gen -- "different" is internal to node
 	// Whitelist of unsafe sysctls or sysctl patterns (ending in *). Use these at your own risk.
 	// Resource isolation might be lacking and pod might influence each other on the same node.
 	// +optional
