@@ -501,7 +501,7 @@ type KubeletConfiguration struct {
 	// And all Burstable and BestEffort pods are brought up under their
 	// specific top level QoS cgroup.
 	// +optional
-	ExperimentalCgroupsPerQOS *bool `json:"experimentalCgroupsPerQOS,omitempty"` //gen - but this may depend on values of other possibly nogen cgroups flags
+	ExperimentalCgroupsPerQOS *bool `json:"experimentalCgroupsPerQOS,omitempty"` //gen
 	// driver that the kubelet uses to manipulate cgroups on the host (cgroupfs or systemd)
 	// +optional
 	CgroupDriver string `json:"cgroupDriver,omitempty"` //gen
@@ -548,7 +548,7 @@ type KubeletConfiguration struct {
 	// maxPods is the number of pods that can run on this Kubelet.
 	MaxPods int32 `json:"maxPods"` //gen
 	// nvidiaGPUs is the number of NVIDIA GPU devices on this node.
-	NvidiaGPUs int32 `json:"nvidiaGPUs"` //gen - this is weird - technically it's not nogen, but it is really something that should be supported based on feature discovery...
+	NvidiaGPUs int32 `json:"nvidiaGPUs"` //gen - this is weird - technically it's not no-gen, but it is really something that should be supported based on feature discovery...
 	// dockerExecHandlerName is the handler to use when executing a command
 	// in a container. Valid values are 'native' and 'nsenter'. Defaults to
 	// 'native'.

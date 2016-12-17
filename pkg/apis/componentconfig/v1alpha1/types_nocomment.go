@@ -24,7 +24,9 @@ nogen <=> identifying information
 maybe...
 
 And I think we have a third category:
-Information that should not be in config at all, but should be discovered from the node
+Information that should not be in config at all, but should be discovered from the node, i.e. the number of GPUs.
+Things like that should never be passed via Kubelet flags, it makes NO sense. Telling the Kubelet that there are
+more GPUs than actually exist will NOT make it true.
 
 */
 
@@ -61,7 +63,7 @@ type KubeProxyConfiguration struct {
 	HealthzBindAddress             string          `json:"healthzBindAddress"`             //gen
 	HealthzPort                    int32           `json:"healthzPort"`                    //gen
 	HostnameOverride               string          `json:"hostnameOverride"`               //nogen//can/is this taken from KubeletConfig?
-	IPTablesMasqueradeBit          *int32          `json:"iptablesMasqueradeBit"`          //todo
+	IPTablesMasqueradeBit          *int32          `json:"iptablesMasqueradeBit"`          //gen
 	IPTablesSyncPeriod             metav1.Duration `json:"iptablesSyncPeriodSeconds"`      //gen
 	IPTablesMinSyncPeriod          metav1.Duration `json:"iptablesMinSyncPeriodSeconds"`   //gen
 	KubeconfigPath                 string          `json:"kubeconfigPath"`                 //gen
@@ -92,8 +94,8 @@ type ClientConnectionConfiguration struct { //gen
 
 // KubeProxyIPTablesConfiguration contains iptables-related configuration
 // details for the Kubernetes proxy server.
-type KubeProxyIPTablesConfiguration struct { //todo
-	MasqueradeBit *int32               `json:"masqueradeBit"` //todo I need to learn more about masquerade
+type KubeProxyIPTablesConfiguration struct { //gen
+	MasqueradeBit *int32               `json:"masqueradeBit"` //gen I need to learn more about masquerade
 	MasqueradeAll bool                 `json:"masqueradeAll"` //gen
 	SyncPeriod    unversioned.Duration `json:"syncPeriod"`    //gen
 }
@@ -118,7 +120,7 @@ type KubeProxyConfiguration struct {
 	ClusterCIDR        string                          `json:"clusterCIDR"`            //gen
 	HostnameOverride   string                          `json:"hostnameOverride"`       //nogen can this be taken from KubeletConfig?
 	ClientConnection   ClientConnectionConfiguration   `json:"clientConnection"`       //gen
-	IPTables           KubeProxyIPTablesConfiguration  `json:"iptables"`               //todo - depends on decision wrt masquerade bits
+	IPTables           KubeProxyIPTablesConfiguration  `json:"iptables"`               //gen
 	OOMScoreAdj        *int32                          `json:"oomScoreAdj"`            //gen
 	Mode               ProxyMode                       `json:"mode"`                   //gen
 	PortRange          string                          `json:"portRange"`              //gen
@@ -188,7 +190,7 @@ type KubeletConfiguration struct {
 	SyncFrequency                                metav1.Duration       `json:"syncFrequency"`                                          //gen
 	FileCheckFrequency                           metav1.Duration       `json:"fileCheckFrequency"`                                     //gen
 	HTTPCheckFrequency                           metav1.Duration       `json:"httpCheckFrequency"`                                     //gen
-	ManifestURL                                  string                `json:"manifestURL"`                                            //todo
+	ManifestURL                                  string                `json:"manifestURL"`                                            //gen -- but using the same for all nodes is considered an antipattern (should use DaemonSet instead) -- and this is the inbetween case where it *could* cause an issue if you aren't careful
 	ManifestURLHeader                            string                `json:"manifestURLHeader"`                                      //gen
 	EnableServer                                 *bool                 `json:"enableServer"`                                           //gen
 	Address                                      string                `json:"address"`                                                //gen
@@ -206,8 +208,8 @@ type KubeletConfiguration struct {
 	SeccompProfileRoot                           string                `json:"seccompProfileRoot"`                                     //gen
 	AllowPrivileged                              *bool                 `json:"allowPrivileged"`                                        //gen
 	HostNetworkSources                           []string              `json:"hostNetworkSources"`                                     //gen
-	HostPIDSources                               []string              `json:"hostPIDSources"`                                         //todo
-	HostIPCSources                               []string              `json:"hostIPCSources"`                                         //todo
+	HostPIDSources                               []string              `json:"hostPIDSources"`                                         //gen
+	HostIPCSources                               []string              `json:"hostIPCSources"`                                         //gen
 	RegistryPullQPS                              *int32                `json:"registryPullQPS"`                                        //gen
 	RegistryBurst                                int32                 `json:"registryBurst"`                                          //gen
 	EventRecordQPS                               *int32                `json:"eventRecordQPS"`                                         //gen
@@ -235,19 +237,19 @@ type KubeletConfiguration struct {
 	NetworkPluginDir                             string                `json:"networkPluginDir"`                                       //gen
 	CNIConfDir                                   string                `json:"cniConfDir"`                                             //gen
 	CNIBinDir                                    string                `json:"cniBinDir"`                                              //gen
-	NetworkPluginMTU                             int32                 `json:"networkPluginMTU"`                                       //todo
+	NetworkPluginMTU                             int32                 `json:"networkPluginMTU"`                                       //gen
 	VolumePluginDir                              string                `json:"volumePluginDir"`                                        //gen
 	CloudProvider                                string                `json:"cloudProvider"`                                          //gen
 	CloudConfigFile                              string                `json:"cloudConfigFile"`                                        //gen
-	KubeletCgroups                               string                `json:"kubeletCgroups"`                                         //todo
-	RuntimeCgroups                               string                `json:"runtimeCgroups"`                                         //todo
-	SystemCgroups                                string                `json:"systemCgroups"`                                          //todo
-	CgroupRoot                                   string                `json:"cgroupRoot"`                                             //todo - but probably gen
-	ExperimentalCgroupsPerQOS                    *bool                 `json:"experimentalCgroupsPerQOS,omitempty"`                    //gen - but this may depend on values of other possibly nogen cgroups flags
+	KubeletCgroups                               string                `json:"kubeletCgroups"`                                         //gen
+	RuntimeCgroups                               string                `json:"runtimeCgroups"`                                         //gen
+	SystemCgroups                                string                `json:"systemCgroups"`                                          //gen
+	CgroupRoot                                   string                `json:"cgroupRoot"`                                             //gen
+	ExperimentalCgroupsPerQOS                    *bool                 `json:"experimentalCgroupsPerQOS,omitempty"`                    //gen
 	CgroupDriver                                 string                `json:"cgroupDriver,omitempty"`                                 //gen
 	ContainerRuntime                             string                `json:"containerRuntime"`                                       //gen
-	RemoteRuntimeEndpoint                        string                `json:"remoteRuntimeEndpoint"`                                  //todo
-	RemoteImageEndpoint                          string                `json:"remoteImageEndpoint"`                                    //todo
+	RemoteRuntimeEndpoint                        string                `json:"remoteRuntimeEndpoint"`                                  //gen
+	RemoteImageEndpoint                          string                `json:"remoteImageEndpoint"`                                    //gen
 	RuntimeRequestTimeout                        metav1.Duration       `json:"runtimeRequestTimeout"`                                  //gen
 	RktPath                                      string                `json:"rktPath"`                                                //gen
 	ExperimentalMounterPath                      string                `json:"experimentalMounterPath,omitempty"`                      //gen
@@ -256,14 +258,14 @@ type KubeletConfiguration struct {
 	LockFilePath                                 *string               `json:"lockFilePath"`                                           //gen
 	ExitOnLockContention                         bool                  `json:"exitOnLockContention"`                                   //gen
 	HairpinMode                                  string                `json:"hairpinMode"`                                            //gen
-	BabysitDaemons                               bool                  `json:"babysitDaemons"`                                         //todo - maybe gen? or should this depend on local discovery?
+	BabysitDaemons                               bool                  `json:"babysitDaemons"`                                         //gen
 	MaxPods                                      int32                 `json:"maxPods"`                                                //gen
-	NvidiaGPUs                                   int32                 `json:"nvidiaGPUs"`                                             //todo - this is weird - technically it's not nogen, but it is really something that should be supported based on feature discovery...
+	NvidiaGPUs                                   int32                 `json:"nvidiaGPUs"`                                             //gen - this is weird - technically it's not no-gen, but it is really something that should be supported based on feature discovery...
 	DockerExecHandlerName                        string                `json:"dockerExecHandlerName"`                                  //gen
 	PodCIDR                                      string                `json:"podCIDR"`                                                //gen -- actually kind of irrelevant given that it's a standalone-only flag, thus forced homogeneous in cluster mode
-	ResolverConfig                               string                `json:"resolvConf"`                                             //gen (todo: is this a path to a file?)
+	ResolverConfig                               string                `json:"resolvConf"`                                             //gen
 	CPUCFSQuota                                  *bool                 `json:"cpuCFSQuota"`                                            //gen
-	Containerized                                *bool                 `json:"containerized"`                                          //gen -- todo: but does anyone actually use this?
+	Containerized                                *bool                 `json:"containerized"`                                          //gen
 	MaxOpenFiles                                 int64                 `json:"maxOpenFiles"`                                           //gen
 	ReconcileCIDR                                *bool                 `json:"reconcileCIDR"`                                          //gen
 	RegisterSchedulable                          *bool                 `json:"registerSchedulable"`                                    //gen -- also deprecated it might be time to drop this
@@ -274,7 +276,7 @@ type KubeletConfiguration struct {
 	SerializeImagePulls                          *bool                 `json:"serializeImagePulls"`                                    //gen -- note concerns that depend on docker version
 	OutOfDiskTransitionFrequency                 metav1.Duration       `json:"outOfDiskTransitionFrequency"`                           //gen
 	NodeIP                                       string                `json:"nodeIP"`                                                 //nogen
-	NodeLabels                                   map[string]string     `json:"nodeLabels"`                                             //todo -- idkfs but could be gen or nogen depending on the label
+	NodeLabels                                   map[string]string     `json:"nodeLabels"`                                             //gen
 	NonMasqueradeCIDR                            string                `json:"nonMasqueradeCIDR"`                                      //gen
 	EnableCustomMetrics                          bool                  `json:"enableCustomMetrics"`                                    //gen
 	EvictionHard                                 *string               `json:"evictionHard"`                                           //gen
@@ -289,8 +291,8 @@ type KubeletConfiguration struct {
 	KubeReserved                                 map[string]string     `json:"kubeReserved"`                                           //gen
 	ProtectKernelDefaults                        bool                  `json:"protectKernelDefaults"`                                  //gen
 	MakeIPTablesUtilChains                       *bool                 `json:"makeIPTablesUtilChains"`                                 //gen
-	IPTablesMasqueradeBit                        *int32                `json:"iptablesMasqueradeBit"`                                  //nogen -- cross-component dependency
-	IPTablesDropBit                              *int32                `json:"iptablesDropBit"`                                        //nogen -- cross-node dependency? what does it mean by "must be different from other mark bits"?
+	IPTablesMasqueradeBit                        *int32                `json:"iptablesMasqueradeBit"`                                  //gen -- cross-component dependency -- "different" is internal to node
+	IPTablesDropBit                              *int32                `json:"iptablesDropBit"`                                        //gen -- "different" is internal to node
 	AllowedUnsafeSysctls                         []string              `json:"allowedUnsafeSysctls,omitempty"`                         //gen
 	FeatureGates                                 string                `json:"featureGates,omitempty"`                                 //gen -- potential cross-component dependency (which was the point of how we implemented FeatureGates)
 	EnableCRI                                    bool                  `json:"enableCRI,omitempty"`                                    //gen
