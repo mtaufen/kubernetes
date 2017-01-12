@@ -99,20 +99,28 @@ How do you tell the kubelet what to use?
 
 ### Orchestration of configuration
 
+There are a lot of opinions around how to orchestrate configuration in a cluster. The following items start to form the basis of a robust solution:
+
 #### Robust Kubelet behavior
+
+To make config updates robust, the Kubelet should:
+
+- track the last-known-good version of config that it has been using
+- track the number/frequency of kubelet restarts to detect crash-loops caused by new config, and fall back to the last-known-good config if necessary. 
 
 #### Recommendations regarding update workflow
 
+Kubernetes does not have the concepts of immutable, or even undeleteable API objects. This makes it easy to shoot yourself in the foot by modifying or deleting a `ConfigMap` referenced by multiple nodes, potentially causing dangerous immediate changes in aggregate. To protect against this, rollout workflow should consist of creating a new `ConfigMap` and updating the reference on each node to point to that new object.
 
 ## Additional concerns not-yet-addressed
 
 - A way to query/monitor the config in-use on a given node. (today this is configz)
 - RBAC on ConfigMaps
-- 
+- A specific orchestration solution for rolling out kubelet configuration. It may be enough to extend `DaemonSet` deployments so they can manage `Node` specs. We may need something more. There are several factors to think about **TODO expand this**
 
 
 
-
+# TODO: Once have the general stuff done, need to go back through and add the specific technical details of the proposed design.
 
 
 <!-- BEGIN MUNGE: GENERATED_ANALYTICS -->
