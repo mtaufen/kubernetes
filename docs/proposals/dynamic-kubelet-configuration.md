@@ -73,7 +73,9 @@ Two really important questions:
 
 ### Organization of the Kubelet's Configuration Type
 
-- as part of the goal of getting off flags, we should have a separate flags struct e.g. #32215
+- We should remove the `HostNameOverride` and `NodeIP` fields from the KubeletConfiguration API object; these should just stay flags for now - They likely do not need to change after node provisioning and keeping them in the configuration struct complicates sharing config objects between nodes (because these values are always node-unique).
+- The Kubelet's configuration type will no longer align with it's flags; we should add a separate struct that contains the flag variables to prevent them from migrating all over the codebase (similar to work being done in [#32215](https://github.com/kubernetes/kubernetes/issues/32215)).
+
 - experimental fields
 
 ### Representation and Organization of Kubelet Configuration in a Cluster
@@ -83,17 +85,17 @@ Two really important questions:
 - The Kubelet's configuration should be, at least initially, organized in the cluster as a structured monolith. 
     + *Structured*, so that it is readable.
     + *Monolithic*, to provide atomicity over the entire configuration object.
+        * This likely means that the Kubelet configuration will be stored as a string blob (JSON or YAML) in the value associated with a given key on a `ConfigMap`.
         * If leaky boundaries occur between the substructures, we don't want the problem of coordinating non-atomic updates across separately-referenced substructures.
-        * If, in the future, the ability to independently orchestrate the substructures of the configuration is desired, we can move down that road. But today this is probably overkill, because most cluster configuration is eventually homogeneous. Even in a non-homogeneously configured cluster, we would have to carefully consider the downside of losing atomicity on the config object against the upside of more flexibility for splitting up configuration responsibility.
+        * If, in the future, the ability to independently orchestrate the substructures of the configuration is desired, we can move down that road. But today this is probably overkill, because most K8s cluster configuration is eventually homogeneous anyway. Even in a non-homogeneously configured cluster, we would have to carefully consider the downside of losing atomicity on the config object against the upside of more flexibility for splitting up configuration responsibility and e.g. being able to roll out changes to separate subcomponents at different rates.
 
 ### Referencing Configuration
 
-e.g. how do you tell the kubelet what to use?
-- cluster-level - give the configmap name or use an object ref
-- on-disk - specify a path
+How do you tell the kubelet what to use?
 
+- On disk: The configuration should be specified via a path passed to a command-line flag.
+- Cluster level object: The `ConfigMap` containing the desired configuration should be specified via the `Node` object corresponding to the Kubelet.  
 
-    This likely means that the Kubelet configuration will be atomic in the form of a string blob (JSON or YAML) stored in the value associated with one of a `ConfigMap`'s keys.
 
 ### Orchestration of configuration
 
