@@ -55,7 +55,7 @@ K8s should:
 - Protect against bad configuration pushes.
 - Recommend, but not mandate, the basics of a workflow for updating configuration.
 
-## Additional Goals
+Additionally, we should:
 
 - Add Kubelet support for consuming configuration via a file on disk. This aids work towards deprecating flags in favor of on-disk configuration. This functionality can also be reused for locak checkpointing of Kubelet configuration.
 - Make it possible to opt-out of remote configuration as an extra layer of protection. This should probably be a flag so that you can't dynamically turn off dynamic config by accident.
@@ -66,17 +66,14 @@ Two really important questions:
 1. How should one organize and represent configuration in a cluster?
 2. How should one orchestrate changes to that configuration?
 
-
-
-### Definitions*||||||||||||||||||||||||||||||||||||*
-
-
 ### Organization of the Kubelet's Configuration Type
 
 - We should remove the `HostNameOverride` and `NodeIP` fields from the KubeletConfiguration API object; these should just stay flags for now - They likely do not need to change after node provisioning and keeping them in the configuration struct complicates sharing config objects between nodes (because these values are always node-unique).
 - The Kubelet's configuration type will no longer align with it's flags; we should add a separate struct that contains the flag variables to prevent them from migrating all over the codebase (similar to work being done in [#32215](https://github.com/kubernetes/kubernetes/issues/32215)).
+- We should add more structure to the Kubelet configuration for readability, the details of this portion can be discussed via a separate refactoring PR (**TODO** add a link here once I open that PR).
+- We need to be able to add and remove experimental fields from the `KubeletConfiguration` without having to rev the API version. A simple solution is to just have a string representation of the experimental fields as part of the KubeletConfiguration, that the Kubelet can parse as necessary. 
+    + Some additional thought needs to go toward the graduation policy for experimental fields. Will the kubelet continue to try to parse them out of the experimental section? For how long? What if the first-class field and experimental field conflict?
 
-- experimental fields
 
 ### Representation and Organization of Kubelet Configuration in a Cluster
 
@@ -88,6 +85,7 @@ Two really important questions:
         * This likely means that the Kubelet configuration will be stored as a string blob (JSON or YAML) in the value associated with a given key on a `ConfigMap`.
         * If leaky boundaries occur between the substructures, we don't want the problem of coordinating non-atomic updates across separately-referenced substructures.
         * If, in the future, the ability to independently orchestrate the substructures of the configuration is desired, we can move down that road. But today this is probably overkill, because most K8s cluster configuration is eventually homogeneous anyway. Even in a non-homogeneously configured cluster, we would have to carefully consider the downside of losing atomicity on the config object against the upside of more flexibility for splitting up configuration responsibility and e.g. being able to roll out changes to separate subcomponents at different rates.
+- 
 
 ### Referencing Configuration
 
@@ -114,7 +112,7 @@ Kubernetes does not have the concepts of immutable, or even undeleteable API obj
 
 ## Additional concerns not-yet-addressed
 
-- A way to query/monitor the config in-use on a given node. (today this is configz)
+- A way to query/monitor the config in-use on a given node. Today this is possible via the configz endpoint, but there are a number of other potential solutions, e.g. exposing live config via Prometheus.
 - RBAC on ConfigMaps
 - A specific orchestration solution for rolling out kubelet configuration. It may be enough to extend `DaemonSet` deployments so they can manage `Node` specs. We may need something more. There are several factors to think about **TODO expand this**
 
