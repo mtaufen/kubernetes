@@ -42,8 +42,9 @@ The Kubelet is currently configured via command-line flags. This is painful for 
 
 ## Example Use Cases
 
-- Staged rollout of configuration chages, including tuning adjustments and new Kubelet features.
-- More easily run tests with different Kubelet configurations (can dynamicly set the configuration from the test, via the API server).
+- Staged rollout of configuration chages, including tuning adjustments and enabling new Kubelet features.
+- Streamline cluster bootstrap. The Kubeadm folks want to plug in to dynamic config, for example: [kubernetes/kubeadm/28](https://github.com/kubernetes/kubeadm/issues/28).
+- Making it easier to run tests with different Kubelet configurations, because you can specify the desired Kubelet configuration from the test itself (this is technically already possible with the alpha version of the feature).
 
 ## Primary Goals of the Design
 
