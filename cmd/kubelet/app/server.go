@@ -345,6 +345,12 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.KubeletDeps) (err error) {
 			if err == nil {
 				// Update s (KubeletServer) with new config from API server
 				s.KubeletConfiguration = *remoteKC
+				experimental, err = componentconfig.ExperimentalKubeletConfigurationFromString(remoteKC.Experimental)
+				if err != nil {
+					return err
+				}
+				s.Experimental = *experimental
+
 				// Ensure that /configz is up to date with the new config
 				if cfgzErr != nil {
 					glog.Errorf("was unable to register configz before due to %s, will not be able to set now", cfgzErr)
