@@ -17,6 +17,7 @@ limitations under the License.
 package componentconfig
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -161,7 +162,7 @@ func DefaultExperimentalKubeletConfiguration() *ExperimentalKubeletConfiguration
 func ExperimentalKubeletConfigurationFromString(s string) (*ExperimentalKubeletConfiguration, error) {
 	// todo, introduces json dep.
 	ekc := DefaultExperimentalKubeletConfiguration()
-	err := runtime.DecodeInto(api.Codecs.UniversalDecoder(), []byte(s), ekc)
+	err := json.Unmarshal([]byte(s), ekc)
 	if err != nil {
 		return nil, err
 	}
