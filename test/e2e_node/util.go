@@ -17,6 +17,7 @@ limitations under the License.
 package e2e_node
 
 import (
+	"crypto/sha1"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -41,6 +42,8 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
+
+const nodeConfigKey = "node.config"
 
 // TODO(random-liu): Get this automatically from kubelet flag.
 var kubeletAddress = flag.String("kubelet-address", "http://127.0.0.1:10255", "Host and port of the kubelet")
@@ -98,95 +101,89 @@ func tempSetEvictionHard(f *framework.Framework, evictionHard string) {
 func tempSetCurrentKubeletConfig(f *framework.Framework, updateFunction func(initialConfig *componentconfig.KubeletConfiguration)) {
 	var oldCfg *componentconfig.KubeletConfiguration
 	BeforeEach(func() {
-		configEnabled, err := isKubeletConfigEnabled(f)
+		oldCfg, err := getCurrentKubeletConfig()
 		framework.ExpectNoError(err)
-		if configEnabled {
-			oldCfg, err = getCurrentKubeletConfig()
-			framework.ExpectNoError(err)
-			clone, err := api.Scheme.DeepCopy(oldCfg)
-			framework.ExpectNoError(err)
-			newCfg := clone.(*componentconfig.KubeletConfiguration)
-			updateFunction(newCfg)
-			framework.ExpectNoError(setKubeletConfiguration(f, newCfg))
-		} else {
-			framework.Logf("The Dynamic Kubelet Configuration feature is not enabled.\n" +
-				"Pass --feature-gates=DynamicKubeletConfig=true to the Kubelet to enable this feature.\n" +
-				"For `make test-e2e-node`, you can set `TEST_ARGS='--feature-gates=DynamicKubeletConfig=true'`.")
-		}
+		clone, err := api.Scheme.DeepCopy(oldCfg)
+		framework.ExpectNoError(err)
+		newCfg := clone.(*componentconfig.KubeletConfiguration)
+		updateFunction(newCfg)
+		setAndCheckKubeletConfiguration(f, newCfg)
 	})
 	AfterEach(func() {
 		if oldCfg != nil {
-			err := setKubeletConfiguration(f, oldCfg)
-			framework.ExpectNoError(err)
+			setAndCheckKubeletConfiguration(f, oldCfg)
 		}
 	})
 }
 
-// Returns true if kubeletConfig is enabled, false otherwise or if we cannot determine if it is.
-func isKubeletConfigEnabled(f *framework.Framework) (bool, error) {
+func errorNoDynamicConfig(f *framework.Framework) error {
 	cfgz, err := getCurrentKubeletConfig()
-	if err != nil {
-		return false, fmt.Errorf("could not determine whether 'DynamicKubeletConfig' feature is enabled, err: %v", err)
-	}
-	return strings.Contains(cfgz.FeatureGates, "DynamicKubeletConfig=true"), nil
-}
-
-// Queries the API server for a Kubelet configuration for the node described by framework.TestContext.NodeName
-func getCurrentKubeletConfigMap(f *framework.Framework) (*v1.ConfigMap, error) {
-	return f.ClientSet.Core().ConfigMaps("kube-system").Get(fmt.Sprintf("kubelet-%s", framework.TestContext.NodeName), metav1.GetOptions{})
-}
-
-// Creates or updates the configmap for KubeletConfiguration, waits for the Kubelet to restart
-// with the new configuration. Returns an error if the configuration after waiting 40 seconds
-// doesn't match what you attempted to set, or if the dynamic configuration feature is disabled.
-func setKubeletConfiguration(f *framework.Framework, kubeCfg *componentconfig.KubeletConfiguration) error {
-	const (
-		restartGap = 30 * time.Second
-	)
-
-	// Make sure Dynamic Kubelet Configuration feature is enabled on the Kubelet we are about to reconfigure
-	configEnabled, err := isKubeletConfigEnabled(f)
 	if err != nil {
 		return fmt.Errorf("could not determine whether 'DynamicKubeletConfig' feature is enabled, err: %v", err)
 	}
-	if !configEnabled {
-		return fmt.Errorf("The Dynamic Kubelet Configuration feature is not enabled.\n" +
-			"Pass --feature-gates=DynamicKubeletConfig=true to the Kubelet to enable this feature.\n" +
-			"For `make test-e2e-node`, you can set `TEST_ARGS='--feature-gates=DynamicKubeletConfig=true'`.")
+	if strings.Contains(cfgz.FeatureGates, "DynamicKubeletConfig=true") {
+		return nil
 	}
+	return fmt.Errorf("The Dynamic Kubelet Configuration feature is not enabled.\n" +
+		"Pass --feature-gates=DynamicKubeletConfig=true to the Kubelet to enable this feature.\n" +
+		"For `make test-e2e-node`, you can set `TEST_ARGS='--feature-gates=DynamicKubeletConfig=true'`.")
+}
 
-	// Check whether a configmap for KubeletConfiguration already exists
-	_, err = getCurrentKubeletConfigMap(f)
+// Queries the API server for a Kubelet configuration for the node described by framework.TestContext.NodeName
+func getCurrentNodeConfigMap(f *framework.Framework) (*v1.ConfigMap, error) {
+	// Find the Node object associated with this Kubelet
+	node, err := f.ClientSet.Core().Nodes().Get(framework.TestContext.NodeName, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	// Check for the node config annotation, if it exists grab the referenced ConfigMap from kube-system
+	if cmName, exists := node.Annotations[nodeConfigKey]; exists {
+		return f.ClientSet.Core().ConfigMaps("kube-system").Get(cmName, metav1.GetOptions{})
+	}
+	return nil, fmt.Errorf("Node.Annotations did not contain key %q", nodeConfigKey)
+}
 
+// Creates or updates the configmap for KubeletConfiguration, waits for the Kubelet to restart
+// with the new configuration. The test will fail if anything goes wrong here.
+func setAndCheckKubeletConfiguration(f *framework.Framework, newKubeCfg *componentconfig.KubeletConfiguration) {
+	const restartGap = 30 * time.Second
+
+	// Make sure dynamic configuration feature is enabled on the Kubelet we are about to reconfigure
+	framework.ExpectNoError(errorNoDynamicConfig(f))
+
+	// Construct the new Node ConfigMap to wrap the KubeletConfiguration
+	cm := makeNodeConfigMap(newKubeCfg)
+
+	// If a ConfigMap with the same name already exists, we assume its Data is the same as well,
+	// even though it theoretically could be a hash collision.
+	// We don't really care about that here because this is for tests, which will already
+	// detect a mismatch between intended data and actual data.
+	_, err := f.ClientSet.Core().ConfigMaps("kube-system").Get(cm.Name, metav1.GetOptions{})
 	if k8serr.IsNotFound(err) {
-		_, err := createConfigMap(f, kubeCfg)
-		if err != nil {
-			return err
-		}
+		_, err := f.ClientSet.Core().ConfigMaps("kube-system").Create(cm)
+		framework.ExpectNoError(err)
 	} else if err != nil {
-		return err
-	} else {
-		// The configmap exists, update it instead of creating it.
-		_, err := updateConfigMap(f, kubeCfg)
-		if err != nil {
-			return err
-		}
+		framework.ExpectNoError(err)
 	}
+
+	// Update the Node's config annotation to point at the desired ConfigMap
+	node, err := f.ClientSet.Core().Nodes().Get(framework.TestContext.NodeName, metav1.GetOptions{})
+	framework.ExpectNoError(err)
+	node.Annotations[nodeConfigKey] = cm.Name
+	_, err = f.ClientSet.Core().Nodes().Update(cm)
+	framework.ExpectNoError(err)
 
 	// Wait for the Kubelet to restart.
 	time.Sleep(restartGap)
 
-	// Retrieve the new config and compare it to the one we attempted to set
-	newKubeCfg, err := getCurrentKubeletConfig()
-	if err != nil {
-		return err
-	}
+	// Retrieve the current Kubelet config and compare it to the one we attempted to set via Node config
+	curKubeCfg, err := getCurrentKubeletConfig()
+	framework.ExpectNoError(err)
 
-	// Return an error if the desired config is not in use by now
-	if !reflect.DeepEqual(*kubeCfg, *newKubeCfg) {
-		return fmt.Errorf("either the Kubelet did not restart or it did not present the modified configuration via /configz after restarting.")
+	// Error if the desired config is not in use by now
+	if !reflect.DeepEqual(*newKubeCfg, *curKubeCfg) {
+		framework.ExpectNoError(fmt.Errorf("either the Kubelet did not restart or it did not present the modified configuration via /configz after restarting."))
 	}
-	return nil
 }
 
 // Causes the test to fail, or returns a status 200 response from the /configz endpoint
@@ -242,43 +239,32 @@ func decodeConfigz(resp *http.Response) (*componentconfig.KubeletConfiguration, 
 	return &kubeCfg, nil
 }
 
-// Constructs a Kubelet ConfigMap targeting the current node running the node e2e tests
-func makeKubeletConfigMap(nodeName string, kubeCfg *componentconfig.KubeletConfiguration) *v1.ConfigMap {
+// Appends the hash of the JSON serialization of the ConfigMap's Data field to its name
+func appendHashToName(cm *v1.ConfigMap) *v1.ConfigMap {
+	b, err := json.Marshal(cm.Data)
+	framework.ExpectNoError(err)
+	hash := fmt.Sprintf("%x", sha1.Sum(b))
+	cm.Name = fmt.Sprintf("%s-%s", cm.Name, hash)
+	return cm
+}
+
+// Constructs a Node ConfigMap that contains the specified KubeletConfiguration. The ConfigMap's name will contain a hash of its data.
+func makeNodeConfigMap(kubeCfg *componentconfig.KubeletConfiguration) *v1.ConfigMap {
 	kubeCfgExt := v1alpha1.KubeletConfiguration{}
 	api.Scheme.Convert(kubeCfg, &kubeCfgExt, nil)
 
 	bytes, err := json.Marshal(kubeCfgExt)
 	framework.ExpectNoError(err)
 
-	cmap := &v1.ConfigMap{
+	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: fmt.Sprintf("kubelet-%s", nodeName),
+			Name: "node-config",
 		},
 		Data: map[string]string{
-			"kubelet.config": string(bytes),
+			"kubelet": string(bytes),
 		},
 	}
-	return cmap
-}
-
-// Uses KubeletConfiguration to create a `kubelet-<node-name>` ConfigMap in the "kube-system" namespace.
-func createConfigMap(f *framework.Framework, kubeCfg *componentconfig.KubeletConfiguration) (*v1.ConfigMap, error) {
-	cmap := makeKubeletConfigMap(framework.TestContext.NodeName, kubeCfg)
-	cmap, err := f.ClientSet.Core().ConfigMaps("kube-system").Create(cmap)
-	if err != nil {
-		return nil, err
-	}
-	return cmap, nil
-}
-
-// Similar to createConfigMap, except this updates an existing ConfigMap.
-func updateConfigMap(f *framework.Framework, kubeCfg *componentconfig.KubeletConfiguration) (*v1.ConfigMap, error) {
-	cmap := makeKubeletConfigMap(framework.TestContext.NodeName, kubeCfg)
-	cmap, err := f.ClientSet.Core().ConfigMaps("kube-system").Update(cmap)
-	if err != nil {
-		return nil, err
-	}
-	return cmap, nil
+	return appendHashToName(cm)
 }
 
 func logPodEvents(f *framework.Framework) {
