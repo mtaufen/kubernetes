@@ -41,8 +41,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/apiserver/pkg/server/healthz"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	"k8s.io/client-go/cache"
 	clientgoclientset "k8s.io/client-go/kubernetes"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	clientv1 "k8s.io/client-go/pkg/api/v1"
@@ -156,7 +158,7 @@ func UnsecuredKubeletDeps(s *options.KubeletServer) (*kubelet.KubeletDeps, error
 	}, nil
 }
 
-func getKubeClient(s *options.KubeletServer) (*clientset.Clientset, error) {
+func kubeClient(s *options.KubeletServer) (*clientset.Clientset, error) {
 	clientConfig, err := CreateAPIServerClientConfig(s)
 	if err == nil {
 		kubeClient, err := clientset.NewForConfig(clientConfig)
@@ -168,104 +170,202 @@ func getKubeClient(s *options.KubeletServer) (*clientset.Clientset, error) {
 	return nil, err
 }
 
-// Tries to download the kubelet-<node-name> configmap from "kube-system" namespace via the API server and returns a JSON string or error
-func getRemoteKubeletConfig(s *options.KubeletServer, kubeDeps *kubelet.KubeletDeps) (string, error) {
-	// TODO(mtaufen): should probably cache clientset and pass into this function rather than regenerate on every request
-	kubeClient, err := getKubeClient(s)
-	if err != nil {
-		return "", err
-	}
+// TODO(mtaufen): move a bunch of these helpers to a util file?
 
-	configmap, err := func() (*v1.ConfigMap, error) {
-		var nodename types.NodeName
-		hostname := nodeutil.GetHostname(s.HostnameOverride)
-
-		if kubeDeps != nil && kubeDeps.Cloud != nil {
-			instances, ok := kubeDeps.Cloud.Instances()
-			if !ok {
-				err = fmt.Errorf("failed to get instances from cloud provider, can't determine nodename")
-				return nil, err
-			}
-			nodename, err = instances.CurrentNodeName(hostname)
-			if err != nil {
-				err = fmt.Errorf("error fetching current instance name from cloud provider: %v", err)
-				return nil, err
-			}
-			// look for kubelet-<node-name> configmap from "kube-system"
-			configmap, err := kubeClient.CoreV1Client.ConfigMaps("kube-system").Get(fmt.Sprintf("kubelet-%s", nodename), metav1.GetOptions{})
-			if err != nil {
-				return nil, err
-			}
-			return configmap, nil
+// Returns the most likely identifer for the current Node
+func curNodeIdentifier(s *options.KubeletServer, kd *kubelet.KubeletDeps) (string, error) {
+	var nodename types.NodeName // TODO(mtaufen): why is this not a string?
+	hostname := nodeutil.GetHostname(s.HostnameOverride)
+	if kd != nil && kd.Cloud != nil {
+		instances, ok := kd.Cloud.Instances()
+		if !ok {
+			err := fmt.Errorf("failed to get instances from cloud provider, can't determine nodename")
+			return "", err
 		}
-		// No cloud provider yet, so can't get the nodename via Cloud.Instances().CurrentNodeName(hostname), try just using the hostname
-		configmap, err := kubeClient.CoreV1Client.ConfigMaps("kube-system").Get(fmt.Sprintf("kubelet-%s", hostname), metav1.GetOptions{})
+		nodename, err := instances.CurrentNodeName(hostname)
 		if err != nil {
-			return nil, fmt.Errorf("cloud provider was nil, and attempt to use hostname to find config resulted in: %v", err)
+			return "", fmt.Errorf("error fetching current instance name from cloud provider: %v", err)
 		}
-		return configmap, nil
-	}()
-	if err != nil {
-		return "", err
+		return string(nodename), nil
 	}
-
-	// When we create the KubeletConfiguration configmap, we put a json string
-	// representation of the config in a `kubelet.config` key.
-	jsonstr, ok := configmap.Data["kubelet.config"]
-	if !ok {
-		return "", fmt.Errorf("KubeletConfiguration configmap did not contain a value with key `kubelet.config`")
-	}
-
-	return jsonstr, nil
+	return hostname, nil
 }
 
-func startKubeletConfigSyncLoop(s *options.KubeletServer, currentKC string) {
-	glog.Infof("Starting Kubelet configuration sync loop")
-	go func() {
-		wait.PollInfinite(30*time.Second, func() (bool, error) {
-			glog.Infof("Checking API server for new Kubelet configuration.")
-			remoteKC, err := getRemoteKubeletConfig(s, nil)
-			if err == nil {
-				// Detect new config by comparing with the last JSON string we extracted.
-				if remoteKC != currentKC {
-					glog.Info("Found new Kubelet configuration via API server, restarting!")
-					os.Exit(0)
-				}
-			} else {
-				glog.Infof("Did not find a configuration for this Kubelet via API server: %v", err)
+func node(c *clientset.Clientset, name string) (*v1.Node, error) {
+	node, err := c.CoreV1Client.Nodes().Get(name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return node, nil
+}
+
+func curNode(c *clientset.Clientset, s *options.KubeletServer, kd *kubelet.KubeletDeps) (*v1.Node, error) {
+	name, err := curNodeIdentifier(s, kd)
+	if err != nil {
+		return nil, err
+	}
+	return node(c, name)
+}
+
+const nodeConfigKey = "node.config"
+
+// Returns the ConfigMap referenced by the nodeConfigKey annotation on the nodename Node
+func nodeConfig(c *clientset.Clientset, nodename string) (*v1.ConfigMap, error) {
+	// Find the Node object, which reports the ConfigMap this Kubelet should use
+	node, err := node(c, nodename)
+	if err != nil {
+		return nil, err
+	}
+	if name, ok := node.Annotations[nodeConfigKey]; ok {
+		return c.CoreV1Client.ConfigMaps("kube-system").Get(name, metav1.GetOptions{})
+	}
+	return nil, fmt.Errorf("Annotations on node %q did not contain key %q", nodename, nodeConfigKey)
+}
+
+// Returns the Node ConfigMap for the current Node
+func curNodeConfig(c *clientset.Clientset, s *options.KubeletServer, kd *kubelet.KubeletDeps) (*v1.ConfigMap, error) {
+	name, err := curNodeIdentifier(s, kd)
+	if err != nil {
+		return nil, fmt.Errorf("could not determine identifier for node, err: %v", err)
+	}
+	return nodeConfig(c, name)
+}
+
+const kubeletConfigKey = "kubelet"
+
+// If Node config accessible: returns Node ConfigMap name and internal KubeletConfiguration value OR name and error
+// Else: returns error
+func remoteKubeletConfig(c *clientset.Clientset, s *options.KubeletServer, kd *kubelet.KubeletDeps) (string, *componentconfig.KubeletConfiguration, error) {
+	cm, err := curNodeConfig(c, s, kd)
+	if err != nil {
+		return "", nil, err
+	}
+	if jsonstr, ok := cm.Data[kubeletConfigKey]; ok {
+		// decode, apply defaults, and convert to internal type
+		// TODO(mtaufen): Make this generic to external type versions?
+		ekc = componentconfigv1alpha1.KubeletConfiguration{}
+		err = runtime.DecodeInto(api.Codecs.UniversalDecoder(), []byte(jsonstr), &ekc)
+		if err != nil {
+			return cm.Name, nil, err
+		}
+		api.Scheme.Default(&ekc)
+		kc := componentconfig.KubeletConfiguration{}
+		err = api.Scheme.Convert(&ekc, &kc, nil)
+		if err != nil {
+			return cm.Name, nil, err
+		}
+		return cm.Name, &kc, nil
+	}
+	return cm.Name, nil, fmt.Errorf("Node ConfigMap %q did not contain key %q", cm.Name, kubeletConfigKey)
+}
+
+// Watch for changes to the Node's annotations, if the value of the nodeConfigKey annotation changes,
+// assume we have a new configuration and restart the Kubelet.
+func watchConfigChange(c *clientset.Clientset, s *options.KubeletServer, kd *kubelet.KubeletDeps, curName string) {
+	// poll for the node in case it doesn't exist yet
+	var node *api.Node
+	for {
+		select {
+		case <-time.After(time.Second * 10):
+			node, err := curNode(c, s, kd)
+			if err != nil {
+				glog.Errorf("couldn't find the current node, will try again in 10 seconds, err: %v", err)
+				continue
 			}
-			return false, nil // Always return (false, nil) so we poll forever.
+			break
+		}
+	}
+
+	// TODO: What if the node isn't registered yet?
+
+	// List nodes, filter for this node's node name, and watch for changes
+	// Need to check the initial result in case anything changed since
+	// we initially got the name of the node configmap
+	nodename, err := curNodeIdentifier(s, kd)
+	nodeLW := cache.NewListWatchFromClient(c.CoreV1().RESTClient(),
+		"nodes",
+		metav1.NamespaceAll,
+		fields.Set{api.ObjectNameField: nodename}.AsSelector())
+	_, ctlr := cache.NewInformer(
+		nodeLW,
+		&v1.Node{},
+		time.Second*0,
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+
+			},
+			DeleteFunc: func(obj interface{}) {
+
+			},
+			UpdateFunc: func(old, new interface{}) {
+
+			},
 		})
+	go ctlr.Run(nil) // We will never stop watching
+
+	go func() {
+		// TODO(mtaufen): is it necessary to set name = ""?
+		name, ok := node.Annotations[nodeConfigKey]
+		if !ok {
+			name = ""
+		}
+		// TODO(mtaufen): Is this necessary, will the watch not get the Node? I think I'm doing the watch wrong anyway
+		// I think you're supposed to watch with a filter
+		// will the initial watch event return the object as is today?
+		if name != curName {
+			// Desired config changed between the original and the latest result
+			os.Exit(0)
+		}
+
+		glog.Infof("Watching annotations on Node %q for configuration updates", node.Name)
+		ch := node.Watch(metav1.ListOptions{}).ResultChan()
+		for {
+			e := <-ch
+			switch {
+			case e.EventType == watch.Added || e.EventType == watch.Modified:
+				node, ok := e.Object.(*api.Node)
+				if ok {
+					// Check if there is a new Node ConfigMap specified. If so, exit.
+					// The kubelet will pick up the new config when it is restarted.
+					newName, ok := node.Annotations[nodeConfigKey]
+					if !ok {
+						newName = ""
+					}
+					if newName != curName {
+						glog.Infof("new Node configuration found, restarting the Kubelet!")
+						os.Exit(0)
+					}
+				} else {
+					glog.Errorf("could not convert Event.Object to Node, the object was: %+v", e.Object)
+				}
+			case e.EventType == watch.Deleted:
+				// TODO(mtaufen): Better error message here?
+				glog.Errorf("OMG the node was deleted the WORLD IS ENDING RUNNNNNNNNN!!!!!!")
+			case e.EventType == watch.Error:
+				// TODO(mtaufen): Is this where a "too-old resource version" error would show up? See: https://github.com/kubernetes/community/blob/master/contributors/design-proposals/apiserver-watch.md
+				status, ok := e.Object.(*api.Status)
+				if ok {
+					glog.Errorf("error watching node, status %+v", status)
+				} else {
+					glog.Errorf("ambiguous error watching node, Event.Object: %+v", e.Object)
+				}
+			}
+		}
 	}()
 }
 
 // Try to check for config on the API server, return that config if we get it, and start
 // a background thread that checks for updates to configs.
-func initKubeletConfigSync(s *options.KubeletServer) (*componentconfig.KubeletConfiguration, error) {
-	jsonstr, err := getRemoteKubeletConfig(s, nil)
-	if err == nil {
-		// We will compare future API server config against the config we just got (jsonstr):
-		startKubeletConfigSyncLoop(s, jsonstr)
-
-		// Convert json from API server to external type struct, and convert that to internal type struct
-		extKC := componentconfigv1alpha1.KubeletConfiguration{}
-		err := runtime.DecodeInto(api.Codecs.UniversalDecoder(), []byte(jsonstr), &extKC)
-		if err != nil {
-			return nil, err
-		}
-		api.Scheme.Default(&extKC)
-		kc := componentconfig.KubeletConfiguration{}
-		err = api.Scheme.Convert(&extKC, &kc, nil)
-		if err != nil {
-			return nil, err
-		}
-		return &kc, nil
-	} else {
-		// Couldn't get a configuration from the API server yet.
-		// Restart as soon as anything comes back from the API server.
-		startKubeletConfigSyncLoop(s, "")
-		return nil, err
+func initKubeletConfigSync(s *options.KubeletServer, kd *kubelet.KubeletDeps) (*componentconfig.KubeletConfiguration, error) {
+	c, err := kubeClient(s)
+	if err != nil {
+		return "", err
 	}
+
+	// In the event of an error, name == ""
+	name, kubeCfg, err := remoteKubeletConfig(c, s, kd)
+	watchConfigChange(c, s, kd, name)
+	return kubeCfg, err
 }
 
 // Run runs the specified KubeletServer with the given KubeletDeps.  This should never exit.
