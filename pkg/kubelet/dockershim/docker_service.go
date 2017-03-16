@@ -91,7 +91,7 @@ type NetworkPluginSettings struct {
 	HairpinMode componentconfig.HairpinMode
 	// NonMasqueradeCIDR is the range of ips which should *not* be included
 	// in any MASQUERADE rules applied by the plugin
-	NonMasqueradeCIDR string
+	NonMasqueradeCIDRs []string
 	// PluginName is the name of the plugin, runtime shim probes for
 	PluginName string
 	// PluginBinDir is the directory in which the binaries for the plugin with
@@ -179,7 +179,7 @@ func NewDockerService(client dockertools.DockerInterface, seccompProfileRoot str
 		&namespaceGetter{ds},
 		&portMappingGetter{ds},
 	}
-	plug, err := network.InitNetworkPlugin(cniPlugins, pluginSettings.PluginName, netHost, pluginSettings.HairpinMode, pluginSettings.NonMasqueradeCIDR, pluginSettings.MTU)
+	plug, err := network.InitNetworkPlugin(cniPlugins, pluginSettings.PluginName, netHost, pluginSettings.HairpinMode, pluginSettings.NonMasqueradeCIDRs, pluginSettings.MTU)
 	if err != nil {
 		return nil, fmt.Errorf("didn't find compatible CNI plugin with given settings %+v: %v", pluginSettings, err)
 	}

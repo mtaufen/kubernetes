@@ -251,6 +251,11 @@ func DeepCopy_v1alpha1_KubeletConfiguration(in interface{}, out interface{}, c *
 				(*out)[key] = val
 			}
 		}
+		if in.NonMasqueradeCIDRs != nil {
+			in, out := &in.NonMasqueradeCIDRs, &out.NonMasqueradeCIDRs
+			*out = make([]string, len(*in))
+			copy(*out, *in)
+		}
 		if in.EvictionHard != nil {
 			in, out := &in.EvictionHard, &out.EvictionHard
 			*out = new(string)

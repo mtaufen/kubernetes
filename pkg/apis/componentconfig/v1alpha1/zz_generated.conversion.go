@@ -380,6 +380,7 @@ func autoConvert_v1alpha1_KubeletConfiguration_To_componentconfig_KubeletConfigu
 	out.NodeIP = in.NodeIP
 	out.NodeLabels = *(*map[string]string)(unsafe.Pointer(&in.NodeLabels))
 	out.NonMasqueradeCIDR = in.NonMasqueradeCIDR
+	out.NonMasqueradeCIDRs = *(*[]string)(unsafe.Pointer(&in.NonMasqueradeCIDRs))
 	out.EnableCustomMetrics = in.EnableCustomMetrics
 	if err := v1.Convert_Pointer_string_To_string(&in.EvictionHard, &out.EvictionHard, s); err != nil {
 		return err
@@ -579,6 +580,11 @@ func autoConvert_componentconfig_KubeletConfiguration_To_v1alpha1_KubeletConfigu
 	out.NodeIP = in.NodeIP
 	out.NodeLabels = *(*map[string]string)(unsafe.Pointer(&in.NodeLabels))
 	out.NonMasqueradeCIDR = in.NonMasqueradeCIDR
+	if in.NonMasqueradeCIDRs == nil {
+		out.NonMasqueradeCIDRs = make([]string, 0)
+	} else {
+		out.NonMasqueradeCIDRs = *(*[]string)(unsafe.Pointer(&in.NonMasqueradeCIDRs))
+	}
 	out.EnableCustomMetrics = in.EnableCustomMetrics
 	if err := v1.Convert_string_To_Pointer_string(&in.EvictionHard, &out.EvictionHard, s); err != nil {
 		return err

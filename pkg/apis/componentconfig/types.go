@@ -413,6 +413,8 @@ type KubeletConfiguration struct {
 	NodeLabels map[string]string
 	// nonMasqueradeCIDR configures masquerading: traffic to IPs outside this range will use IP masquerade.
 	NonMasqueradeCIDR string
+	// nonMasqueradeCIDRs configures masquerading: traffic to IPs outside these ranges (plus NonMasqueradeCIDR) will use IP masquerade.
+	NonMasqueradeCIDRs []string
 	// enable gathering custom metrics.
 	EnableCustomMetrics bool
 	// Comma-delimited list of hard eviction expressions.  For example, 'memory.available<300Mi'.

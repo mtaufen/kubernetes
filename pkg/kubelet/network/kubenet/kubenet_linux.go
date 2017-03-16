@@ -70,6 +70,11 @@ const (
 	// defaultIPAMDir is the default location for the checkpoint files stored by host-local ipam
 	// https://github.com/containernetworking/cni/tree/master/plugins/ipam/host-local#backends
 	defaultIPAMDir = "/var/lib/cni/networks"
+
+	// masqChain to store masquerade (when to SNAT) rules
+	masqChain = utiliptables.Chain("KUBE-MASQ")
+
+	linkLocalCIDR = "169.254.0.0/16"
 )
 
 // CNI plugins required by kubenet in /opt/cni/bin or vendor directory
@@ -99,10 +104,10 @@ type kubenetNetworkPlugin struct {
 	ebtables        utilebtables.Interface
 	// vendorDir is passed by kubelet network-plugin-dir parameter.
 	// kubenet will search for cni binaries in DefaultCNIDir first, then continue to vendorDir.
-	vendorDir         string
-	nonMasqueradeCIDR string
-	podCidr           string
-	gateway           net.IP
+	vendorDir          string
+	nonMasqueradeCIDRs []string
+	podCidr            string
+	gateway            net.IP
 }
 
 func NewPlugin(networkPluginDir string) network.NetworkPlugin {
@@ -112,21 +117,21 @@ func NewPlugin(networkPluginDir string) network.NetworkPlugin {
 	sysctl := utilsysctl.New()
 	iptInterface := utiliptables.New(execer, dbus, protocol)
 	return &kubenetNetworkPlugin{
-		podIPs:            make(map[kubecontainer.ContainerID]string),
-		execer:            utilexec.New(),
-		iptables:          iptInterface,
-		sysctl:            sysctl,
-		vendorDir:         networkPluginDir,
-		hostportSyncer:    hostport.NewHostportSyncer(),
-		hostportManager:   hostport.NewHostportManager(),
-		nonMasqueradeCIDR: "10.0.0.0/8",
+		podIPs:             make(map[kubecontainer.ContainerID]string),
+		execer:             utilexec.New(),
+		iptables:           iptInterface,
+		sysctl:             sysctl,
+		vendorDir:          networkPluginDir,
+		hostportSyncer:     hostport.NewHostportSyncer(),
+		hostportManager:    hostport.NewHostportManager(),
+		nonMasqueradeCIDRs: []string{"10.0.0.0/8"}, // TODO(mtaufen): we really shouldn't have this default here; it should only come from defaults.go which sets it at the Kubelet's configuraiton level
 	}
 }
 
-func (plugin *kubenetNetworkPlugin) Init(host network.Host, hairpinMode componentconfig.HairpinMode, nonMasqueradeCIDR string, mtu int) error {
+func (plugin *kubenetNetworkPlugin) Init(host network.Host, hairpinMode componentconfig.HairpinMode, nonMasqueradeCIDRs []string, mtu int) error {
 	plugin.host = host
 	plugin.hairpinMode = hairpinMode
-	plugin.nonMasqueradeCIDR = nonMasqueradeCIDR
+	plugin.nonMasqueradeCIDRs = nonMasqueradeCIDRs
 	plugin.cniConfig = &libcni.CNIConfig{
 		Path: []string{DefaultCNIDir, plugin.vendorDir},
 	}
@@ -170,20 +175,70 @@ func (plugin *kubenetNetworkPlugin) Init(host network.Host, hairpinMode componen
 	}
 
 	// Need to SNAT outbound traffic from cluster
-	if err = plugin.ensureMasqRule(); err != nil {
+	if err = plugin.ensureMasqRules(); err != nil {
 		return err
 	}
 	return nil
 }
 
 // TODO: move thic logic into cni bridge plugin and remove this from kubenet
+func (plugin *kubenetNetworkPlugin) ensureNonMasqRule(cidr string) error {
+	if _, err := plugin.iptables.EnsureRule(utiliptables.Append, utiliptables.TableNAT, masqChain,
+		"-m", "comment", "--comment", "kubenet: cluster-local traffic should not be subject to SNAT",
+		"-m", "addrtype", "!", "--dst-type", "LOCAL", "-d", cidr, "-j", "RETURN"); err != nil {
+		return fmt.Errorf("Failed to ensure that %s chain %s jumps to RETURN for CIDR %v: %v", utiliptables.TableNAT, masqChain, cidr, err)
+	}
+	return nil
+}
+
+// TODO: move thic logic into cni bridge plugin and remove this from kubenet
 func (plugin *kubenetNetworkPlugin) ensureMasqRule() error {
+	if _, err := plugin.iptables.EnsureRule(utiliptables.Append, utiliptables.TableNAT, masqChain,
+		"-m", "comment", "--comment", "kubenet: outbound traffic should be subject to SNAT (this match must come after cluster-local CIDR matches)",
+		"-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", "MASQUERADE"); err != nil { // although, OTOH, this rule might carve out room for that one,
+		return fmt.Errorf("Failed to ensure that %s chain %s jumps to MASQUERADE: %v", utiliptables.TableNAT, masqChain, err)
+	}
+	return nil
+}
+
+// TODO: move thic logic into cni bridge plugin and remove this from kubenet
+func (plugin *kubenetNetworkPlugin) ensurePostroutingMasqChain() error {
 	if _, err := plugin.iptables.EnsureRule(utiliptables.Append, utiliptables.TableNAT, utiliptables.ChainPostrouting,
-		"-m", "comment", "--comment", "kubenet: SNAT for outbound traffic from cluster",
-		"-m", "addrtype", "!", "--dst-type", "LOCAL",
-		"!", "-d", plugin.nonMasqueradeCIDR,
-		"-j", "MASQUERADE"); err != nil {
-		return fmt.Errorf("Failed to ensure that %s chain %s jumps to MASQUERADE: %v", utiliptables.TableNAT, utiliptables.ChainPostrouting, err)
+		"-m", "comment", "--comment", "kubenet: ensure nat POSTROUTING directs all non-LOCAL destination traffic to our custom KUBE-MASQ chain",
+		"-m", "addrtype", "!", "--dst-type", "LOCAL", "-j", string(masqChain)); err != nil {
+		return fmt.Errorf("Failed to ensure that %s chain %s jumps to MASQUERADE: %v", utiliptables.TableNAT, masqChain, err)
+	}
+	return nil
+}
+
+// TODO: move thic logic into cni bridge plugin and remove this from kubenet
+func (plugin *kubenetNetworkPlugin) ensureMasqRules() error {
+	// make sure our custom chain for non-masquerade exists
+	plugin.iptables.EnsureChain(utiliptables.TableNAT, masqChain)
+
+	// flush the chain so that we cleanly overwrite if a new set of non-masquerade CIDRs was rolled out
+	plugin.iptables.FlushChain(utiliptables.TableNAT, masqChain)
+
+	// ensure that any non-local in POSTROUTING jumps to masqChain
+	if err := plugin.ensurePostroutingMasqChain(); err != nil {
+		return err
+	}
+
+	// link-local CIDR is always non-masquerade
+	if err := plugin.ensureNonMasqRule(linkLocalCIDR); err != nil {
+		return err
+	}
+
+	// non-masquerade for user-provided CIDRs
+	for _, cidr := range plugin.nonMasqueradeCIDRs {
+		if err := plugin.ensureNonMasqRule(cidr); err != nil {
+			return err
+		}
+	}
+
+	// masquerade all other traffic that is not bound for a --dst-type LOCAL destination
+	if err := plugin.ensureMasqRule(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -451,10 +506,9 @@ func (plugin *kubenetNetworkPlugin) SetUpPod(namespace string, name string, id k
 	}
 
 	// Need to SNAT outbound traffic from cluster
-	if err := plugin.ensureMasqRule(); err != nil {
+	if err := plugin.ensureMasqRules(); err != nil {
 		glog.Errorf("Failed to ensure MASQ rule: %v", err)
 	}
-
 	return nil
 }
 
@@ -531,8 +585,8 @@ func (plugin *kubenetNetworkPlugin) TearDownPod(namespace string, name string, i
 	}
 
 	// Need to SNAT outbound traffic from cluster
-	if err := plugin.ensureMasqRule(); err != nil {
-		glog.Errorf("Failed to ensure MASQ rule: %v", err)
+	if err := plugin.ensureMasqRules(); err != nil {
+		glog.Errorf("Failed to ensure MASQ rules: %v", err)
 	}
 
 	return nil

@@ -299,6 +299,9 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 	if obj.NonMasqueradeCIDR == "" {
 		obj.NonMasqueradeCIDR = "10.0.0.0/8"
 	}
+	if obj.NonMasqueradeCIDRs == nil {
+		obj.NonMasqueradeCIDRs = []string{"172.16.0.0/12", "192.168.0.0/16"}
+	}
 	if obj.VolumePluginDir == "" {
 		obj.VolumePluginDir = "/usr/libexec/kubernetes/kubelet-plugins/volume/exec/"
 	}

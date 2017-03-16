@@ -139,7 +139,7 @@ func getLoNetwork(binDir, vendorDirPrefix string) *cniNetwork {
 	return loNetwork
 }
 
-func (plugin *cniNetworkPlugin) Init(host network.Host, hairpinMode componentconfig.HairpinMode, nonMasqueradeCIDR string, mtu int) error {
+func (plugin *cniNetworkPlugin) Init(host network.Host, hairpinMode componentconfig.HairpinMode, nonMasqueradeCIDRs []string, mtu int) error {
 	var err error
 	plugin.nsenterPath, err = plugin.execer.LookPath("nsenter")
 	if err != nil {

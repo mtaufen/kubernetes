@@ -448,22 +448,22 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 		nodeRef:                   nodeRef,
 		nodeLabels:                kubeCfg.NodeLabels,
 		nodeStatusUpdateFrequency: kubeCfg.NodeStatusUpdateFrequency.Duration,
-		os:                kubeDeps.OSInterface,
-		oomWatcher:        oomWatcher,
-		cgroupsPerQOS:     kubeCfg.CgroupsPerQOS,
-		cgroupRoot:        kubeCfg.CgroupRoot,
-		mounter:           kubeDeps.Mounter,
-		writer:            kubeDeps.Writer,
-		nonMasqueradeCIDR: kubeCfg.NonMasqueradeCIDR,
-		maxPods:           int(kubeCfg.MaxPods),
-		podsPerCore:       int(kubeCfg.PodsPerCore),
-		syncLoopMonitor:   atomic.Value{},
-		resolverConfig:    kubeCfg.ResolverConfig,
-		cpuCFSQuota:       kubeCfg.CPUCFSQuota,
-		daemonEndpoints:   daemonEndpoints,
-		containerManager:  kubeDeps.ContainerManager,
-		nodeIP:            net.ParseIP(kubeCfg.NodeIP),
-		clock:             clock.RealClock{},
+		os:                 kubeDeps.OSInterface,
+		oomWatcher:         oomWatcher,
+		cgroupsPerQOS:      kubeCfg.CgroupsPerQOS,
+		cgroupRoot:         kubeCfg.CgroupRoot,
+		mounter:            kubeDeps.Mounter,
+		writer:             kubeDeps.Writer,
+		nonMasqueradeCIDRs: append(kubeCfg.NonMasqueradeCIDRs, kubeCfg.NonMasqueradeCIDR),
+		maxPods:            int(kubeCfg.MaxPods),
+		podsPerCore:        int(kubeCfg.PodsPerCore),
+		syncLoopMonitor:    atomic.Value{},
+		resolverConfig:     kubeCfg.ResolverConfig,
+		cpuCFSQuota:        kubeCfg.CPUCFSQuota,
+		daemonEndpoints:    daemonEndpoints,
+		containerManager:   kubeDeps.ContainerManager,
+		nodeIP:             net.ParseIP(kubeCfg.NodeIP),
+		clock:              clock.RealClock{},
 		outOfDiskTransitionFrequency:            kubeCfg.OutOfDiskTransitionFrequency.Duration,
 		enableCustomMetrics:                     kubeCfg.EnableCustomMetrics,
 		babysitDaemons:                          kubeCfg.BabysitDaemons,
@@ -493,7 +493,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 	}
 	glog.Infof("Hairpin mode set to %q", klet.hairpinMode)
 
-	if plug, err := network.InitNetworkPlugin(kubeDeps.NetworkPlugins, kubeCfg.NetworkPluginName, &criNetworkHost{&networkHost{klet}, &network.NoopPortMappingGetter{}}, klet.hairpinMode, klet.nonMasqueradeCIDR, int(kubeCfg.NetworkPluginMTU)); err != nil {
+	if plug, err := network.InitNetworkPlugin(kubeDeps.NetworkPlugins, kubeCfg.NetworkPluginName, &criNetworkHost{&networkHost{klet}, &network.NoopPortMappingGetter{}}, klet.hairpinMode, klet.nonMasqueradeCIDRs, int(kubeCfg.NetworkPluginMTU)); err != nil {
 		return nil, err
 	} else {
 		klet.networkPlugin = plug
@@ -526,12 +526,12 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 		binDir = kubeCfg.NetworkPluginDir
 	}
 	pluginSettings := dockershim.NetworkPluginSettings{
-		HairpinMode:       klet.hairpinMode,
-		NonMasqueradeCIDR: klet.nonMasqueradeCIDR,
-		PluginName:        kubeCfg.NetworkPluginName,
-		PluginConfDir:     kubeCfg.CNIConfDir,
-		PluginBinDir:      binDir,
-		MTU:               int(kubeCfg.NetworkPluginMTU),
+		HairpinMode:        klet.hairpinMode,
+		NonMasqueradeCIDRs: klet.nonMasqueradeCIDRs,
+		PluginName:         kubeCfg.NetworkPluginName,
+		PluginConfDir:      kubeCfg.CNIConfDir,
+		PluginBinDir:       binDir,
+		MTU:                int(kubeCfg.NetworkPluginMTU),
 	}
 
 	// Remote runtime shim just cannot talk back to kubelet, so it doesn't
@@ -1002,8 +1002,8 @@ type Kubelet struct {
 	containerManager cm.ContainerManager
 	nodeConfig       cm.NodeConfig
 
-	// Traffic to IPs outside this range will use IP masquerade.
-	nonMasqueradeCIDR string
+	// Traffic to IPs outside these ranges will use IP masquerade.
+	nonMasqueradeCIDRs []string
 
 	// Maximum Number of Pods which can be run by this Kubelet
 	maxPods int

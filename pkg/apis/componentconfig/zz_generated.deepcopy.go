@@ -177,6 +177,11 @@ func DeepCopy_componentconfig_KubeletConfiguration(in interface{}, out interface
 				(*out)[key] = val
 			}
 		}
+		if in.NonMasqueradeCIDRs != nil {
+			in, out := &in.NonMasqueradeCIDRs, &out.NonMasqueradeCIDRs
+			*out = make([]string, len(*in))
+			copy(*out, *in)
+		}
 		if in.ExperimentalQOSReserved != nil {
 			in, out := &in.ExperimentalQOSReserved, &out.ExperimentalQOSReserved
 			*out = make(ConfigurationMap)
