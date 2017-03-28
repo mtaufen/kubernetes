@@ -1,0 +1,28 @@
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: non-masquerade-daemon
+  namespace: kube-system
+spec:
+  template:
+    metadata:
+      labels:
+        k8s-app: non-masquerade-daemon
+    spec:
+      hostNetwork: true
+      containers:
+      - name: non-masquerade-daemon
+        image: gcr.io/kube-play-ext/non-masquerade-daemon-amd64:0.0.1
+        securityContext:
+          privileged: true
+        volumeMounts:
+          - name: config
+            mountPath: /etc/config
+      volumes:
+        - name: config
+          configMap:
+            name: non-masquerade-daemon
+            optional: true
+            items:
+              - key: config
+                path: non-masquerade-daemon # The daemon looks for its config in a YAML file at /etc/config/non-masquerade-daemon

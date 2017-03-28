@@ -297,8 +297,10 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 	if obj.MinimumGCAge == zeroDuration {
 		obj.MinimumGCAge = metav1.Duration{Duration: 0}
 	}
-	if obj.NonMasqueradeCIDR == "" {
-		obj.NonMasqueradeCIDR = "10.0.0.0/8"
+	// TODO(mtaufen): HACK to set masq rules, this is to check if the test fails
+	// when things are actually masqueraded (the cluster will still be in 10/8 for now)
+	if true {
+		obj.NonMasqueradeCIDR = "0.0.0.0/0"
 	}
 	if obj.VolumePluginDir == "" {
 		obj.VolumePluginDir = "/usr/libexec/kubernetes/kubelet-plugins/volume/exec/"
