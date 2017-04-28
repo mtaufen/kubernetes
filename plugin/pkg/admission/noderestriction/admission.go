@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/admission"
 	"k8s.io/kubernetes/pkg/api"
@@ -192,18 +193,44 @@ func (c *nodePlugin) admitPodStatus(nodeName string, a admission.Attributes) err
 
 func (c *nodePlugin) admitNode(nodeName string, a admission.Attributes) error {
 	requestedName := a.GetName()
-
-	// On create, get name from new object if unset in admission
-	if len(requestedName) == 0 && a.GetOperation() == admission.Create {
+	if a.GetOperation() == admission.Create {
 		node, ok := a.GetObject().(*api.Node)
 		if !ok {
 			return admission.NewForbidden(a, fmt.Errorf("unexpected type %T", a.GetObject()))
 		}
-		requestedName = node.Name
-	}
 
+		// Don't allow a node to create its Node API object with the config source set.
+		// We scope node access to things listed in the Node.Spec, so allowing this would allow a view escalation.
+		if node.Spec.ConfigSource != nil {
+			return admission.NewForbidden(a, fmt.Errorf("cannot create with non-nil configSource"))
+		}
+
+		// On create, get name from new object if unset in admission
+		if len(requestedName) == 0 {
+			requestedName = node.Name
+		}
+	}
 	if requestedName != nodeName {
 		return admission.NewForbidden(a, fmt.Errorf("node %s cannot modify node %s", nodeName, requestedName))
 	}
+
+	if a.GetOperation() == admission.Update {
+		node, ok := a.GetObject().(*api.Node)
+		if !ok {
+			return admission.NewForbidden(a, fmt.Errorf("unexpected type %T", a.GetObject()))
+		}
+		oldNode, ok := a.GetOldObject().(*api.Node)
+		if !ok {
+			return admission.NewForbidden(a, fmt.Errorf("unexpected type %T", a.GetObject()))
+		}
+
+		// Don't allow a node to update the config source on its Node API object.
+		// We scope node access to things listed in the Node.Spec, so allowing this would allow a view escalation.
+		// We only do the check if the new node's configSource is non-nil; old kubelets might drop the field during a status update.
+		if node.Spec.ConfigSource != nil && !apiequality.Semantic.DeepEqual(node.Spec.ConfigSource, oldNode.Spec.ConfigSource) {
+			return admission.NewForbidden(a, fmt.Errorf("cannot update configSource to a new non-nil configSource"))
+		}
+	}
+
 	return nil
 }

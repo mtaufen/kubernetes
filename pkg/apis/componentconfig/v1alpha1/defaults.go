@@ -31,10 +31,11 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/qos"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/master/ports"
+	"k8s.io/kubernetes/pkg/util"
 )
 
 const (
-	defaultRootDir = "/var/lib/kubelet"
+	DefaultRootDir = "/var/lib/kubelet"
 
 	AutoDetectCloudProvider = "auto-detect"
 
@@ -191,6 +192,13 @@ func SetDefaults_LeaderElectionConfiguration(obj *LeaderElectionConfiguration) {
 }
 
 func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
+	// pointer because the zeroDuration is valid - if you want to skip the trial period
+	if obj.ConfigTrialDuration == nil {
+		obj.ConfigTrialDuration = &metav1.Duration{Duration: 10 * time.Minute}
+	}
+	if obj.CrashLoopThreshold == nil {
+		obj.CrashLoopThreshold = util.Int32Ptr(3)
+	}
 	if obj.Authentication.Anonymous.Enabled == nil {
 		obj.Authentication.Anonymous.Enabled = boolVar(true)
 	}
@@ -213,17 +221,11 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 	if obj.Address == "" {
 		obj.Address = "0.0.0.0"
 	}
-	if obj.CloudProvider == "" {
-		obj.CloudProvider = AutoDetectCloudProvider
-	}
 	if obj.CAdvisorPort == 0 {
 		obj.CAdvisorPort = 4194
 	}
 	if obj.VolumeStatsAggPeriod == zeroDuration {
 		obj.VolumeStatsAggPeriod = metav1.Duration{Duration: time.Minute}
-	}
-	if obj.CertDirectory == "" {
-		obj.CertDirectory = "/var/run/kubernetes"
 	}
 	if obj.ContainerRuntime == "" {
 		obj.ContainerRuntime = "docker"
@@ -337,14 +339,11 @@ func SetDefaults_KubeletConfiguration(obj *KubeletConfiguration) {
 	if obj.ResolverConfig == "" {
 		obj.ResolverConfig = kubetypes.ResolvConfDefault
 	}
-	if obj.RootDirectory == "" {
-		obj.RootDirectory = defaultRootDir
-	}
 	if obj.SerializeImagePulls == nil {
 		obj.SerializeImagePulls = boolVar(true)
 	}
 	if obj.SeccompProfileRoot == "" {
-		obj.SeccompProfileRoot = filepath.Join(defaultRootDir, "seccomp")
+		obj.SeccompProfileRoot = filepath.Join(DefaultRootDir, "seccomp")
 	}
 	if obj.StreamingConnectionIdleTimeout == zeroDuration {
 		obj.StreamingConnectionIdleTimeout = metav1.Duration{Duration: 4 * time.Hour}
