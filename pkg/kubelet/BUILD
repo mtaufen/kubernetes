@@ -257,6 +257,7 @@ filegroup(
         "//pkg/kubelet/eviction:all-srcs",
         "//pkg/kubelet/gpu:all-srcs",
         "//pkg/kubelet/images:all-srcs",
+        "//pkg/kubelet/kubeletconfig:all-srcs",
         "//pkg/kubelet/kuberuntime:all-srcs",
         "//pkg/kubelet/leaky:all-srcs",
         "//pkg/kubelet/lifecycle:all-srcs",

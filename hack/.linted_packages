@@ -216,6 +216,10 @@ pkg/kubelet/envvars
 pkg/kubelet/eviction
 pkg/kubelet/eviction/api
 pkg/kubelet/gpu/nvidia
+pkg/kubelet/kubeletconfig/configfiles
+pkg/kubelet/kubeletconfig/startups
+pkg/kubelet/kubeletconfig/util/panic
+pkg/kubelet/kubeletconfig/util/test
 pkg/kubelet/util/csr
 pkg/kubelet/util/format
 pkg/kubelet/util/ioutils

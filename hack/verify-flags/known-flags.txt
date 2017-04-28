@@ -192,6 +192,7 @@ drop-embedded-fields
 dry-run
 dump-logs-on-failure
 duration-sec
+dynamic-config-dir
 e2e-output-dir
 e2e-verify-service-account
 enable-aggregator-routing
@@ -343,6 +344,7 @@ image-service-endpoint
 included-types-overrides
 include-extended-apis
 include-extended-apis
+init-config-dir
 initial-sync-timeout
 input-base
 input-dirs
@@ -499,6 +501,7 @@ network-plugin
 network-plugin-dir
 network-plugin-mtu
 node-cidr-mask-size
+node-config-dir
 node-eviction-rate
 node-instance-group
 node-ip

@@ -80,6 +80,36 @@ type KubeletFlags struct {
 
 	// Container-runtime-specific options.
 	ContainerRuntimeOptions
+
+	// certDirectory is the directory where the TLS certs are located (by
+	// default /var/run/kubernetes). If tlsCertFile and tlsPrivateKeyFile
+	// are provided, this flag will be ignored.
+	CertDirectory string
+
+	// cloudProvider is the provider for cloud services.
+	// +optional
+	CloudProvider string
+
+	// cloudConfigFile is the path to the cloud provider configuration file.
+	// +optional
+	CloudConfigFile string
+
+	// rootDirectory is the directory path to place kubelet files (volume
+	// mounts,etc).
+	RootDirectory string
+
+	// The Kubelet will use this directory for checkpointing downloaded configurations and tracking configuration health.
+	// The Kubelet will create this directory if it does not already exist.
+	// The path may be absolute or relative; relative paths are under the Kubelet's current working directory.
+	// Providing this flag enables dynamic kubelet configuration.
+	// To use this flag, the DynamicKubeletConfig feature gate must be enabled.
+	DynamicConfigDir flag.StringFlag
+
+	// The Kubelet will look in this directory for an init configuration.
+	// The path may be absolute or relative; relative paths are under the Kubelet's current working directory.
+	// Omit this flag to use the combination of built-in default configuration values and flags.
+	// To use this flag, the DynamicKubeletConfig feature gate must be enabled.
+	InitConfigDir flag.StringFlag
 }
 
 // KubeletServer encapsulates all of the parameters necessary for starting up
@@ -100,6 +130,11 @@ func NewKubeletServer() *KubeletServer {
 			KubeConfig:              flag.NewStringFlag("/var/lib/kubelet/kubeconfig"),
 			RequireKubeConfig:       false,
 			ContainerRuntimeOptions: *NewContainerRuntimeOptions(),
+			// Note, APIServerList is deprecated
+			APIServerList: []string{},
+			CertDirectory: "/var/run/kubernetes",
+			CloudProvider: v1alpha1.AutoDetectCloudProvider,
+			RootDirectory: v1alpha1.DefaultRootDir,
 		},
 		KubeletConfiguration: config,
 	}
@@ -129,7 +164,7 @@ func (f *KubeletFlags) AddFlags(fs *pflag.FlagSet) {
 		"The client certificate and key file will be stored in the directory pointed by --cert-dir.")
 
 	// DEPRECATED: Remove these flags at the beginning of 1.5.
-	fs.StringSliceVar(&f.APIServerList, "api-servers", []string{}, "List of Kubernetes API servers for publishing events, and reading pods and services. (ip:port), comma separated.")
+	fs.StringSliceVar(&f.APIServerList, "api-servers", f.APIServerList, "List of Kubernetes API servers for publishing events, and reading pods and services. (ip:port), comma separated.")
 	fs.MarkDeprecated("api-servers", "Use --kubeconfig instead. Will be removed in a future version.")
 
 	fs.BoolVar(&f.ReallyCrashForTesting, "really-crash-for-testing", f.ReallyCrashForTesting, "If true, when panics occur crash. Intended for testing.")
@@ -142,6 +177,17 @@ func (f *KubeletFlags) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&f.NodeIP, "node-ip", f.NodeIP, "IP address of the node. If set, kubelet will use this IP address for the node")
 
 	fs.StringVar(&f.ProviderID, "provider-id", f.ProviderID, "Unique identifier for identifying the node in a machine database, i.e cloudprovider")
+
+	fs.StringVar(&f.CertDirectory, "cert-dir", f.CertDirectory, "The directory where the TLS certs are located. "+
+		"If --tls-cert-file and --tls-private-key-file are provided, this flag will be ignored.")
+
+	fs.StringVar(&f.CloudProvider, "cloud-provider", f.CloudProvider, "The provider for cloud services. By default, kubelet will attempt to auto-detect the cloud provider. Specify empty string for running with no cloud provider.")
+	fs.StringVar(&f.CloudConfigFile, "cloud-config", f.CloudConfigFile, "The path to the cloud provider configuration file.  Empty string for no configuration file.")
+
+	fs.StringVar(&f.RootDirectory, "root-dir", f.RootDirectory, "Directory path for managing kubelet files (volume mounts,etc).")
+
+	fs.Var(&f.DynamicConfigDir, "dynamic-config-dir", "The Kubelet will use this directory for checkpointing downloaded configurations and tracking configuration health. The Kubelet will create this directory if it does not already exist. The path may be absolute or relative; relative paths start at the Kubelet's current working directory. Providing this flag enables dynamic Kubelet configuration. Presently, you must also enable the DynamicKubeletConfig feature gate to pass this flag.")
+	fs.Var(&f.InitConfigDir, "init-config-dir", "The Kubelet will look in this directory for the init configuration. The path may be absolute or relative; relative paths start at the Kubelet's current working directory. Omit this argument to use the built-in default configuration values. Presently, you must also enable the DynamicKubeletConfig feature gate to pass this flag.")
 }
 
 // addFlags adds flags for a specific componentconfig.KubeletConfiguration to the specified FlagSet
@@ -187,10 +233,7 @@ func (c *kubeletConfiguration) addFlags(fs *pflag.FlagSet) {
 		"If --tls-cert-file and --tls-private-key-file are not provided, a self-signed certificate and key "+
 		"are generated for the public address and saved to the directory passed to --cert-dir.")
 	fs.StringVar(&c.TLSPrivateKeyFile, "tls-private-key-file", c.TLSPrivateKeyFile, "File containing x509 private key matching --tls-cert-file.")
-	fs.StringVar(&c.CertDirectory, "cert-dir", c.CertDirectory, "The directory where the TLS certs are located. "+
-		"If --tls-cert-file and --tls-private-key-file are provided, this flag will be ignored.")
 
-	fs.StringVar(&c.RootDirectory, "root-dir", c.RootDirectory, "Directory path for managing kubelet files (volume mounts,etc).")
 	fs.StringVar(&c.SeccompProfileRoot, "seccomp-profile-root", c.SeccompProfileRoot, "Directory path for seccomp profiles.")
 	fs.BoolVar(&c.AllowPrivileged, "allow-privileged", c.AllowPrivileged, "If true, allow containers to request privileged mode.")
 	fs.StringSliceVar(&c.HostNetworkSources, "host-network-sources", c.HostNetworkSources, "Comma-separated list of sources from which the Kubelet allows pods to use of host network.")
@@ -230,8 +273,6 @@ func (c *kubeletConfiguration) addFlags(fs *pflag.FlagSet) {
 	fs.MarkDeprecated("low-diskspace-threshold-mb", "Use --eviction-hard instead. Will be removed in a future version.")
 	fs.DurationVar(&c.VolumeStatsAggPeriod.Duration, "volume-stats-agg-period", c.VolumeStatsAggPeriod.Duration, "Specifies interval for kubelet to calculate and cache the volume disk usage for all pods and volumes.  To disable volume calculations, set to 0.")
 	fs.StringVar(&c.VolumePluginDir, "volume-plugin-dir", c.VolumePluginDir, "<Warning: Alpha feature> The full path of the directory in which to search for additional third party volume plugins")
-	fs.StringVar(&c.CloudProvider, "cloud-provider", c.CloudProvider, "The provider for cloud services. By default, kubelet will attempt to auto-detect the cloud provider. Specify empty string for running with no cloud provider.")
-	fs.StringVar(&c.CloudConfigFile, "cloud-config", c.CloudConfigFile, "The path to the cloud provider configuration file.  Empty string for no configuration file.")
 	fs.StringVar(&c.FeatureGates, "feature-gates", c.FeatureGates, "A set of key=value pairs that describe feature gates for alpha/experimental features. "+
 		"Options are:\n"+strings.Join(utilfeature.DefaultFeatureGate.KnownFeatures(), "\n"))
 
