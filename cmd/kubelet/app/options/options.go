@@ -81,6 +81,190 @@ type KubeletFlags struct {
 	// This flag, if set, sets the unique id of the instance that an external provider (i.e. cloudprovider)
 	// can use to identify a specific node
 	ProviderID string
+
+	// podInfraContainerImage is the image whose network/ipc namespaces
+	// containers in each pod will use.
+	PodInfraContainerImage string
+	// dockerEndpoint is the path to the docker endpoint to communicate with.
+	DockerEndpoint string
+	// networkPluginName is the name of the network plugin to be invoked for
+	// various events in kubelet/pod lifecycle
+	NetworkPluginName string
+	// networkPluginDir is the full path of the directory in which to search
+	// for network plugins (and, for backwards-compat, CNI config files)
+	NetworkPluginDir string
+	// CNIConfDir is the full path of the directory in which to search for
+	// CNI config files
+	CNIConfDir string
+	// CNIBinDir is the full path of the directory in which to search for
+	// CNI plugin binaries
+	CNIBinDir string
+	// networkPluginMTU is the MTU to be passed to the network plugin,
+	// and overrides the default MTU for cases where it cannot be automatically
+	// computed (such as IPSEC).
+	NetworkPluginMTU int32
+	// Cgroups that container runtime is expected to be isolated in.
+	// +optional
+	RuntimeCgroups string
+	// containerRuntime is the container runtime to use.
+	ContainerRuntime string
+	// rktPath is the path of rkt binary. Leave empty to use the first rkt in
+	// $PATH.
+	// +optional
+	RktPath string
+	// rktApiEndpoint is the endpoint of the rkt API service to communicate with.
+	// +optional
+	RktAPIEndpoint string
+
+	/* cloud provider */
+	// cloudProvider is the provider for cloud services.
+	// +optional
+	CloudProvider string
+	// cloudConfigFile is the path to the cloud provider configuration file.
+	// +optional
+	CloudConfigFile string
+
+	/* volumes */
+	// This flag, if set, enables a check prior to mount operations to verify that the required components
+	// (binaries, etc.) to mount the volume are available on the underlying node. If the check is enabled
+	// and fails the mount operation fails.
+	ExperimentalCheckNodeCapabilitiesBeforeMount bool
+	// volumePluginDir is the full path of the directory in which to search
+	// for additional third party volume plugins
+	VolumePluginDir string
+	// enableControllerAttachDetach enables the Attach/Detach controller to
+	// manage attachment/detachment of volumes scheduled to this node, and
+	// disables kubelet from executing any attach/detach operations
+	EnableControllerAttachDetach bool
+	// experimentalMounterPath is the path to mounter binary. If not set, kubelet will attempt to use mount
+	// binary that is available via $PATH,
+	ExperimentalMounterPath string
+
+	/* resources */
+	// A set of ResourceName=Percentage (e.g. memory=50%) pairs that describe
+	// how pod resource requests are reserved at the QoS level.
+	// Currently only memory is supported. [default=none]"
+	ExperimentalQOSReserved ConfigurationMap
+	// KubeletCgroups is the absolute name of cgroups to isolate the kubelet in.
+	// +optional
+	KubeletCgroups string
+	// SystemCgroups is absolute name of cgroups in which to place
+	// all non-kernel processes that are not already in a container. Empty
+	// for no container. Rolling back the flag requires a reboot.
+	// +optional
+	SystemCgroups string
+	// CgroupRoot is the root cgroup to use for pods.
+	// If CgroupsPerQOS is enabled, this is the root of the QoS cgroup hierarchy.
+	// +optional
+	CgroupRoot string
+	// Enable QoS based Cgroup hierarchy: top level cgroups for QoS Classes
+	// And all Burstable and BestEffort pods are brought up under their
+	// specific top level QoS cgroup.
+	// +optional
+	CgroupsPerQOS bool
+	// driver that the kubelet uses to manipulate cgroups on the host (cgroupfs or systemd)
+	// +optional
+	CgroupDriver string
+	// This flag helps kubelet identify absolute name of top level cgroup used to enforce `SystemReserved` compute resource reservation for OS system daemons.
+	// Refer to [Node Allocatable](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node-allocatable.md) doc for more information.
+	SystemReservedCgroup string
+	// This flag helps kubelet identify absolute name of top level cgroup used to enforce `KubeReserved` compute resource reservation for Kubernetes node system daemons.
+	// Refer to [Node Allocatable](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node-allocatable.md) doc for more information.
+	KubeReservedCgroup string
+
+	/* eviction */
+	// If enabled, the kubelet will integrate with the kernel memcg notification to determine if memory eviction thresholds are crossed rather than polling.
+	// +optional
+	ExperimentalKernelMemcgNotification bool
+
+	/* static pods */
+	// podManifestPath is the path to the directory containing pod manifests to
+	// run, or the path to a single manifest file
+	PodManifestPath string
+	// fileCheckFrequency is the duration between checking config files for
+	// new data
+	FileCheckFrequency metav1.Duration
+	// httpCheckFrequency is the duration between checking http for new data
+	HTTPCheckFrequency metav1.Duration
+	// manifestURL is the URL for accessing the container manifest
+	ManifestURL string
+	// manifestURLHeader is the HTTP header to use when accessing the manifest
+	// URL, with the key separated from the value with a ':', as in 'key:value'
+	ManifestURLHeader string
+
+	// containerized should be set to true if kubelet is running in a container.
+	Containerized bool
+
+	// lockFilePath is the path that kubelet will use to as a lock file.
+	// It uses this file as a lock to synchronize with other kubelet processes
+	// that may be running.
+	LockFilePath string
+	// ExitOnLockContention is a flag that signifies to the kubelet that it is running
+	// in "bootstrap" mode. This requires that 'LockFilePath' has been set.
+	// This will cause the kubelet to listen to inotify events on the lock file,
+	// releasing it and exiting when another process tries to open that file.
+	ExitOnLockContention bool
+
+	// rootDirectory is the directory path to place kubelet files (volume
+	// mounts,etc).
+	RootDirectory string
+
+	// remoteRuntimeEndpoint is the endpoint of remote runtime service
+	RemoteRuntimeEndpoint string
+	// remoteImageEndpoint is the endpoint of remote image service
+	RemoteImageEndpoint string
+	// runtimeRequestTimeout is the timeout for all runtime requests except long running
+	// requests - pull, logs, exec and attach.
+	// +optional
+	RuntimeRequestTimeout metav1.Duration
+
+	// Enable dockershim only mode.
+	// +optional
+	ExperimentalDockershim bool
+
+	// This flag, if set, disables use of a shared PID namespace for pods running in the docker CRI runtime.
+	// A shared PID namespace is the only option in non-docker runtimes and is required by the CRI. The ability to
+	// disable it for docker will be removed unless a compelling use case is discovered with widespread use.
+	// TODO: Remove once we no longer support disabling shared PID namespace (https://issues.k8s.io/41938)
+	DockerDisableSharedPID bool
+
+	/* marked deprecated */
+
+	// TODO(#34726:1.8.0): Remove the opt-in for failing when swap is enabled.
+	// Tells the Kubelet to fail to start if swap is enabled on the node.
+	ExperimentalFailSwapOn bool
+	// minimumGCAge is the minimum age for a finished container before it is
+	// garbage collected.
+	MinimumGCAge metav1.Duration
+	// maxPerPodContainerCount is the maximum number of old instances to
+	// retain per container. Each container takes up some disk space.
+	MaxPerPodContainerCount int32
+	// maxContainerCount is the maximum number of old instances of containers
+	// to retain globally. Each container takes up some disk space.
+	MaxContainerCount int32
+	// lowDiskSpaceThresholdMB is the absolute free disk space, in MB, to
+	// maintain. When disk space falls below this threshold, new pods would
+	// be rejected.
+	LowDiskSpaceThresholdMB int32
+	// rktStage1Image is the image to use as stage1. Local paths and
+	// http/https URLs are supported.
+	// +optional
+	RktStage1Image string
+	// dockerExecHandlerName is the handler to use when executing a command
+	// in a container. Valid values are 'native' and 'nsenter'. Defaults to
+	// 'native'.
+	DockerExecHandlerName string
+	// registerSchedulable tells the kubelet to register the node as
+	// schedulable. Won't have any effect if register-node is false.
+	// DEPRECATED: use registerWithTaints instead
+	RegisterSchedulable bool
+	// outOfDiskTransitionFrequency is duration for which the kubelet has to
+	// wait before transitioning out of out-of-disk node condition status.
+	// +optional
+	OutOfDiskTransitionFrequency metav1.Duration
+	// masterServiceNamespace is The namespace from which the kubernetes
+	// master services should be injected into pods.
+	MasterServiceNamespace string
 }
 
 // KubeletServer encapsulates all of the parameters necessary for starting up
