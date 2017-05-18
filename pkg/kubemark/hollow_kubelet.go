@@ -22,10 +22,10 @@ import (
 	kubeletapp "k8s.io/kubernetes/cmd/kubelet/app"
 	"k8s.io/kubernetes/cmd/kubelet/app/options"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/apis/componentconfig"
-	"k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 	"k8s.io/kubernetes/pkg/kubelet"
+	"k8s.io/kubernetes/pkg/kubelet/apis/nodeconfig"
+	"k8s.io/kubernetes/pkg/kubelet/apis/nodeconfig/v1alpha1"
 	"k8s.io/kubernetes/pkg/kubelet/cadvisor"
 	"k8s.io/kubernetes/pkg/kubelet/cm"
 	containertest "k8s.io/kubernetes/pkg/kubelet/container/testing"
@@ -42,7 +42,7 @@ import (
 )
 
 type HollowKubelet struct {
-	KubeletFlags         *options.KubeletFlags
+	KubeletFlags         *nodeconfig.KubeletFlags
 	KubeletConfiguration *componentconfig.KubeletConfiguration
 	KubeletDeps          *kubelet.KubeletDeps
 }

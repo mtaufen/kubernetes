@@ -17,12 +17,7 @@ limitations under the License.
 package componentconfig
 
 import (
-	"fmt"
-	"sort"
-	"strings"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/api"
 )
 
 // ClientConnectionConfiguration contains details for constructing a client.

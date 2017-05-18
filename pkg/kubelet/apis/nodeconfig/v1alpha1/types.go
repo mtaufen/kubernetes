@@ -28,9 +28,9 @@ import (
 // In general, please try to avoid adding flags or configuration fields,
 // we already have a confusingly large amount of them.
 type KubeletConfiguration struct {
+	metav1.TypeMeta // TODO(mtaufen): remove TypeMeta from this aggregate
 	NodeLifecycleConfig
 	PodLifecycleConfig
-	VolumesConfig
 	NodeMonitoringConfig
 	KubeletServerConfig
 	NodeResourcesConfig
@@ -261,6 +261,24 @@ type NodeNetworkConfig struct {
 	// In cluster mode, this is obtained from the master.
 	PodCIDR string `json:"podCIDR"`
 }
+
+// HairpinMode denotes how the kubelet should configure networking to handle
+// hairpin packets.
+type HairpinMode string
+
+// Enum settings for different ways to handle hairpin packets.
+const (
+	// Set the hairpin flag on the veth of containers in the respective
+	// container runtime.
+	HairpinVeth = "hairpin-veth"
+	// Make the container bridge promiscuous. This will force it to accept
+	// hairpin packets, even if the flag isn't set on ports of the bridge.
+	PromiscuousBridge = "promiscuous-bridge"
+	// Neither of the above. If the kubelet is started in this hairpin mode
+	// and kube-proxy is running in iptables mode, hairpin packets will be
+	// dropped by the container bridge.
+	HairpinNone = "none"
+)
 
 // TODO(kc-refactor): This will probably be our best opportunity to stop parsing a string
 // and make the feature gates API better. We should think about how to do that.
