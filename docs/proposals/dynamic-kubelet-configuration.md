@@ -15,22 +15,22 @@ The Kubelet is currently configured via command-line flags. This is painful for 
 
 - Staged rollout of configuration changes, including tuning adjustments and enabling new Kubelet features.
 - Streamline cluster bootstrap. The Kubeadm folks want to plug in to dynamic config, for example: [kubernetes/kubeadm#28](https://github.com/kubernetes/kubeadm/issues/28).
-- Making it easier to run tests with different Kubelet configurations, because you can specify the desired Kubelet configuration from the test itself (this is technically already possible with the alpha version of the feature).
+- Making it easier to run tests with different Kubelet configurations, because tests can modify Kubelet configuration on the fly.
 
 ## Primary Goals of the Design
 
-K8s should:
+Kubernetes should:
 
 - Provide a versioned object to represent the Kubelet configuration.
-- Provide the ability to specify a dynamic configuration source to each Kubelet (for example, provide the name of a `ConfigMap` that contains the configuration).
+- Provide the ability to specify a dynamic configuration source for each node.
 - Provide a way to share the same configuration source between nodes.
 - Protect against bad configuration pushes.
 - Recommend, but not mandate, the basics of a workflow for updating configuration.
 
 Additionally, we should:
 
-- Add Kubelet support for consuming configuration via a file on disk. This aids work towards deprecating flags in favor of on-disk configuration. This functionality can also be reused for local checkpointing of Kubelet configuration.
-- Make it possible to opt-out of remote configuration as an extra layer of protection. This should probably be a flag so that you can't dynamically turn off dynamic config by accident.
+- Add Kubelet support for consuming configuration via a file on disk. This aids work towards deprecating flags in favor of on-disk configuration.
+- Make it possible to opt-out of remote configuration as an extra layer of protection. This should probably be a flag, rather than a dynamic field, as it would otherwise be too easy to accidentally turn off dynamic config with a config push.
 
 ## Design
 
@@ -38,11 +38,11 @@ Two really important questions:
 1. How should one organize and represent configuration in a cluster?
 2. How should one orchestrate changes to that configuration?
 
-This doc primarily focuses on (1) and the downstream aspects of (2).
+This doc primarily focuses on (1) and the downstream (API server -> Kubelet) aspects of (2).
 
 ### Organization of the Kubelet's Configuration Type
 
-In general, components should expose their configuration types from their own source trees. The types are currently in the alpha `componentconfig` API group, and should be broken out into the trees of their individual components. PR [#42759](https://github.com/kubernetes/kubernetes/pull/42759) reorganizes the Kubelet's tree to facilitate this.
+In general, components should expose their configuration types from their own source trees. The types are currently in the alpha `componentconfig` API group, and should be broken out into the trees of their individual components. PR [#42759](https://github.com/kubernetes/kubernetes/pull/42759) reorganized the Kubelet's tree to facilitate this. PR [#44252](https://github.com/kubernetes/kubernetes/pull/44252) initiates the decomposition of the type.
 
 Components with several same-configured instances, like the Kubelet, should be able to share configuration sources. A 1:N mapping of config-object:instances is much more efficient than requiring a config object per-instance. As one example, we removed the `HostNameOverride` and `NodeIP` fields from the configuration type because these cannot be shared between Nodes - [#40117](https://github.com/kubernetes/kubernetes/pull/40117).
 
@@ -55,61 +55,60 @@ The Kubelet's current configuration type is an unreadable monolith. We should de
 #### Cluster-level object
 - The Kubelet's configuration should be stored as a `JSON` or `YAML` blob under the `kubelet` key in a `ConfigMap` object. This allows the `ConfigMap`'s schema to be extended to other `Node`-level components, e.g. adding a key for `kube-proxy`.
 - The Kubelet's configuration information should be organized in the cluster as a structured monolith. 
-  + *Structured*, so that it is readable.
-  + *Monolithic*, so that all Kubelet parameters roll out to a given `Node` in unison.
-  + Note that this does not mean the type itself has to be monolithic, just that everything the Kubelet needs makes it to the `Node` in one piece.
+  + *Structured* into sub-categories, so that it is readable.
+  + *Monolithic payload*, so that all Kubelet parameters roll out to a given `Node` in unison.
+  + Note that this does not mean the type itself has to be monolithic, just that the entire configuration should be contained in a single payload.
 - The `ConfigMap` containing the desired configuration should be specified via the `Node` object corresponding to the Kubelet. The `Node` will have a new `spec` subfield, `config`, which is a new type, `NodeConfigSource` (described below).
-- The name of the `ConfigMap` containing the desired configuration should be of the form (using Go regexp syntax) `^(?P<nameDash>(?P<name>[a-z0-9.\-]*){0,1}-){0,1}(?P<alg>[a-z0-9]+-(?P<hash>[a-f0-9]+)$`, where `name` is a human-readable identifier, `nameDash` is just a helper to handle the dash separator between `name` and `alg`, `alg` is the hash algorithm to use, and `hash` is the lowercase hexadecimal value of the hash, as would be formatted by Go's `%x`.
+- The name of the `ConfigMap` containing the desired configuration should be of the form (using Go regexp syntax) `^(?P<nameDash>(?P<name>[a-z0-9.\-]*){0,1}-){0,1}(?P<alg>[a-z0-9]+)-(?P<hash>[a-f0-9]+)$`, where `name` is a human-readable identifier, `nameDash` is a helper to handle the dash separator between `name` and `alg`, `alg` is the hash algorithm to use, and `hash` is the lowercase hexadecimal value of the hash, as would be formatted by Go's `%x`.
   + For now, the only supported hash algorithm is `sha256`.
+  + The Kubelet will verify the downloaded `ConfigMap` by performing the below procedure and comparing the result to the hash in the name. This helps prevent the "shoot yourself in the foot" scenario detailed below in *Operational Considerations/Rollout workflow*.
   + The hash will be produced extracting the key-value pairs from the `ConfigMap`'s `Data` field into a list, sorting them in byte-alphabetic order by key, serializing this sorted list to a string of the format `key:value,key:value,...,` (trailing comma only if `Data` is non-empty) and using `alg` to produce the hash of the string. For example, see this reference implementation in Go:
-  ```
-  // Serializes m into a string of pairs, in byte-alphabetic order by key, and takes the hash using alg.
-  // Keys and values are separated with `:` and pairs are separated with `,`. If m is non-empty,
-  // there is a trailing comma in the pre-hash serialization. If m is empty, there is no trailing comma.
-  func dataHash(alg string, m map[string]string) (string, error) {
-    // extract key-value pairs from data
-    kv := kvPairs(m)
-    // sort based on keys
-    sort.Slice(kv, func(i, j int) bool {
-      return kv[i][0] < kv[j][0]
-    })
-    // serialize to a string
-    s := ""
-    for _, p := range kv {
-      s = s + p[0] + ":" + p[1] + ","
-    }
-    // return the hash
-    return hash(alg, s)
+```
+const sha256Alg = "sha256"
+
+// MapStringStringHash serializes `m` into a string of pairs, in byte-alphabetic order by key, and takes the hash using `alg`.
+// Keys and values are separated with `:` and pairs are separated with `,`. If m is non-empty,
+// there is a trailing comma in the pre-hash serialization. If m is empty, there is no trailing comma.
+// MapStringStringHash is public because it is used as a utility in some of our tests.
+func MapStringStringHash(alg string, m map[string]string) (string, error) {
+  // extract key-value pairs from data
+  kv := kvPairs(m)
+  // sort based on keys
+  sort.Slice(kv, func(i, j int) bool {
+    return kv[i][0] < kv[j][0]
+  })
+  // serialize to a string
+  s := ""
+  for _, p := range kv {
+    s = s + p[0] + ":" + p[1] + ","
   }
-  
-  // extract the key-value pairs from m
-  func kvPairs(m map[string]string) [][]string {
-    kv := make([][]string, len(m))
-    i := 0
-    for k, v := range m {
-      kv[i] = []string{k, v}
-      i++
-    }
-    return kv
+  return hash(alg, s)
+}
+
+// kvPairs extracts the key-value pairs from `m`
+func kvPairs(m map[string]string) [][]string {
+  kv := make([][]string, len(m))
+  i := 0
+  for k, v := range m {
+    kv[i] = []string{k, v}
+    i++
   }
-  
-  const (
-    sha256Alg = "sha256"
-  )
-  
-  // hashes data with alg if alg is supported
-  func hash(alg string, data string) (string, error) {
-    // take the hash based on alg
-    switch alg {
-    case sha256Alg:
-      sum := sha256.Sum256([]byte(data))
-      return fmt.Sprintf("%x", sum), nil
-    default:
-      return "", fmt.Errorf("requested hash algorithm %q is not supported", alg)
-    }
+  return kv
+}
+
+// hash hashes `data` with `alg` if `alg` is supported
+func hash(alg string, data string) (string, error) {
+  // take the hash based on alg
+  switch alg {
+  case sha256Alg:
+    sum := sha256.Sum256([]byte(data))
+    return fmt.Sprintf("%x", sum), nil
+  default:
+    return "", fmt.Errorf("requested hash algorithm %q is not supported", alg)
   }
-  ```
-  + The Kubelet will verify the downloaded `ConfigMap` by performing this same procedure and comparing the result to the hash in the name. This helps prevent the "shoot yourself in the foot" scenario detailed below in *Operational Considerations/Rollout workflow*.
+}
+```
+
 
 `ConfigMap` object containing just the Kubelet's configuration:
 ```
@@ -122,11 +121,11 @@ data:
 
 #### On-disk
 
-- The Kubelet should accept a `--config-dir` flag that specifies a directory (e.g. `config-dir`).
+- The Kubelet should accept a `--node-config-dir` flag that specifies a directory (e.g. `config-dir`).
 - The Kubelet will use this directory to checkpoint downloaded `ConfigMap`s.
-  + When the Kubelet downloads a `ConfigMap`, it will save its contents to a directory named after the UID of that `ConfigMap`, in a subdirectory of `config-dir` called `configmaps`, e.g. `config-dir/configmaps/{uid}`.
-  + The directory `config-dir/configmaps/{uid}` contains the `Data` of the corresponding `ConfigMap` as a set of files. Given the most recent `ConfigMap` example above, reading `config-dir/configmaps/{uid-of-the-example}/kubelet` would return `{JSON blob}`.
-- The user can additionally pre-populate `config-dir/init` with an initial set of configuration files, to be used prior to the Kubelet being able to access the API server (including when running in standalone mode).
+  + When the Kubelet downloads a `ConfigMap`, it will checkpoint a serialization of the `ConfigMap` object to a file at `{node-config-dir}/checkpoints/{UID}/{object-name}`.
+  + We checkpoint the entire object, rather than unpacking the contents as a set of files, because the former is less complex and reduces chance for errors during the checkpoint process.
+- The user can additionally pre-populate `config-dir/init` with an initial set of configuration files, to be used prior to the Kubelet being able to access the API server (including when running in standalone mode). These files will be treated as if the filename is a key in a configuration `ConfigMap`, and as if the file contents is the value associated with that key.
 
 ### Orchestration of configuration
 
