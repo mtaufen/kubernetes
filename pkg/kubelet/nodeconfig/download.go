@@ -28,7 +28,7 @@ import (
 // If all operations succeed, returns (bool, nil), where bool indicates whether the current configuration changed. If (true, nil),
 // restarting the Kubelet to begin using the new configuration is recommended.
 // If downloading fails for a non-fatal reason, an error is returned. See `downloadConfig` and `downloadConfigMap` for fatal reasons.
-// If filesystem issues prevent inspecting current configuration or setting symlinks, a fatal error occurs.
+// If filesystem issues prevent inspecting current configuration or setting symlinks, a panic occurs.
 // If an error is returned, a cause is also returned in the second position,
 // this is a sanitized version of the error that can be reported in the ConfigOK condition.
 func (cc *NodeConfigController) syncNodeConfig(node *apiv1.Node) (bool, string, error) {
@@ -62,7 +62,7 @@ func (cc *NodeConfigController) syncNodeConfig(node *apiv1.Node) (bool, string, 
 // downloadConfig downloads and checkpoints the configuration source referred to by `src`.
 // If downloading and checkpointing succeeds, returns the UID of the checkpointed source.
 // If the `src` is invalid, returns an error.
-// Otherwise returns errors or fatal errors occur depending on the implementation of the download
+// Otherwise returns errors or panics occur depending on the implementation of the download
 // function for the source type used in `src`. Today the only valid source type is a ConfigMap.
 // If an error is returned, a cause is also returned in the second position,
 // this is a sanitized version of the error that can be reported in the ConfigOK condition.
@@ -80,7 +80,7 @@ func (cc *NodeConfigController) downloadConfig(src *apiv1.NodeConfigSource) (str
 // If the checkpoint already exists, skips downloading and returns the UID.
 // If the reference is invalid, returns an error.
 // If filesystem issues prevent saving the ConfigMap to disk, returns an error.
-// If filesystem issues prevent checking whether the checkpoint exists, a fatal error occurs.
+// If filesystem issues prevent checking whether the checkpoint exists, a panic occurs.
 // If an error is returned, a cause is also returned in the second position,
 // this is a sanitized version of the error that can be reported in the ConfigOK condition.
 func (cc *NodeConfigController) downloadConfigMap(ref *apiv1.ObjectReference) (string, string, error) {

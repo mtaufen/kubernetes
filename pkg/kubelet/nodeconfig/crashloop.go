@@ -35,7 +35,7 @@ const (
 )
 
 // recordStartup appends a timestamp to the startups-tracking file to indicate a rough Kubelet startup time.
-// If the startups-tracking file cannot be loaded or saved, a fatal error occurs.
+// If the startups-tracking file cannot be loaded or saved, a panic occurs.
 func (cc *NodeConfigController) recordStartup() {
 	// load the file
 	ls := cc.loadStartups()
@@ -59,7 +59,7 @@ func (cc *NodeConfigController) recordStartup() {
 // This function assumes that the trial period for a config is still active, if called outside
 // the trial period, it may overcount startups.
 // If filesystem issues prevent determining a modification time or loading
-// the startups-tracking-file, a fatal error occurs.
+// the startups-tracking-file, a panic occurs.
 func (cc *NodeConfigController) crashLooping(threshold int32) bool {
 	// load the startups-tracking file
 	ls := cc.loadStartups()
@@ -75,7 +75,7 @@ func (cc *NodeConfigController) crashLooping(threshold int32) bool {
 	for i, stamp := range ls {
 		t, err := time.Parse(time.RFC3339, stamp)
 		if err != nil {
-			fatalf("failed to parse timestamp while checking for crash loops, error: %v", err)
+			panicf("failed to parse timestamp while checking for crash loops, error: %v", err)
 		}
 		if t.After(modTime) {
 			num = int32(l - i)
@@ -90,14 +90,14 @@ func (cc *NodeConfigController) crashLooping(threshold int32) bool {
 // loadStartups loads the startups-tracking file from disk.
 // If loading succeeds, returns a string slice of RFC3339 format timestamps.
 // If the file is empty, returns an empty slice.
-// If the file cannot be loaded, a fatal error occurs.
+// If the file cannot be loaded, a panic occurs.
 func (cc *NodeConfigController) loadStartups() []string {
 	path := filepath.Join(cc.configDir, startupsFile)
 
 	// load the file
 	b, err := ioutil.ReadFile(path)
 	if err != nil {
-		fatalf("failed to load startups-tracking file %q, error: %v", path, err)
+		panicf("failed to load startups-tracking file %q, error: %v", path, err)
 	}
 
 	// parse json into the slice
@@ -110,37 +110,37 @@ func (cc *NodeConfigController) loadStartups() []string {
 
 	// otherwise unmarshal the json
 	if err := json.Unmarshal(b, &ls); err != nil {
-		fatalf("failed to unmarshal json from startups-tracking file %q, error: %v", path, err)
+		panicf("failed to unmarshal json from startups-tracking file %q, error: %v", path, err)
 	}
 	return ls
 }
 
 // saveStartups replaces the contents of the startups-tracking file with `ls`.
-// If the file cannot be saved, a fatal error occurs.
+// If the file cannot be saved, a panic occurs.
 func (cc *NodeConfigController) saveStartups(ls []string) {
 	path := filepath.Join(cc.configDir, startupsFile)
 	tmpPath := filepath.Join(cc.configDir, tmpStartupsFile)
 
 	// require that startupsFile exist, as ensureFile should be used to create it
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		fatalf("startups-tracking file %q must already exist in order to save it, error: %v", path, err)
+		panicf("startups-tracking file %q must already exist in order to save it, error: %v", path, err)
 	} else if err != nil {
-		fatalf("failed to stat startups-tracking file %q, error: %v", path, err)
+		panicf("failed to stat startups-tracking file %q, error: %v", path, err)
 	} // Assert: file exists
 
 	// marshal the json
 	b, err := json.Marshal(ls)
 	if err != nil {
-		fatalf("failed to marshal json for startups-tracking file, ls: %v, error: %v", ls, err)
+		panicf("failed to marshal json for startups-tracking file, ls: %v, error: %v", ls, err)
 	}
 
 	// write to a tmp file
 	if err := ioutil.WriteFile(tmpPath, b, defaultPerm); err != nil {
-		fatalf("failed to save to tmp file %q, error: %v", tmpPath, err)
+		panicf("failed to save to tmp file %q, error: %v", tmpPath, err)
 	}
 
 	// atomic rename over the existing file
 	if err := os.Rename(tmpPath, path); err != nil {
-		fatalf("failed to rename tmp file %q over %q, error: %v", tmpPath, path, err)
+		panicf("failed to rename tmp file %q over %q, error: %v", tmpPath, path, err)
 	}
 }

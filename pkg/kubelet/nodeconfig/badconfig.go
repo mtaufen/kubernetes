@@ -36,7 +36,7 @@ type badConfigEntry struct {
 // isBadConfig checks the bad-config-tracking file for an entry for `uid`.
 // If the entry exists, returns (true, entry).
 // If the entry does not exist, returns (false, empty entry).
-// If the bad-config-tracking file cannot be loaded, a fatal error occurs.
+// If the bad-config-tracking file cannot be loaded, a panic occurs.
 func (cc *NodeConfigController) isBadConfig(uid string) (bool, badConfigEntry) {
 	m := cc.loadBadConfigs()
 	entry, ok := m[uid]
@@ -47,7 +47,7 @@ func (cc *NodeConfigController) isBadConfig(uid string) (bool, badConfigEntry) {
 }
 
 // markBadConfig makes an entry for `uid` containing the current time and the `reason` in the bad-config-tracking file.
-// If a the bad-config-tracking file cannot be loaded or saved, a fatal error occurs.
+// If a the bad-config-tracking file cannot be loaded or saved, a panic occurs.
 func (cc *NodeConfigController) markBadConfig(uid, reason string) {
 	// load the file
 	m := cc.loadBadConfigs()
@@ -67,14 +67,14 @@ func (cc *NodeConfigController) markBadConfig(uid, reason string) {
 // loadBadConfigs loads the bad-config-tracking file from disk.
 // If loading succeeds, returns a map of UIDs to badConfigEntrys
 // If the file is empty, returns an empty map.
-// If the file cannot be loaded, a fatal error occurs.
+// If the file cannot be loaded, a panic occurs.
 func (cc *NodeConfigController) loadBadConfigs() map[string]badConfigEntry {
 	path := filepath.Join(cc.configDir, badConfigsFile)
 
 	// load the file
 	b, err := ioutil.ReadFile(path)
 	if err != nil {
-		fatalf("failed to load bad-config-tracking file %q, error: %v", path, err)
+		panicf("failed to load bad-config-tracking file %q, error: %v", path, err)
 	}
 
 	// parse json into the map
@@ -87,31 +87,31 @@ func (cc *NodeConfigController) loadBadConfigs() map[string]badConfigEntry {
 
 	// otherwise unmarshal the json
 	if err := json.Unmarshal(b, &m); err != nil {
-		fatalf("failed to unmarshal json from bad-config-tracking file %q, error: %v", path, err)
+		panicf("failed to unmarshal json from bad-config-tracking file %q, error: %v", path, err)
 	}
 	return m
 }
 
 // saveBadConfigs replaces the contents of the bad-config-tracking file with `m`.
-// If the file cannot be saved, a fatal error occurs.
+// If the file cannot be saved, a panic occurs.
 func (cc *NodeConfigController) saveBadConfigs(m map[string]badConfigEntry) {
 	path := filepath.Join(cc.configDir, badConfigsFile)
 
 	// require that file exist, as ensureFile should be used to create it
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		fatalf("bad-config-tracking file %q must already exist in order to save it, error: %v", path, err)
+		panicf("bad-config-tracking file %q must already exist in order to save it, error: %v", path, err)
 	} else if err != nil {
-		fatalf("failed to stat bad-config-tracking file %q, error: %v", path, err)
+		panicf("failed to stat bad-config-tracking file %q, error: %v", path, err)
 	} // Assert: file exists
 
 	// marshal the json
 	b, err := json.Marshal(m)
 	if err != nil {
-		fatalf("failed to marshal json for bad-config-tracking file, m: %v, error: %v", m, err)
+		panicf("failed to marshal json for bad-config-tracking file, m: %v, error: %v", m, err)
 	}
 
 	// write the file
 	if err := ioutil.WriteFile(path, b, defaultPerm); err != nil {
-		fatalf("failed to save file %q, error: %v", path, err)
+		panicf("failed to save file %q, error: %v", path, err)
 	}
 }

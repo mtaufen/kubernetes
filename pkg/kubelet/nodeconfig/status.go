@@ -57,10 +57,10 @@ const (
 	emptyReason  = "unknown - reason not provided"
 )
 
-// fatalSyncConfigOK attempts to sync a ConfigOK status describing a fatal error.
-// It is typical to call fatalf after fatalSyncConfigOK.
-func (cc *NodeConfigController) fatalSyncConfigOK(reason string) {
-	cc.setConfigOK("fatal-class error occurred while resolving config", reason, apiv1.ConditionFalse)
+// panicSyncConfigOK attempts to sync a ConfigOK status describing a panic.
+// It is typical to call panicf after panicSyncConfigOK.
+func (cc *NodeConfigController) panicSyncConfigOK(reason string) {
+	cc.setConfigOK("panic-class error occurred while resolving config", reason, apiv1.ConditionFalse)
 	cc.syncConfigOK()
 }
 

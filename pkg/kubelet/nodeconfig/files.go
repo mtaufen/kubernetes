@@ -36,80 +36,80 @@ const (
 )
 
 // ensureConfigDir makes sure that the node-config-dir is setup properly.
-// If something prevents correct setup, a fatal error occurs.
+// If something prevents correct setup, a panic occurs.
 func (cc *NodeConfigController) ensureCfgDir() {
 	const errfmt = "failed to ensure node-config-dir %q is set up properly, error: %v"
 	infof("ensuring node-confg-dir %q is set up correctly", cc.configDir)
 	// node-config-dir
 	if err := cc.ensureDir(""); err != nil {
-		fatalf(errfmt, cc.configDir, err)
+		panicf(errfmt, cc.configDir, err)
 	}
 	// checkpoints dir
 	if err := cc.ensureDir(checkpointsDir); err != nil {
-		fatalf(errfmt, cc.configDir, err)
+		panicf(errfmt, cc.configDir, err)
 	}
 	// symlink to current config checkpoint
 	if err := cc.ensureSymlink(curSymlink); err != nil {
-		fatalf(errfmt, cc.configDir, err)
+		panicf(errfmt, cc.configDir, err)
 	}
 	// symlink to last-known-good config checkpoint
 	if err := cc.ensureSymlink(lkgSymlink); err != nil {
-		fatalf(errfmt, cc.configDir, err)
+		panicf(errfmt, cc.configDir, err)
 	}
 	// bad config tracking file
 	if err := cc.ensureFile(badConfigsFile); err != nil {
-		fatalf(errfmt, cc.configDir, err)
+		panicf(errfmt, cc.configDir, err)
 	}
 	// startups tracking file
 	if err := cc.ensureFile(startupsFile); err != nil {
-		fatalf(errfmt, cc.configDir, err)
+		panicf(errfmt, cc.configDir, err)
 	}
 }
 
 // curModTime returns the modification time the current config.
-// If the modification time cannot be determined, a fatal error occurs.
+// If the modification time cannot be determined, a panic occurs.
 func (cc *NodeConfigController) curModTime() time.Time {
 	path := filepath.Join(cc.configDir, curSymlink)
 	info, err := os.Lstat(path)
 	if err != nil {
-		fatalf("failed to lstat %q, error: %v", path, err)
+		panicf("failed to lstat %q, error: %v", path, err)
 	}
 	return info.ModTime()
 }
 
 // curIsLkg returns true if curSymlink and lkgSymlink point to the same place, false otherwise.
-// If filesystem issues prevent reading the link, a fatal error occurs.
+// If filesystem issues prevent reading the link, a panic occurs.
 func (cc *NodeConfigController) curIsLkg() bool {
 	curp := filepath.Join(cc.configDir, curSymlink)
 	cur, err := os.Readlink(curp)
 	if err != nil {
-		fatalf("failed to read link %q, error: %v", curp, err)
+		panicf("failed to read link %q, error: %v", curp, err)
 	}
 
 	lkgp := filepath.Join(cc.configDir, lkgSymlink)
 	lkg, err := os.Readlink(lkgp)
 	if err != nil {
-		fatalf("failed to read link %q, error: %v", lkgp, err)
+		panicf("failed to read link %q, error: %v", lkgp, err)
 	}
 
 	return cur == lkg
 }
 
 // setCurAsLkg replaces lkgSymlink so it points to the same location as `curSymlink`.
-// If filesystem issues prevent these operations, a fatal error occurs.
+// If filesystem issues prevent these operations, a panic occurs.
 // This is used for updating the LKG when a config exits its trial period.
 func (cc *NodeConfigController) setCurAsLkg() {
 	path := filepath.Join(cc.configDir, curSymlink)
 	dest, err := os.Readlink(path)
 	if err != nil {
-		fatalf("failed to read link %q, error: %v", path, err)
+		panicf("failed to read link %q, error: %v", path, err)
 	}
 	cc.setSymlink(lkgSymlink, dest)
 }
 
 // curInTrial returns true if the time elapsed since the last modification to `curSymlink`
 // exceeds `trialDur`, false otherwise.
-// If filesystem issues prevent determining the modification time of `curSymlink`, a fatal error occurs.
+// If filesystem issues prevent determining the modification time of `curSymlink`, a panic occurs.
 func (cc *NodeConfigController) curInTrial(trialDur time.Duration) bool {
 	now := time.Now()
 	t := cc.curModTime()
@@ -120,21 +120,21 @@ func (cc *NodeConfigController) curInTrial(trialDur time.Duration) bool {
 }
 
 // curUID returns the uid of the current config, or the empty string if the current config is the default.
-// If the current config cannot be determined, a fatal error occurs.
+// If the current config cannot be determined, a panic occurs.
 func (cc *NodeConfigController) curUID() string {
 	uid, err := cc.symlinkUID(curSymlink)
 	if err != nil {
-		fatalf("failed to determine the current configuration, error: %v", err)
+		panicf("failed to determine the current configuration, error: %v", err)
 	}
 	return uid
 }
 
 // curUID returns the uid of the last-known-good config, or the empty string if the last-known-good config is the default.
-// If the last-known-good config cannot be determined, a fatal error occurs.
+// If the last-known-good config cannot be determined, a panic occurs.
 func (cc *NodeConfigController) lkgUID() string {
 	uid, err := cc.symlinkUID(lkgSymlink)
 	if err != nil {
-		fatalf("failed to determine the last-known-good configuration, error: %v", err)
+		panicf("failed to determine the last-known-good configuration, error: %v", err)
 	}
 	return uid
 }
@@ -154,19 +154,19 @@ func (cc *NodeConfigController) symlinkUID(relPath string) (string, error) {
 }
 
 // setSymlinkUID points the symlink at `cc.configDir/relPath` to the checkpoint directory for `uid`.
-// If filesystem issues prevent the symlink being set, a fatal error occurs.
+// If filesystem issues prevent the symlink being set, a panic occurs.
 func (cc *NodeConfigController) setSymlinkUID(relPath string, uid string) {
 	cc.setSymlink(relPath, filepath.Join(cc.configDir, checkpointsDir, uid))
 }
 
 // resetSymlink points the symlink at `cc.configDir/relPath` to the default location.
 // If the symlink was reset, returns true. Otherwise returns false.
-// If filesystem issues prevent the symlink being reset, a fatal error occurs.
+// If filesystem issues prevent the symlink being reset, a panic occurs.
 func (cc *NodeConfigController) resetSymlink(relPath string) bool {
 	path := filepath.Join(cc.configDir, relPath)
 	ln, err := os.Readlink(path)
 	if err != nil {
-		fatalf("failed to read link %q, error: %v", path, err)
+		panicf("failed to read link %q, error: %v", path, err)
 	}
 	// don't need to reset if it already points to the default location
 	if ln == defaultSymlink {
@@ -178,36 +178,36 @@ func (cc *NodeConfigController) resetSymlink(relPath string) bool {
 
 // setSymlink points the symlink at `cc.configDir/relPath` to `dest`.
 // If the symlink was set, returns true. Otherwise returns false.
-// If the symlink does not already exist, a fatal error occurs. Use ensureSymlink to create it before using setSymlink.
-// If filesystem issues prevent the symlink from being set, a fatal error occurs.
+// If the symlink does not already exist, a panic occurs. Use ensureSymlink to create it before using setSymlink.
+// If filesystem issues prevent the symlink from being set, a panic occurs.
 func (cc *NodeConfigController) setSymlink(relPath string, dest string) {
 	path := filepath.Join(cc.configDir, relPath)
 	tmpPath := filepath.Join(cc.configDir, tmpSymlink)
 
 	// require that symlink exist, as ensureSymlink should be used to create it
 	if ok, err := cc.symlinkExists(relPath); err != nil {
-		fatalf("failed checking whether symlink exists at %q, error: %v", path, err)
+		panicf("failed checking whether symlink exists at %q, error: %v", path, err)
 	} else if !ok {
-		fatalf("symlink must already exist to set symlink, target path: %q, error: %v", path, err)
+		panicf("symlink must already exist to set symlink, target path: %q, error: %v", path, err)
 	} // Assert: symlink exists
 
 	// delete the temporary symlink if it exists, in most cases it will not, but the
 	// Kubelet could have crashed between creating and renaming the temporary symlink
 	if ok, err := cc.symlinkExists(tmpPath); err != nil {
-		fatalf("failed checking whether temporary symlink exists at %q, error: %v", tmpPath, err)
+		panicf("failed checking whether temporary symlink exists at %q, error: %v", tmpPath, err)
 	} else if ok {
 		// Assert: temporary symlink exists, we must delete it
 		if err := os.Remove(tmpPath); err != nil {
-			fatalf("failed to remove temporary symlink %q, error: %v", tmpPath, err)
+			panicf("failed to remove temporary symlink %q, error: %v", tmpPath, err)
 		}
 	}
 
 	// create the temporary symlink, and then rename it to atomically set the target symlink
 	if err := os.Symlink(dest, tmpPath); err != nil {
-		fatalf("failed to create temporary symlink %q, error: %v", tmpPath, err)
+		panicf("failed to create temporary symlink %q, error: %v", tmpPath, err)
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
-		fatalf("failed to rename temporary symlink %q to %q (attempting to set symlink at the latter path), error: %v", tmpPath, path, err)
+		panicf("failed to rename temporary symlink %q to %q (attempting to set symlink at the latter path), error: %v", tmpPath, path, err)
 	}
 }
 

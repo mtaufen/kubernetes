@@ -25,7 +25,7 @@ import (
 
 const nodeconfigLogFmt = "nodeconfig controller: %s"
 
-func fatalf(format string, args ...interface{}) {
+func panicf(format string, args ...interface{}) {
 	var s string
 	if len(args) > 0 {
 		s = fmt.Sprintf(format, args...)

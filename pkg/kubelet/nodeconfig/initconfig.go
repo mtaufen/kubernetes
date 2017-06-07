@@ -30,11 +30,11 @@ import (
 )
 
 // initConfigExists is a simple existential check for the init config.
-// If filesystem issues prevent it from determining existence, a fatal error is returned.
+// If filesystem issues prevent it from determining existence, a panic occurs.
 func (cc *NodeConfigController) initConfigExists() bool {
 	ok, err := cc.dirExists(initConfigDir)
 	if err != nil {
-		fatalf("failed to determine whether init config exists, error: %v", err)
+		panicf("failed to determine whether init config exists, error: %v", err)
 	}
 	return ok
 }
@@ -55,22 +55,22 @@ func (cc *NodeConfigController) loadInitConfig() {
 	path := filepath.Join(cc.configDir, initConfigDir, configMapConfigKey)
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
-		fatalf("failed to read init config file %q, error: %v", path, err)
+		panicf("failed to read init config file %q, error: %v", path, err)
 	}
 
 	// no configuration is an error, some parameters are required
 	if len(data) == 0 {
-		fatalf(errfmt, fmt.Errorf("configuration was empty, but some parameters are required"))
+		panicf(errfmt, fmt.Errorf("configuration was empty, but some parameters are required"))
 	}
 
 	// TODO(mtaufen): Once the KubeletConfiguration type is decomposed (#44252), extend this to allow a YAML stream in any given file.
 	jdata, err := yaml.ToJSON(data)
 	if err != nil {
-		fatalf(errfmt, err)
+		panicf(errfmt, err)
 	}
 	kc := &ccv1a1.KubeletConfiguration{}
 	if err := json.Unmarshal(jdata, kc); err != nil {
-		fatalf(errfmt, err)
+		panicf(errfmt, err)
 	}
 
 	// run the defaulter on the loaded init config
@@ -80,7 +80,7 @@ func (cc *NodeConfigController) loadInitConfig() {
 	kcInternal := &componentconfig.KubeletConfiguration{}
 	err = api.Scheme.Convert(kc, kcInternal, nil)
 	if err != nil {
-		fatalf(errfmt, err)
+		panicf(errfmt, err)
 	}
 
 	cc.initConfig = kcInternal
@@ -95,6 +95,6 @@ func (cc *NodeConfigController) validateInitConfig() {
 
 	infof("validating init config")
 	if err := validation.ValidateKubeletConfiguration(cc.initConfig); err != nil {
-		fatalf("failed to validate the init config, error: %v", err)
+		panicf("failed to validate the init config, error: %v", err)
 	}
 }

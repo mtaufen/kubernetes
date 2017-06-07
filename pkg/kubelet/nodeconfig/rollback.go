@@ -26,7 +26,7 @@ import (
 
 // badRollback makes an entry in the bad-config-tracking file for `uid` with `reason`, and then
 // returns the result of rolling back to the last-known-good config.
-// If filesystem issues prevent marking the config bad or rolling back, a fatal error occurs.
+// If filesystem issues prevent marking the config bad or rolling back, a panic occurs.
 func (cc *NodeConfigController) badRollback(uid, reason, detail string) *componentconfig.KubeletConfiguration {
 	if len(detail) > 0 {
 		detail = fmt.Sprintf(", %s", detail)
@@ -42,8 +42,8 @@ func (cc *NodeConfigController) badRollback(uid, reason, detail string) *compone
 // couldn't sync a configuration (statusUnknown).
 // If the `defaultConfig` or `initConfig` is the last-known-good, the cached copies are immediately returned.
 // If the last-known-good fails any of load, verify, parse, or validate,
-// attempts to report the associated ConfigOK condition and a fatal error occurs.
-// If filesystem issues prevent returning the last-known-good configuration, a fatal error occurs.
+// attempts to report the associated ConfigOK condition and a panic occurs.
+// If filesystem issues prevent returning the last-known-good configuration, a panic occurs.
 func (cc *NodeConfigController) lkgRollback(cause string, status apiv1.ConditionStatus) *componentconfig.KubeletConfiguration {
 	infof("rolling back to last-known-good config")
 
@@ -62,31 +62,31 @@ func (cc *NodeConfigController) lkgRollback(cause string, status apiv1.Condition
 	toVerify, err := cc.loadCheckpoint(lkgSymlink)
 	if err != nil {
 		cause := fmt.Sprintf(lkgFailLoadReasonFmt, lkgUID)
-		cc.fatalSyncConfigOK(cause)
-		fatalf("%s, error: %v", cause, err)
+		cc.panicSyncConfigOK(cause)
+		panicf("%s, error: %v", cause, err)
 	}
 
 	// verify
 	toParse, err := toVerify.verify()
 	if err != nil {
 		cause := fmt.Sprintf(lkgFailVerifyReasonFmt, lkgUID)
-		cc.fatalSyncConfigOK(cause)
-		fatalf("%s, error: %v", cause, err)
+		cc.panicSyncConfigOK(cause)
+		panicf("%s, error: %v", cause, err)
 	}
 
 	// parse
 	lkg, err := toParse.parse()
 	if err != nil {
 		cause := fmt.Sprintf(lkgFailParseReasonFmt, lkgUID)
-		cc.fatalSyncConfigOK(cause)
-		fatalf("%s, error: %v", cause, err)
+		cc.panicSyncConfigOK(cause)
+		panicf("%s, error: %v", cause, err)
 	}
 
 	// validate
 	if err := validation.ValidateKubeletConfiguration(lkg); err != nil {
 		cause := fmt.Sprintf(lkgFailValidateReasonFmt, lkgUID)
-		cc.fatalSyncConfigOK(cause)
-		fatalf("%s, error: %v", cause, err)
+		cc.panicSyncConfigOK(cause)
+		panicf("%s, error: %v", cause, err)
 	}
 
 	// update the ConfigOK status

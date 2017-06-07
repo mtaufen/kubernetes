@@ -113,7 +113,7 @@ func (cc *NodeConfigController) Bootstrap() (finalConfig *componentconfig.Kubele
 	// These must be valid because they are the foundational last-known-good configs.
 	infof("validating combination of defaults and flags")
 	if err := validation.ValidateKubeletConfiguration(cc.defaultConfig); err != nil {
-		fatalf("combination of defaults and flags failed validation, error: %v", err)
+		panicf("combination of defaults and flags failed validation, error: %v", err)
 	}
 	cc.loadInitConfig()
 	cc.validateInitConfig()
@@ -267,7 +267,7 @@ func (cc *NodeConfigController) StartSyncLoop(client clientset.Interface, nodeNa
 func (cc *NodeConfigController) onWatchNodeEvent(obj interface{}) {
 	defer func() {
 		// catch controller-level panics, the actual cause of controller-level
-		// fatal-class errors will have already been logged by fatalf (see log.go)
+		// panic-class errors will have already been logged by panicf (see log.go)
 		if r := recover(); r != nil {
 			if _, ok := r.(runtime.Error); ok {
 				panic(r)

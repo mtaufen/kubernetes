@@ -28,18 +28,18 @@ import (
 )
 
 // checkpointExists returns true if checkpoint for the config source identified by `uid` exists on disk.
-// If the existence of a checkpoint cannot be determined due to filesystem issues, a fatal error occurs.
+// If the existence of a checkpoint cannot be determined due to filesystem issues, a panic occurs.
 func (cc *NodeConfigController) checkpointExists(uid string) bool {
 	ok, err := cc.dirExists(filepath.Join(checkpointsDir, uid))
 	if err != nil {
-		fatalf("failed to determine whether checkpoint %q exists, error: %v", uid, err)
+		panicf("failed to determine whether checkpoint %q exists, error: %v", uid, err)
 	}
 	return ok
 }
 
 // loadCheckpoint loads the checkpoint at `cc.configDir/relPath`, which is expected to be a checkpoint directory.
 // If the checkpoint directory does not exist or if data cannot be retrieved from the filesystem,
-// a fatal error will occur.
+// a panic will occur.
 // If the data cannot be decoded and converted to a supported config source type, returns an error.
 // This may indicate a failure to completely save the checkpoint. You may want to attempt a re-download in this scenario.
 // If loading succeeds, returns a `verifiable` (see verify.go). This interface can be used to verify the integrity of
@@ -51,7 +51,7 @@ func (cc *NodeConfigController) loadCheckpoint(relPath string) (verifiable, erro
 	// find the checkpoint file(s)
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
-		fatalf("failed to enumerate checkpoint files in dir %q, error: %v", path, err)
+		panicf("failed to enumerate checkpoint files in dir %q, error: %v", path, err)
 	} else if len(files) == 0 {
 		return nil, fmt.Errorf("no checkpoint files in dir %q, but there should be at least one", path)
 	}
@@ -61,7 +61,7 @@ func (cc *NodeConfigController) loadCheckpoint(relPath string) (verifiable, erro
 	filePath := filepath.Join(path, file.Name())
 	b, err := ioutil.ReadFile(filePath)
 	if err != nil {
-		fatalf("failed to read checkpoint file %q, error: %v", filePath, err)
+		panicf("failed to read checkpoint file %q, error: %v", filePath, err)
 	}
 
 	// decode the checkpoint file
