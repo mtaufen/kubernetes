@@ -17,11 +17,13 @@ limitations under the License.
 package nodeconfig
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kuberuntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
+	"k8s.io/kubernetes/pkg/api"
 	apiv1 "k8s.io/kubernetes/pkg/api/v1"
 )
 
@@ -105,9 +107,7 @@ func (cc *NodeConfigController) syncConfigOK() {
 
 	if !cc.configOKNeedsSync {
 		return
-	}
-
-	if cc.client == nil {
+	} else if cc.client == nil {
 		infof("client is nil, skipping ConfigOK sync")
 		return
 	} else if cc.configOK == nil {
@@ -137,14 +137,41 @@ func (cc *NodeConfigController) syncConfigOK() {
 	}
 
 	// generate the patch
-	data, err := json.Marshal(&[]apiv1.NodeCondition{*cc.configOK})
-	if err != nil {
-		errorf("could not serialize ConfigOK condition to JSON, condition: %+v, error: %v", cc.configOK, err)
+	mediaType := "application/json"
+	info, ok := kuberuntime.SerializerInfoForMediaType(api.Codecs.SupportedMediaTypes(), mediaType)
+	if !ok {
+		errorf("unsupported media type %q", mediaType)
 		return
 	}
-	patch := []byte(fmt.Sprintf(`{"status":{"conditions":%s}}`, data))
+	versions := api.Registry.EnabledVersionsForGroup(api.GroupName)
+	if len(versions) == 0 {
+		errorf("no enabled versions for group %q", api.GroupName)
+		return
+	}
+	// the "best" version supposedly comes first in the list returned from apiv1.Registry.EnabledVersionsForGroup
+	encoder := api.Codecs.EncoderForVersion(info.Serializer, versions[0])
 
-	// update the conditions list on the Node object
+	before, err := kuberuntime.Encode(encoder, node)
+	if err != nil {
+		errorf("failed to encode before node, error: %v", err)
+		return
+	}
+
+	patchConfigOK(node, cc.configOK)
+	after, err := kuberuntime.Encode(encoder, node)
+	if err != nil {
+		errorf("failed to encode after node, error: %v", err)
+		return
+	}
+
+	// generate the patch
+	patch, err := strategicpatch.CreateTwoWayMergePatch(before, after, apiv1.Node{})
+	if err != nil {
+		errorf("failed to generate patch for updating ConfigOK condition, error: %v", err)
+		return
+	}
+
+	// patch the remote Node object
 	_, err = cc.client.CoreV1().Nodes().PatchStatus(cc.nodeName, patch)
 	if err != nil {
 		errorf("could not update ConfigOK condition, error: %v", err)
@@ -153,6 +180,19 @@ func (cc *NodeConfigController) syncConfigOK() {
 
 	// if the sync succeeded, unset configOKNeedsSync
 	cc.configOKNeedsSync = false
+}
+
+// patchConfigOK replaces or adds the ConfigOK condition to the node
+func patchConfigOK(node *apiv1.Node, configOK *apiv1.NodeCondition) {
+	for i := range node.Status.Conditions {
+		if node.Status.Conditions[i].Type == configOKType {
+			// edit the condition
+			node.Status.Conditions[i] = *configOK
+			return
+		}
+	}
+	// append the condition
+	node.Status.Conditions = append(node.Status.Conditions, *configOK)
 }
 
 // configOKEq returns true if the conditions' messages, reasons, and statuses match, false otherwise.
