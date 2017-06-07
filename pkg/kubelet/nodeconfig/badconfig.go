@@ -25,7 +25,10 @@ import (
 	"time"
 )
 
-const badConfigsFile = ".bad-configs.json"
+const (
+	badConfigsFile    = ".bad-configs.json"
+	tmpBadConfigsFile = ".tmp_bad-configs.json"
+)
 
 // badConfigEntry represents an entry in the bad-config-tracking file
 type badConfigEntry struct {
@@ -96,6 +99,7 @@ func (cc *NodeConfigController) loadBadConfigs() map[string]badConfigEntry {
 // If the file cannot be saved, a panic occurs.
 func (cc *NodeConfigController) saveBadConfigs(m map[string]badConfigEntry) {
 	path := filepath.Join(cc.configDir, badConfigsFile)
+	tmpPath := filepath.Join(cc.configDir, tmpStartupsFile)
 
 	// require that file exist, as ensureFile should be used to create it
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -110,8 +114,13 @@ func (cc *NodeConfigController) saveBadConfigs(m map[string]badConfigEntry) {
 		panicf("failed to marshal json for bad-config-tracking file, m: %v, error: %v", m, err)
 	}
 
-	// write the file
-	if err := ioutil.WriteFile(path, b, defaultPerm); err != nil {
-		panicf("failed to save file %q, error: %v", path, err)
+	// write to a tmp file
+	if err := ioutil.WriteFile(tmpPath, b, defaultPerm); err != nil {
+		panicf("failed to save to tmp file %q, error: %v", tmpPath, err)
+	}
+
+	// atomic rename over the existing file
+	if err := os.Rename(tmpPath, path); err != nil {
+		panicf("failed to rename tmp file %q over %q, error: %v", tmpPath, path, err)
 	}
 }

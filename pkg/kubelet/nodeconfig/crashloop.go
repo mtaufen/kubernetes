@@ -28,7 +28,7 @@ import (
 
 const (
 	startupsFile    = ".startups.json"
-	tmpStartupsFile = ".tmpStartups.json"
+	tmpStartupsFile = ".tmp_startups.json"
 
 	// we allow one extra startup to account for the startup necessary to update configuration
 	maxStartups = validation.MaxCrashLoopThreshold + 1
