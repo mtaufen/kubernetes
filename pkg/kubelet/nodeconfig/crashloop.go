@@ -25,7 +25,8 @@ import (
 )
 
 const (
-	startupsFile = ".startups.json"
+	startupsFile    = ".startups.json"
+	tmpStartupsFile = ".tmpStartups.json"
 
 	// we allow one extra startup to account for the startup necessary to update configuration
 	maxCrashLoopThreshold = 10
@@ -117,8 +118,9 @@ func (cc *NodeConfigController) loadStartups() []string {
 // If the file cannot be saved, a fatal error occurs.
 func (cc *NodeConfigController) saveStartups(ls []string) {
 	path := filepath.Join(cc.configDir, startupsFile)
+	tmpPath := filepath.Join(cc.configDir, tmpStartupsFile)
 
-	// require that file exist, as ensureFile should be used to create it
+	// require that startupsFile exist, as ensureFile should be used to create it
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		fatalf("startups-tracking file %q must already exist in order to save it, error: %v", path, err)
 	} else if err != nil {
@@ -131,8 +133,13 @@ func (cc *NodeConfigController) saveStartups(ls []string) {
 		fatalf("failed to marshal json for startups-tracking file, ls: %v, error: %v", ls, err)
 	}
 
-	// write the file
-	if err := ioutil.WriteFile(path, b, defaultPerm); err != nil {
-		fatalf("failed to save file %q, error: %v", path, err)
+	// write to a tmp file
+	if err := ioutil.WriteFile(tmpPath, b, defaultPerm); err != nil {
+		fatalf("failed to save to tmp file %q, error: %v", tmpPath, err)
+	}
+
+	// atomic rename over the existing file
+	if err := os.Rename(tmpPath, path); err != nil {
+		fatalf("failed to rename tmp file %q over %q, error: %v", tmpPath, path, err)
 	}
 }

@@ -61,11 +61,11 @@ func (v *verifiableConfigMap) verify() (parsable, error) {
 }
 
 // capture groups:
-// nameDash: config name substring, with trailing `-`
 // name: config name substring, sans trailing `-`
 // alg: algorithm used to produce the hash value
 // hash: hash value
-const algHashRE = `^(?P<nameDash>(?P<name>[a-z0-9.\-]*){0,1}-){0,1}(?P<alg>[a-z0-9]+)-(?P<hash>[a-f0-9]+)$`
+// TODO(mtaufen): Move away from using a regex to parse this. It was expedient to write, but generally regex is difficult to maintain.
+const algHashRE = `^((?P<name>[a-z0-9.\-]+)-)?(?P<alg>[a-z0-9]+)-(?P<hash>[a-f0-9]+)$`
 
 // parseConfigName extracts `name`, `alg`, and `hash` from the name of a configuration
 func parseConfigName(n string) (name string, alg string, hash string, err error) {

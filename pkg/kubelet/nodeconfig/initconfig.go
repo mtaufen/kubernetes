@@ -22,8 +22,8 @@ import (
 	"io/ioutil"
 	"path/filepath"
 
-	yaml "k8s.io/apimachinery/pkg/util/yaml"
-	api "k8s.io/kubernetes/pkg/api"
+	"k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/kubernetes/pkg/api"
 	ccv1a1 "k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1"
 )
 

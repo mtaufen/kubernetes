@@ -74,8 +74,7 @@ func (cc *NodeConfigController) curModTime() time.Time {
 	if err != nil {
 		fatalf("failed to lstat %q, error: %v", path, err)
 	}
-	stamp := info.ModTime()
-	return stamp
+	return info.ModTime()
 }
 
 // curIsLkg returns true if curSymlink and lkgSymlink point to the same place, false otherwise.
@@ -84,13 +83,13 @@ func (cc *NodeConfigController) curIsLkg() bool {
 	curp := filepath.Join(cc.configDir, curSymlink)
 	cur, err := os.Readlink(curp)
 	if err != nil {
-		fatalf("failed to read link %q, error:", curp, err)
+		fatalf("failed to read link %q, error: %v", curp, err)
 	}
 
 	lkgp := filepath.Join(cc.configDir, lkgSymlink)
 	lkg, err := os.Readlink(lkgp)
 	if err != nil {
-		fatalf("failed to read link %q, error:", lkgp, err)
+		fatalf("failed to read link %q, error: %v", lkgp, err)
 	}
 
 	return cur == lkg
@@ -281,10 +280,7 @@ func (cc *NodeConfigController) ensureFile(relPath string) error {
 		return err
 	}
 	// close the file, since we don't intend to use it yet
-	if err := file.Close(); err != nil {
-		return err
-	}
-	return nil
+	return file.Close()
 }
 
 // dirExists returns (true, nil) if `cc.configDir/relPath` is a directory and we are able stat it.

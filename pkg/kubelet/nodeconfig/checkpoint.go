@@ -23,7 +23,7 @@ import (
 	"path/filepath"
 
 	kuberuntime "k8s.io/apimachinery/pkg/runtime"
-	api "k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api"
 	apiv1 "k8s.io/kubernetes/pkg/api/v1"
 )
 

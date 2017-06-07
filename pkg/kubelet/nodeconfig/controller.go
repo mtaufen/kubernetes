@@ -26,8 +26,10 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	kuberuntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	apiv1 "k8s.io/kubernetes/pkg/api/v1"
@@ -194,48 +196,58 @@ func (cc *NodeConfigController) StartSyncLoop(client clientset.Interface, nodeNa
 	if client != nil {
 		cc.client = client
 		cc.nodeName = nodeName
-		infof("starting sync loop")
+
+		fieldselector := fields.OneTermEqualSelector("metadata.name", nodeName)
+
+		// Add some randomness to resync period, which can help avoid controllers falling into lock-step
+		minResyncPeriod := 15 * time.Minute
+		factor := rand.Float64() + 1
+		resyncPeriod := time.Duration(float64(minResyncPeriod.Nanoseconds()) * factor)
+
+		lw := &cache.ListWatch{
+			ListFunc: func(options metav1.ListOptions) (kuberuntime.Object, error) {
+				return cc.client.Core().Nodes().List(metav1.ListOptions{
+					FieldSelector: fieldselector.String(),
+				})
+			},
+			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				return cc.client.Core().Nodes().Watch(metav1.ListOptions{
+					FieldSelector:   fieldselector.String(),
+					ResourceVersion: options.ResourceVersion,
+				})
+			},
+		}
+
+		handler := cache.ResourceEventHandlerFuncs{
+			AddFunc: cc.onWatchNodeEvent,
+			UpdateFunc: func(old interface{}, nw interface{}) {
+				// TODO(mtaufen): do filtering
+
+				cc.onWatchNodeEvent(nw)
+			},
+			DeleteFunc: func(obj interface{}) {
+				cc.onDeleteNodeEvent(obj)
+			},
+		}
+
+		informer := cache.NewSharedInformer(lw, &apiv1.Node{}, resyncPeriod)
+		informer.AddEventHandler(handler)
 
 		// start the configuration sync loop
 		go func() {
-			defer utilruntime.HandleCrash()
-			fieldselector := fmt.Sprintf("metadata.name=%s", cc.nodeName)
-
-			// Add some randomness to resync period, which can help avoid controllers falling into lock-step
-			minResyncPeriod := 30 * time.Second
-			factor := rand.Float64() + 1
-			resyncPeriod := time.Duration(float64(minResyncPeriod.Nanoseconds()) * factor)
-
-			lw := &cache.ListWatch{
-				ListFunc: func(options metav1.ListOptions) (kuberuntime.Object, error) {
-					return cc.client.Core().Nodes().List(metav1.ListOptions{
-						FieldSelector: fieldselector,
-					})
-				},
-				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					return cc.client.Core().Nodes().Watch(metav1.ListOptions{
-						FieldSelector:   fieldselector,
-						ResourceVersion: options.ResourceVersion,
-					})
-				},
-			}
-
-			handler := cache.ResourceEventHandlerFuncs{
-				AddFunc: func(obj interface{}) {
-					cc.onAddNodeEvent(obj)
-				},
-				UpdateFunc: func(old interface{}, nw interface{}) {
-					cc.onWatchNodeEvent(nw)
-				},
-				DeleteFunc: func(obj interface{}) {
-					cc.onDeleteNodeEvent(obj)
-				},
-			}
-
-			informer := cache.NewSharedInformer(lw, &apiv1.Node{}, resyncPeriod)
-			informer.AddEventHandler(handler)
-			stop := make(chan struct{})
-			informer.Run(stop)
+			infof("starting sync loop")
+			defer func() {
+				// Rather than use utilruntime.HandleCrash, which doesn't actually crash in the Kubelet,
+				// we manually call the panic handlers and then crash. We have a better chance of recovering
+				// normal operation if we just restart the Kubelet in this case.
+				if r := recover(); r != nil {
+					for _, fn := range utilruntime.PanicHandlers {
+						fn(r)
+					}
+					panic(r)
+				}
+			}()
+			informer.Run(wait.NeverStop)
 			return
 		}()
 
@@ -243,38 +255,10 @@ func (cc *NodeConfigController) StartSyncLoop(client clientset.Interface, nodeNa
 		// TODO(mtaufen): condition syncing is kept separate from informer event handling, because I'm worried about the
 		// possibility of creating a feedback loop between condition updates and Node update events.
 		// I have yet to test whether a feedback loop is possible, but it's best to be cautious.
-		go func() {
-			// Add some randomness to resync period, which can help avoid controllers falling into lock-step
-			minResyncPeriod := 10 * time.Second
-			factor := rand.Float64() + 1
-			resyncPeriod := time.Duration(float64(minResyncPeriod.Nanoseconds()) * factor)
-			// sync immediately, then periodically sync the ConfigOK condition
-			cc.syncConfigOK()
-			for {
-				select {
-				case <-time.After(resyncPeriod):
-					cc.syncConfigOK()
-				}
-			}
-		}()
+		go wait.JitterUntil(cc.syncConfigOK, 10*time.Second, 0.2, true, wait.NeverStop)
 	} else {
 		errorf("cannot start sync loop with nil client")
 	}
-}
-
-// onAddEvent syncs any status that was set before the Node was registered,
-// then calls onWatchNodeEvent to complete event handling.
-func (cc *NodeConfigController) onAddNodeEvent(obj interface{}) {
-	defer func() {
-		// catch controller-level panics, the actual cause of controller-level
-		// fatal-class errors will have already been logged by fatalf (see log.go)
-		if r := recover(); r != nil {
-			if _, ok := r.(runtime.Error); ok {
-				panic(r)
-			}
-		}
-	}()
-	cc.onWatchNodeEvent(obj)
 }
 
 // onWatchNodeEvent checks for new config and downloads it if necessary.
