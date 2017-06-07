@@ -23,6 +23,7 @@ import (
 	yaml "k8s.io/apimachinery/pkg/util/yaml"
 	api "k8s.io/kubernetes/pkg/api"
 	apiv1 "k8s.io/kubernetes/pkg/api/v1"
+	"k8s.io/kubernetes/pkg/apis/componentconfig"
 	ccv1a1 "k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1"
 )
 
@@ -30,7 +31,7 @@ const configMapConfigKey = "kubelet"
 
 // parsable is for parsing a KubeletConfiguration out of a config object
 type parsable interface {
-	parse() (*ccv1a1.KubeletConfiguration, error)
+	parse() (*componentconfig.KubeletConfiguration, error)
 }
 
 // parsableConfigMap is for parsing a KubeletConfiguration out of a ConfigMap
@@ -42,7 +43,7 @@ type parsableConfigMap struct {
 // If parsing fails, returns an error.
 // If parsing succeeds, returns a KubeletConfiguration.
 // It is recommended that you validate any returned configuration before using it.
-func (p *parsableConfigMap) parse() (*ccv1a1.KubeletConfiguration, error) {
+func (p *parsableConfigMap) parse() (*componentconfig.KubeletConfiguration, error) {
 	const emptyCfgErr = "configuration was empty, but some parameters are required"
 	if len(p.cm.Data) == 0 {
 		return nil, fmt.Errorf(emptyCfgErr)
@@ -68,5 +69,12 @@ func (p *parsableConfigMap) parse() (*ccv1a1.KubeletConfiguration, error) {
 	// run the defaulter on the loaded configuration before returning
 	api.Scheme.Default(kc)
 
-	return kc, nil
+	// convert to internal type
+	kcInternal := &componentconfig.KubeletConfiguration{}
+	err = api.Scheme.Convert(kc, kcInternal, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return kcInternal, nil
 }

@@ -14,30 +14,27 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package nodeconfig
+package validation
 
 import (
 	"fmt"
 
-	ccv1a1 "k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1"
+	"k8s.io/kubernetes/pkg/apis/componentconfig"
 	containermanager "k8s.io/kubernetes/pkg/kubelet/cm"
 )
 
-// validateConfig checks for invalid configuration and returns an error if `kc` fails validation
-// TODO(mtaufen): keep this up to date with cmd/kubelet/app/server.go, until the nodeconfig controller
-// goes GA, we maintain an extended copy of the validation in cmd/kubelet/app/server.go:validateConfig here.
-// This is because, today, the controller is only ever used if dynamic config is enabled, so validation with the
-// feature off temporarily needs to live in another codepath.
-func validateConfig(kc *ccv1a1.KubeletConfiguration) error {
+const MaxCrashLoopThreshold = 10
+
+// ValidateKubeletConfiguration tests that the fields of `kc` contian valid values
+func ValidateKubeletConfiguration(kc *componentconfig.KubeletConfiguration) error {
 	// restrict crashloop threshold to between 0 and `maxCrashLoopThreshold`, inclusive
 	// more than `maxStartups=maxCrashLoopThreshold` adds unnecessary bloat to the .startups.json file,
-	// and negative values would be silly
-	if *kc.CrashLoopThreshold < 0 || *kc.CrashLoopThreshold > maxCrashLoopThreshold {
-		return fmt.Errorf("CrashLoopThreshold must be between 0 and %d, inclusive.", maxCrashLoopThreshold)
+	// and negative values would be silly.
+	if kc.CrashLoopThreshold < 0 || kc.CrashLoopThreshold > MaxCrashLoopThreshold {
+		return fmt.Errorf("CrashLoopThreshold must be between 0 and %d, inclusive.", MaxCrashLoopThreshold)
 	}
 
-	// validation from server.go
-	if !*kc.CgroupsPerQOS && len(kc.EnforceNodeAllocatable) > 0 {
+	if !kc.CgroupsPerQOS && len(kc.EnforceNodeAllocatable) > 0 {
 		return fmt.Errorf("Node Allocatable enforcement is not supported unless Cgroups Per QOS feature is turned on")
 	}
 	if kc.SystemCgroups != "" && kc.CgroupRoot == "" {

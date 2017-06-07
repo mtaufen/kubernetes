@@ -63,6 +63,7 @@ import (
 	certificates "k8s.io/kubernetes/pkg/apis/certificates/v1beta1"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
 	componentconfigv1alpha1 "k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1"
+	componentconfigValidation "k8s.io/kubernetes/pkg/apis/componentconfig/validation"
 	"k8s.io/kubernetes/pkg/capabilities"
 	"k8s.io/kubernetes/pkg/client/chaosclient"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
@@ -212,22 +213,7 @@ func initConfigz(kc *componentconfig.KubeletConfiguration) (*configz.Config, err
 
 // validateKubeletServer validates configuration of KubeletServer and returns an error is the input configuration is invalid.
 func validateKubeletServer(s *options.KubeletServer) error {
-	if !s.CgroupsPerQOS && len(s.EnforceNodeAllocatable) > 0 {
-		return fmt.Errorf("Node Allocatable enforcement is not supported unless Cgroups Per QOS feature is turned on")
-	}
-	if s.SystemCgroups != "" && s.CgroupRoot == "" {
-		return fmt.Errorf("invalid configuration: system container was specified and cgroup root was not specified")
-	}
-	for _, val := range s.EnforceNodeAllocatable {
-		switch val {
-		case cm.NodeAllocatableEnforcementKey:
-		case cm.SystemReservedEnforcementKey:
-		case cm.KubeReservedEnforcementKey:
-			continue
-		default:
-			return fmt.Errorf("invalid option %q specified for EnforceNodeAllocatable setting. Valid options are %q, %q or %q", val, cm.NodeAllocatableEnforcementKey, cm.SystemReservedEnforcementKey, cm.KubeReservedEnforcementKey)
-		}
-	}
+	componentconfigValidation.ValidateKubeletConfiguration(&s.KubeletConfiguration)
 
 	// ensure that nobody sets NodeConfigDir if the dynamic config feature gate is turned off
 	if len(s.NodeConfigDir) > 0 && !utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) {
@@ -296,28 +282,16 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.KubeletDeps) (err error) {
 			configDir = filepath.Join(s.RootDirectory, s.NodeConfigDir)
 		}
 
-		// get the external representation of the bootstrap configuration
-		bootstrapKC := &componentconfigv1alpha1.KubeletConfiguration{}
-		err = api.Scheme.Convert(&s.KubeletConfiguration, bootstrapKC, nil)
-		if err != nil {
-			return err
-		}
-
 		// get the latest KubeletConfiguration checkpoint from disk, or load the init or default config if no checkpoints exist
-		ncc = nodeconfig.NewNodeConfigController(configDir, bootstrapKC)
+		ncc = nodeconfig.NewNodeConfigController(configDir, &s.KubeletConfiguration)
 		kcToUse, err := ncc.Bootstrap()
 		if err != nil {
 			return fmt.Errorf("failed to determine a valid configuration, error: %v", err)
 		}
 
 		// TODO(mtaufen): Hoist initial configuration bootstrap out of run() so that this reassignment to KubeletServer is not required.
-		// update s (KubeletServer) to any new config
-		kcToUseInternal := componentconfig.KubeletConfiguration{}
-		err = api.Scheme.Convert(kcToUse, &kcToUseInternal, nil)
-		if err != nil {
-			return err
-		}
-		s.KubeletConfiguration = kcToUseInternal
+		// update KubeletServer so it has the latest configuration
+		s.KubeletConfiguration = *kcToUse
 
 		// update feature gates from any new config
 		err = utilfeature.DefaultFeatureGate.Set(s.KubeletConfiguration.FeatureGates)

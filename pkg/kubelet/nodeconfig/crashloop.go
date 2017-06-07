@@ -22,6 +22,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"k8s.io/kubernetes/pkg/apis/componentconfig/validation"
 )
 
 const (
@@ -29,8 +31,7 @@ const (
 	tmpStartupsFile = ".tmpStartups.json"
 
 	// we allow one extra startup to account for the startup necessary to update configuration
-	maxCrashLoopThreshold = 10
-	maxStartups           = maxCrashLoopThreshold + 1
+	maxStartups = validation.MaxCrashLoopThreshold + 1
 )
 
 // recordStartup appends a timestamp to the startups-tracking file to indicate a rough Kubelet startup time.

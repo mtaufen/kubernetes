@@ -20,13 +20,14 @@ import (
 	"fmt"
 
 	apiv1 "k8s.io/kubernetes/pkg/api/v1"
-	ccv1a1 "k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1"
+	"k8s.io/kubernetes/pkg/apis/componentconfig"
+	"k8s.io/kubernetes/pkg/apis/componentconfig/validation"
 )
 
 // badRollback makes an entry in the bad-config-tracking file for `uid` with `reason`, and then
 // returns the result of rolling back to the last-known-good config.
 // If filesystem issues prevent marking the config bad or rolling back, a fatal error occurs.
-func (cc *NodeConfigController) badRollback(uid, reason, detail string) *ccv1a1.KubeletConfiguration {
+func (cc *NodeConfigController) badRollback(uid, reason, detail string) *componentconfig.KubeletConfiguration {
 	if len(detail) > 0 {
 		detail = fmt.Sprintf(", %s", detail)
 	}
@@ -43,7 +44,7 @@ func (cc *NodeConfigController) badRollback(uid, reason, detail string) *ccv1a1.
 // If the last-known-good fails any of load, verify, parse, or validate,
 // attempts to report the associated ConfigOK condition and a fatal error occurs.
 // If filesystem issues prevent returning the last-known-good configuration, a fatal error occurs.
-func (cc *NodeConfigController) lkgRollback(cause string, status apiv1.ConditionStatus) *ccv1a1.KubeletConfiguration {
+func (cc *NodeConfigController) lkgRollback(cause string, status apiv1.ConditionStatus) *componentconfig.KubeletConfiguration {
 	infof("rolling back to last-known-good config")
 
 	// if lkgUID indicates the default should be used, return initConfig or defaultConfig
@@ -82,7 +83,7 @@ func (cc *NodeConfigController) lkgRollback(cause string, status apiv1.Condition
 	}
 
 	// validate
-	if err := validateConfig(lkg); err != nil {
+	if err := validation.ValidateKubeletConfiguration(lkg); err != nil {
 		cause := fmt.Sprintf(lkgFailValidateReasonFmt, lkgUID)
 		cc.fatalSyncConfigOK(cause)
 		fatalf("%s, error: %v", cause, err)

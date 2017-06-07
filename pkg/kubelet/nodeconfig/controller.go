@@ -33,7 +33,8 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	apiv1 "k8s.io/kubernetes/pkg/api/v1"
-	ccv1a1 "k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1"
+	"k8s.io/kubernetes/pkg/apis/componentconfig"
+	"k8s.io/kubernetes/pkg/apis/componentconfig/validation"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 )
 
@@ -50,10 +51,10 @@ type NodeConfigController struct {
 	configDir string
 
 	// defaultConfig is the configuration to use if no initConfig is provided
-	defaultConfig *ccv1a1.KubeletConfiguration
+	defaultConfig *componentconfig.KubeletConfiguration
 
 	// initConfig is the unmarshaled init config, this will be loaded by the NodeConfigController if it exists in the configDir
-	initConfig *ccv1a1.KubeletConfiguration
+	initConfig *componentconfig.KubeletConfiguration
 
 	// client is the clientset for talking to the apiserver.
 	client clientset.Interface
@@ -75,7 +76,7 @@ type NodeConfigController struct {
 
 // NewNodeConfigController constructs a new NodeConfigController object and returns it.
 // If the client is nil, dynamic configuration (watching the API server) will not be used.
-func NewNodeConfigController(configDir string, defaultConfig *ccv1a1.KubeletConfiguration) *NodeConfigController {
+func NewNodeConfigController(configDir string, defaultConfig *componentconfig.KubeletConfiguration) *NodeConfigController {
 	return &NodeConfigController{
 		configDir:     configDir,
 		defaultConfig: defaultConfig,
@@ -87,7 +88,7 @@ func NewNodeConfigController(configDir string, defaultConfig *ccv1a1.KubeletConf
 // If a valid configuration cannot be found, a fatal error occurs, preventing the Kubelet from continuing with invalid configuration.
 // Bootstrap must be called synchronously during Kubelet startup, before any KubeletConfiguration is used.
 // If Bootstrap completes successfully, you can optionally call StartSyncLoop to watch the API server for config updates.
-func (cc *NodeConfigController) Bootstrap() (finalConfig *ccv1a1.KubeletConfiguration, fatalErr error) {
+func (cc *NodeConfigController) Bootstrap() (finalConfig *componentconfig.KubeletConfiguration, fatalErr error) {
 	var curUID string
 
 	// defer updating status until the end of Run
@@ -111,7 +112,7 @@ func (cc *NodeConfigController) Bootstrap() (finalConfig *ccv1a1.KubeletConfigur
 	// ALWAYS validate the default and init configs. This makes incorrectly provisioned nodes a fatal error.
 	// These must be valid because they are the foundational last-known-good configs.
 	infof("validating combination of defaults and flags")
-	if err := validateConfig(cc.defaultConfig); err != nil {
+	if err := validation.ValidateKubeletConfiguration(cc.defaultConfig); err != nil {
 		fatalf("combination of defaults and flags failed validation, error: %v", err)
 	}
 	cc.loadInitConfig()
@@ -168,14 +169,14 @@ func (cc *NodeConfigController) Bootstrap() (finalConfig *ccv1a1.KubeletConfigur
 	}
 
 	// validate current config
-	if err := validateConfig(cur); err != nil {
+	if err := validation.ValidateKubeletConfiguration(cur); err != nil {
 		finalConfig = cc.badRollback(curUID, fmt.Sprintf(curFailValidateReasonFmt, curUID), fmt.Sprintf("error: %v", err))
 		return
 	}
 
 	// check for crash loops if we're still in the trial period
 	if cc.curInTrial(cur.ConfigTrialDuration.Duration) {
-		if cc.crashLooping(*cur.CrashLoopThreshold) {
+		if cc.crashLooping(cur.CrashLoopThreshold) {
 			finalConfig = cc.badRollback(curUID, fmt.Sprintf(curFailCrashLoopReasonFmt, curUID), "")
 			return
 		}

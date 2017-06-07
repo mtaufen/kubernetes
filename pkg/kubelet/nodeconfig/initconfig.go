@@ -24,7 +24,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/apis/componentconfig"
 	ccv1a1 "k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1"
+	"k8s.io/kubernetes/pkg/apis/componentconfig/validation"
 )
 
 // initConfigExists is a simple existential check for the init config.
@@ -74,7 +76,14 @@ func (cc *NodeConfigController) loadInitConfig() {
 	// run the defaulter on the loaded init config
 	api.Scheme.Default(kc)
 
-	cc.initConfig = kc
+	// convert to internal type
+	kcInternal := &componentconfig.KubeletConfiguration{}
+	err = api.Scheme.Convert(kc, kcInternal, nil)
+	if err != nil {
+		fatalf(errfmt, err)
+	}
+
+	cc.initConfig = kcInternal
 }
 
 // validateInitConfig is a helper for validating the init config
@@ -85,7 +94,7 @@ func (cc *NodeConfigController) validateInitConfig() {
 	}
 
 	infof("validating init config")
-	if err := validateConfig(cc.initConfig); err != nil {
+	if err := validation.ValidateKubeletConfiguration(cc.initConfig); err != nil {
 		fatalf("failed to validate the init config, error: %v", err)
 	}
 }
