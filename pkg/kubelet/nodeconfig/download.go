@@ -23,6 +23,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiv1 "k8s.io/kubernetes/pkg/api/v1"
+	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 )
 
 // pokeConfiSource notes that the Node's ConfiSource needs to be synced from the API server
@@ -109,10 +110,29 @@ func (cc *NodeConfigController) syncConfigSourceHelper(node *apiv1.Node) (bool, 
 	src := node.Spec.ConfigSource
 	if src != nil {
 		infof("Node.Spec.ConfigSource is non-empty, will download config if necessary")
-		uid, cause, err := cc.downloadConfigSource(src)
+
+		source, cause, err := newRemoteConfigSource(*node.Spec.ConfigSource)
 		if err != nil {
-			return false, cause, fmt.Errorf("error downloading config, %v", err)
+			return false, cause, err
 		}
+
+		uid := source.uid()
+		// if the checkpoint already exists, skip downloading
+		if cc.checkpointExists(uid) {
+			infof("checkpoint already exists for object with UID %q, skipping download", uid)
+			return false, "", nil
+		}
+
+		ckpt, cause, err := source.download(cc.client)
+		if err != nil {
+			return false, cause, fmt.Errorf("failed to download config, error: %v", err)
+		}
+
+		cause, err = ckpt.save(cc)
+		if err != nil {
+			return false, cause, fmt.Errorf("failed to save checkpoint, error: %v", err)
+		}
+
 		// if curUID is already correct we can skip updating the symlink
 		curUID := cc.curUID()
 		if curUID == uid {
@@ -129,6 +149,68 @@ func (cc *NodeConfigController) syncConfigSourceHelper(node *apiv1.Node) (bool, 
 		updatedCfg = cc.resetSymlink(curSymlink)
 	}
 	return updatedCfg, "", nil
+}
+
+type remoteConfigSource interface {
+	// uid returns the UID of the config source object
+	uid() string
+	// download returns a checkpoint, or a sanitized cause and an error
+	download(client clientset.Interface) (checkpoint, string, error)
+}
+
+// constructs a new remoteConfigSource from a NodeConfigSource
+// returns a sanitized cause and an error if the NodeConfigSource is blatantly invalid
+func newRemoteConfigSource(source apiv1.NodeConfigSource) (remoteConfigSource, string, error) {
+	// exactly one subfield of the config source must be non-nil, toady ConfigMapRef is the only reference
+	if source.ConfigMapRef == nil {
+		cause := "invalid NodeConfigSource, exactly one subfield must be non-nil, but all were nil"
+		return nil, cause, fmt.Errorf("%s, NodeConfigSource was: %+v", cause, source)
+	}
+
+	// at this point we know we're using the ConfigMapRef subfield
+	ref := source.ConfigMapRef
+
+	// name, namespace, and UID must all be non-empty
+	if ref.Name == "" || ref.Namespace == "" || string(ref.UID) == "" {
+		cause := "invalid ObjectReference, all of UID, Name, and Namespace must be specified"
+		return nil, cause, fmt.Errorf("%s, ObjectReference was: %+v", cause, ref)
+	}
+
+	cmSource := configMapRef(*ref)
+	return &cmSource, "", nil
+}
+
+// configMapRef refers to a configuration stored in a ConfigMap on the API server, implements remoteConfigSource
+type configMapRef apiv1.ObjectReference
+
+func (ref *configMapRef) uid() string {
+	return string(ref.UID)
+}
+
+// TODO(mtaufen): see if we can get rid of the controller dependency here, or at least make the controller an interface
+func (ref *configMapRef) download(client clientset.Interface) (checkpoint, string, error) {
+	var cause string
+
+	uid := string(ref.UID)
+
+	infof("attempting to download ConfigMap with UID %q", uid)
+
+	// get the ConfigMap via namespace/name, there doesn't seem to be a way to get it by UID
+	cm, err := client.CoreV1().ConfigMaps(ref.Namespace).Get(ref.Name, metav1.GetOptions{})
+	if err != nil {
+		cause = fmt.Sprintf("could not download ConfigMap with name %q from namespace %q", ref.Name, ref.Namespace)
+		return nil, cause, fmt.Errorf("%s, error: %v", cause, err)
+	}
+
+	// ensure that UID matches the UID on the reference, the ObjectReference must be unambiguous
+	if ref.UID != cm.UID {
+		cause = fmt.Sprintf("invalid ObjectReference, UID %q does not match UID of downloaded ConfigMap %q", ref.UID, cm.UID)
+		return nil, cause, fmt.Errorf("%s", cause)
+	}
+
+	infof("successfully downloaded ConfigMap with UID %q", uid)
+	ckpt := configMapCheckpoint(*cm)
+	return &ckpt, "", nil
 }
 
 // downloadConfigSource downloads and checkpoints the configuration source referred to by `src`.

@@ -27,6 +27,14 @@ import (
 	apiv1 "k8s.io/kubernetes/pkg/api/v1"
 )
 
+type loadableCheckpoint interface{}
+
+type checkpoint interface {
+	// parsable // all checkpoints implement the parsable interface
+	// verifiable // all checkpoints implement the verifiable interface
+	save(cc *NodeConfigController) (string, error)
+}
+
 // checkpointExists returns true if checkpoint for the config source identified by `uid` exists on disk.
 // If the existence of a checkpoint cannot be determined due to filesystem issues, a panic occurs.
 func (cc *NodeConfigController) checkpointExists(uid string) bool {
@@ -80,6 +88,74 @@ func (cc *NodeConfigController) loadCheckpoint(relPath string) (verifiable, erro
 	}
 
 	return &verifiableConfigMap{cm: cm}, nil
+}
+
+type configMapCheckpoint apiv1.ConfigMap
+
+// TODO(mtaufen): refactor this to pass a byte array to a saver interface
+func (c *configMapCheckpoint) save(cc *NodeConfigController) (cause string, reterr error) {
+	cm := (*apiv1.ConfigMap)(c)
+
+	uidPath := filepath.Join(cc.configDir, checkpointsDir, string(cm.ObjectMeta.UID))
+	err := os.Mkdir(uidPath, defaultPerm)
+	if err != nil {
+		reterr = fmt.Errorf("failed to checkpoint ConfigMap with UID %s, err: %v", cm.ObjectMeta.UID, err)
+		return
+	}
+
+	// defer cleanup function now that we have something to clean up (we just created a dir)
+	defer func() {
+		if reterr != nil {
+			// set returned `cause`
+			cause = fmt.Sprintf("failed to save ConfigMap with UID %q", cm.ObjectMeta.UID)
+			// clean up the checkpoint dir
+			rmerr := os.RemoveAll(uidPath)
+			if rmerr != nil {
+				reterr = fmt.Errorf("failed to checkpoint ConfigMap with UID %s, error: %v; failed to clean up checkpoint dir, error: %v", cm.ObjectMeta.UID, reterr, rmerr)
+			}
+			reterr = fmt.Errorf("failed to checkpoint ConfigMap with UID %s, error: %v", cm.ObjectMeta.UID, reterr)
+		}
+	}()
+
+	// checkpoint the configmap object we got
+	filePath := filepath.Join(uidPath, cm.Name)
+
+	// serialize to json
+	mediaType := "application/json"
+	info, ok := kuberuntime.SerializerInfoForMediaType(api.Codecs.SupportedMediaTypes(), mediaType)
+	if !ok {
+		reterr = fmt.Errorf("unsupported media type %q", mediaType)
+		return
+	}
+
+	versions := api.Registry.EnabledVersionsForGroup(apiv1.GroupName)
+	if len(versions) == 0 {
+		reterr = fmt.Errorf("no enabled versions for group %q", apiv1.GroupName)
+		return
+	}
+
+	// the "best" version supposedly comes first in the list returned from api.Registry.EnabledVersionsForGroup
+	encoder := api.Codecs.EncoderForVersion(info.Serializer, versions[0])
+	b, reterr := kuberuntime.Encode(encoder, cm)
+	if reterr != nil {
+		return
+	}
+
+	// save the file
+	reterr = ioutil.WriteFile(filePath, b, defaultPerm)
+	if reterr != nil {
+		return
+	}
+	return
+
+	// save the ConfigMap to disk
+	// if err := cc.checkpointConfigMap(cm); err != nil {
+	// 	cause := fmt.Sprintf("failed to save ConfigMap with UID %q", cm.ObjectMeta.UID)
+	// 	return cause, fmt.Errorf("%s, error: %v", cause, err)
+	// }
+
+	// TODO(mtaufen): return a loadableCheckpoint
+	return "", nil
 }
 
 // checkpointConfigMap saves `cm` to disk, at the appropriate checkpoint path.
