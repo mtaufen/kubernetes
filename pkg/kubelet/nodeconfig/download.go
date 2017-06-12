@@ -109,7 +109,7 @@ func (cc *NodeConfigController) syncConfigSourceHelper(node *apiv1.Node) (bool, 
 	src := node.Spec.ConfigSource
 	if src != nil {
 		infof("Node.Spec.ConfigSource is non-empty, will download config if necessary")
-		uid, cause, err := cc.downloadConfig(src)
+		uid, cause, err := cc.downloadConfigSource(src)
 		if err != nil {
 			return false, cause, fmt.Errorf("error downloading config, %v", err)
 		}
@@ -131,14 +131,14 @@ func (cc *NodeConfigController) syncConfigSourceHelper(node *apiv1.Node) (bool, 
 	return updatedCfg, "", nil
 }
 
-// downloadConfig downloads and checkpoints the configuration source referred to by `src`.
+// downloadConfigSource downloads and checkpoints the configuration source referred to by `src`.
 // If downloading and checkpointing succeeds, returns the UID of the checkpointed source.
 // If the `src` is invalid, returns an error.
 // Otherwise returns errors or panics occur depending on the implementation of the download
 // function for the source type used in `src`. Today the only valid source type is a ConfigMap.
 // If an error is returned, a cause is also returned in the second position,
 // this is a sanitized version of the error that can be reported in the ConfigOK condition.
-func (cc *NodeConfigController) downloadConfig(src *apiv1.NodeConfigSource) (string, string, error) {
+func (cc *NodeConfigController) downloadConfigSource(src *apiv1.NodeConfigSource) (string, string, error) {
 	if src.ConfigMapRef == nil {
 		// exactly one subfield of the config source must be non-nil, toady ConfigMapRef is the only reference
 		cause := "invalid NodeConfigSource, exactly one subfield must be non-nil, but all were nil"

@@ -76,10 +76,11 @@ type NodeConfigController struct {
 // If the client is nil, dynamic configuration (watching the API server) will not be used.
 func NewNodeConfigController(configDir string, defaultConfig *componentconfig.KubeletConfiguration) *NodeConfigController {
 	return &NodeConfigController{
-		configDir:           configDir,
-		defaultConfig:       defaultConfig,
-		pendingConfigOK:     make(chan bool),
-		pendingConfigSource: make(chan bool),
+		configDir:     configDir,
+		defaultConfig: defaultConfig,
+		// channels must have capacity at least 1, since we signal with non-blocking writes
+		pendingConfigOK:     make(chan bool, 1),
+		pendingConfigSource: make(chan bool, 1),
 	}
 }
 
@@ -207,16 +208,19 @@ func (cc *NodeConfigController) StartSyncLoop(client clientset.Interface, nodeNa
 		// We have a better chance of recovering normal operation if we just restart the Kubelet in the event
 		// of a Go runtime error.
 		go mkHandlePanic(func() {
+			infof("starting informer sync loop")
 			cc.informer.Run(wait.NeverStop)
 		})()
 
 		// start the config source sync loop
 		go mkHandlePanic(func() {
+			infof("starting config sync loop")
 			wait.JitterUntil(mkRecoverControllerPanic(cc.syncConfigSource), 10*time.Second, 0.2, true, wait.NeverStop)
 		})()
 
 		// start the ConfigOK condition sync loop
 		go mkHandlePanic(func() {
+			infof("starting status sync loop")
 			wait.JitterUntil(mkRecoverControllerPanic(cc.syncConfigOK), 10*time.Second, 0.2, true, wait.NeverStop)
 		})()
 	} else {
