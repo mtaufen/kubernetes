@@ -18,12 +18,84 @@ package nodeconfig
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiv1 "k8s.io/kubernetes/pkg/api/v1"
 )
 
-// syncNodeConfig downloads and checkpoints the configuration for `node`, if necessary, and also updates the symlinks
+// pokeConfiSource notes that the Node's ConfiSource needs to be synced from the API server
+func (cc *NodeConfigController) pokeConfigSource() {
+	select {
+	case cc.pendingConfigSource <- true:
+	default:
+	}
+}
+
+// TODO(mtaufen): finish refactoring this
+func (cc *NodeConfigController) syncConfigSource() {
+	select {
+	case <-cc.pendingConfigSource:
+	default:
+		// no work to be done, return
+		return
+	}
+
+	// look at the store on the informer to get the latest node
+	obj, ok, err := cc.informer.GetStore().GetByKey(cc.nodeName)
+	if err != nil {
+		errorf("failed to retrieve Node %q from informer's store, error: %v", cc.nodeName, err)
+		return
+	} else if !ok {
+		errorf("Node %q does not exist in the informer's store, can't sync config source", cc.nodeName)
+		return
+	}
+	node, ok := obj.(*apiv1.Node)
+	if !ok {
+		errorf("failed to cast object from informer's store to Node, can't sync config source", cc.nodeName)
+		return
+	}
+
+	// check the Node and download any new config
+	if updated, cause, err := cc.syncConfigSourceHelper(node); err != nil {
+		errorf("failed to sync node config, error: %v", err)
+		// Update the ConfigOK status to reflect that we failed to sync, and so we don't know which configuration
+		// the user actually wants us to use. In this case, we just continue using the currently-in-use configuration.
+		cc.setConfigOK(cc.configOK.Message, fmt.Sprintf("failed to sync, desired config unclear, cause: %s", cause), apiv1.ConditionUnknown)
+		return
+	} else if updated {
+		// TODO(mtaufen): Consider adding a "currently restarting" node condition for this case
+		infof("config updated, Kubelet will restart to begin using new config")
+		os.Exit(0)
+	}
+
+	// If we get here:
+	// - there is no need to restart to update the current config
+	// - there was no error trying to sync configuration
+	// - if, previously, there was an error trying to sync configuration, we need to restore the ConfigOK condition
+	//   to an error free reason and condition e.g. "passed all checks" and ConditionTrue.
+	// There are 3 possible ConfigOK conditions that set status to ConditionTrue: "using current (init)", "using current (default)", "using current (UID: %q)"
+
+	// since our reason-check relies on cc.configOK we must manually take the lock and use cc.unsafe_setConfigOK instead of cc.setConfigOK
+	cc.configOKMux.Lock()
+	defer cc.configOKMux.Unlock()
+	if strings.Contains(cc.configOK.Reason, "failed to sync, desired config unclear") {
+		// determine UID of the current config source, empty string if curSymlink targets default
+		curUID := cc.curUID()
+		if len(curUID) == 0 {
+			if cc.initConfig != nil {
+				cc.unsafe_setConfigOK(curInitMessage, curInitOKReason, apiv1.ConditionTrue)
+			} else {
+				cc.unsafe_setConfigOK(curDefaultMessage, curDefaultOKReason, apiv1.ConditionTrue)
+			}
+		} else {
+			cc.unsafe_setConfigOK(fmt.Sprintf(curRemoteMessageFmt, curUID), curRemoteOKReason, apiv1.ConditionTrue)
+		}
+	}
+}
+
+// syncConfigSourceHelper downloads and checkpoints the configuration for `node`, if necessary, and also updates the symlinks
 // to point to a new configuration if necessary.
 // If all operations succeed, returns (bool, nil), where bool indicates whether the current configuration changed. If (true, nil),
 // restarting the Kubelet to begin using the new configuration is recommended.
@@ -31,7 +103,7 @@ import (
 // If filesystem issues prevent inspecting current configuration or setting symlinks, a panic occurs.
 // If an error is returned, a cause is also returned in the second position,
 // this is a sanitized version of the error that can be reported in the ConfigOK condition.
-func (cc *NodeConfigController) syncNodeConfig(node *apiv1.Node) (bool, string, error) {
+func (cc *NodeConfigController) syncConfigSourceHelper(node *apiv1.Node) (bool, string, error) {
 	// if the NodeConfigSource is non-nil, download the config
 	updatedCfg := false
 	src := node.Spec.ConfigSource

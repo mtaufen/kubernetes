@@ -22,16 +22,6 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 )
 
-// TODO(mtaufen): doc this
-// recovers from controller-level panics, but calls panic handlers and lets runtime panics through
-
-// mkSafeCall returns a function that calls `fn`. If a panic occurs when `fn` is called, it is recovered
-// and sent to the panic handlers in `utilruntime`. If the panic is due to a Go runtime error, it continues
-// to bubble up the call stack. Otherwise the panic does not bubble further.
-func mkSafeCall(fn func()) func() {
-	return mkRecoverControllerPanic(mkHandlePanic(fn))
-}
-
 // mkIgnoreControllerPanics returns a function that calls `fn`. If a non-Go-runtime panic occurs, it is ignored,
 // otherwise the panic continues to bubble up the call stack.
 func mkRecoverControllerPanic(fn func()) func() {

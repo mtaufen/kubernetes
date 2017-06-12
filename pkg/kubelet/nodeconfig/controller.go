@@ -18,18 +18,11 @@ package nodeconfig
 
 import (
 	"fmt"
-	"math/rand"
-	"os"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
-	kuberuntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	apiv1 "k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
@@ -69,11 +62,14 @@ type NodeConfigController struct {
 	// the condition to the API server.
 	configOKMux sync.Mutex
 
-	// write to this channel to indicate that ConfigOK needs to be synced to the API server
+	// pendingConfigOK; write to this channel to indicate that ConfigOK needs to be synced to the API server
 	pendingConfigOK chan bool
 
-	// write to this channel to indicate that the config source needs to be synced from the API server
+	// pendingConfigSource; write to this channel to indicate that the config source needs to be synced from the API server
 	pendingConfigSource chan bool
+
+	// informer is the informer that watches the Node object
+	informer cache.SharedInformer
 }
 
 // NewNodeConfigController constructs a new NodeConfigController object and returns it.
@@ -89,13 +85,14 @@ func NewNodeConfigController(configDir string, defaultConfig *componentconfig.Ku
 
 // Bootstrap initiates operation of the NodeConfigController.
 // If a valid configuration is found as a result of these operations, that configuration is returned.
-// If a valid configuration cannot be found, a fatal error occurs, preventing the Kubelet from continuing with invalid configuration.
+// If a valid configuration cannot be found, an error is returned. This indicates the Kubelet should not continue,
+// because it could not determine a valid configuration.
 // Bootstrap must be called synchronously during Kubelet startup, before any KubeletConfiguration is used.
 // If Bootstrap completes successfully, you can optionally call StartSyncLoop to watch the API server for config updates.
 func (cc *NodeConfigController) Bootstrap() (finalConfig *componentconfig.KubeletConfiguration, fatalErr error) {
 	var curUID string
 
-	// defer updating status until the end of Run
+	// return any controller-level panics as bootstrapping errors
 	defer func() {
 		if r := recover(); r != nil {
 			if _, ok := r.(runtime.Error); ok {
@@ -113,7 +110,7 @@ func (cc *NodeConfigController) Bootstrap() (finalConfig *componentconfig.Kubele
 	// record the kubelet startup time, used for crashloop detection
 	cc.recordStartup()
 
-	// ALWAYS validate the default and init configs. This makes incorrectly provisioned nodes a fatal error.
+	// ALWAYS validate the default and init configs. This makes incorrectly provisioned nodes an error.
 	// These must be valid because they are the foundational last-known-good configs.
 	infof("validating combination of defaults and flags")
 	if err := validation.ValidateKubeletConfiguration(cc.defaultConfig); err != nil {
@@ -201,143 +198,28 @@ func (cc *NodeConfigController) StartSyncLoop(client clientset.Interface, nodeNa
 	if client != nil {
 		cc.client = client
 		cc.nodeName = nodeName
+		cc.informer = newSharedNodeInformer(cc.client, cc.nodeName,
+			cc.onAddNodeEvent, cc.onUpdateNodeEvent, cc.onDeleteNodeEvent)
 
-		fieldselector := fields.OneTermEqualSelector("metadata.name", nodeName)
-
-		// Add some randomness to resync period, which can help avoid controllers falling into lock-step
-		minResyncPeriod := 15 * time.Minute
-		factor := rand.Float64() + 1
-		resyncPeriod := time.Duration(float64(minResyncPeriod.Nanoseconds()) * factor)
-
-		lw := &cache.ListWatch{
-			ListFunc: func(options metav1.ListOptions) (kuberuntime.Object, error) {
-				return cc.client.Core().Nodes().List(metav1.ListOptions{
-					FieldSelector: fieldselector.String(),
-				})
-			},
-			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				return cc.client.Core().Nodes().Watch(metav1.ListOptions{
-					FieldSelector:   fieldselector.String(),
-					ResourceVersion: options.ResourceVersion,
-				})
-			},
-		}
-
-		handler := cache.ResourceEventHandlerFuncs{
-			AddFunc: cc.onWatchNodeEvent,
-			UpdateFunc: func(old interface{}, nw interface{}) {
-				// TODO(mtaufen): do filtering
-
-				cc.onWatchNodeEvent(nw)
-			},
-			DeleteFunc: func(obj interface{}) {
-				cc.onDeleteNodeEvent(obj)
-			},
-		}
-
-		informer := cache.NewSharedInformer(lw, &apiv1.Node{}, resyncPeriod)
-		informer.AddEventHandler(handler)
-
-		// Start the informer loop
+		// start the informer loop
 		// Rather than use utilruntime.HandleCrash, which doesn't actually crash in the Kubelet,
-		// we manually call the panic handlers and then crash. We have a better chance of recovering
-		// normal operation if we just restart the Kubelet in this case.
-		go mkHandlePanic(func() { informer.Run(wait.NeverStop) })()
+		// we use mkHandlePanic to manually call the panic handlers and then crash.
+		// We have a better chance of recovering normal operation if we just restart the Kubelet in the event
+		// of a Go runtime error.
+		go mkHandlePanic(func() {
+			cc.informer.Run(wait.NeverStop)
+		})()
 
 		// start the config source sync loop
-		// go wait.JitterUntil(cc.syncConfigSource)
+		go mkHandlePanic(func() {
+			wait.JitterUntil(mkRecoverControllerPanic(cc.syncConfigSource), 10*time.Second, 0.2, true, wait.NeverStop)
+		})()
 
 		// start the ConfigOK condition sync loop
-		// TODO(mtaufen): condition syncing is kept separate from informer event handling, because I'm worried about the
-		// possibility of creating a feedback loop between condition updates and Node update events.
-		// I have yet to test whether a feedback loop is possible, but it's best to be cautious.
-		go wait.JitterUntil(cc.syncConfigOK, 10*time.Second, 0.2, true, wait.NeverStop)
+		go mkHandlePanic(func() {
+			wait.JitterUntil(mkRecoverControllerPanic(cc.syncConfigOK), 10*time.Second, 0.2, true, wait.NeverStop)
+		})()
 	} else {
 		errorf("cannot start sync loop with nil client")
 	}
-}
-
-func (cc *NodeConfigController) syncConfigSource() {
-	// look at the store on the informer to get the latest node, and use that to sync
-}
-
-// onWatchNodeEvent checks for new config and downloads it if necessary.
-// If filesystem issues prevent proper operation of syncNodeConfig, a fatal error occurs.
-func (cc *NodeConfigController) onWatchNodeEvent(obj interface{}) {
-	node, ok := obj.(*apiv1.Node)
-	if !ok {
-		errorf("failed to cast watched object to Node, couldn't handle event")
-		return
-	}
-
-	// check the Node and download any new config
-	if updated, cause, err := cc.syncNodeConfig(node); err != nil {
-		errorf("failed to sync node config, error: %v", err)
-		// Update the ConfigOK status to reflect that we failed to sync, and so we don't know which configuration
-		// the user actually wants us to use. In this case, we just continue using the currently-in-use configuration.
-		cc.setConfigOK(cc.configOK.Message, fmt.Sprintf("failed to sync, desired config unclear, cause: %s", cause), apiv1.ConditionUnknown)
-		return
-	} else if updated {
-		// TODO(mtaufen): Consider adding a "currently restarting" node condition for this case
-		infof("config updated, Kubelet will restart to begin using new config")
-		os.Exit(0)
-	}
-
-	// If we get here:
-	// - there is no need to restart update the current config
-	// - there was no error trying to sync configuration
-	// - if, previously, there was an error trying to sync configuration,
-	//   we need to restore the ConfigOK condition to an error free reason
-	//   and condition e.g. "passed all checks" and ConditionTrue.
-	// There are 3 possible ConfigOK conditions that set status to ConditionTrue:
-	// --------------------------------------------------------------------------------------------------------------
-	// message                 | reason                                                               | status
-	// --------------------------------------------------------------------------------------------------------------
-	// using current (init)    | current is set to the local default, and an init config was provided | ConditionTrue
-	// using current (default) | current is set to the local default, and no init config was provided | ConditionTrue
-	// using current (UID: %q) | passed all checks                                                    | ConditionTrue
-	// --------------------------------------------------------------------------------------------------------------
-	// To properly set the reason, we need to determine where .cur currently points, whether the init config exists,
-	// and whether the reason for the current condition is a sync error.
-
-	// since our reason-check relies on cc.configOK we must manually take the lock and use cc.unsafe_setConfigOK instead of cc.setConfigOK
-	cc.configOKMux.Lock()
-	defer cc.configOKMux.Unlock()
-	if strings.Contains(cc.configOK.Reason, "failed to sync, desired config unclear") {
-		// determine UID of the current config source, empty string if curSymlink targets default
-		curUID := cc.curUID()
-		if len(curUID) == 0 {
-			if cc.initConfig != nil {
-				cc.unsafe_setConfigOK(curInitMessage, curInitOKReason, apiv1.ConditionTrue)
-			} else {
-				cc.unsafe_setConfigOK(curDefaultMessage, curDefaultOKReason, apiv1.ConditionTrue)
-			}
-		} else {
-			cc.unsafe_setConfigOK(fmt.Sprintf(curRemoteMessageFmt, curUID), curRemoteOKReason, apiv1.ConditionTrue)
-		}
-	}
-}
-
-// onDeleteNodeEvent logs a message if the Node was deleted and may log errors
-// if an unexpected DeletedFinalStateUnknown was received.
-// We explicitly allow the sync-loop to continue, because it is possible that
-// the Kubelet detected a Node with unexpected externalID and is attempting
-// to delete and re-create the Node (see pkg/kubelet/kubelet_node_status.go).
-func (cc *NodeConfigController) onDeleteNodeEvent(obj interface{}) {
-	node, ok := obj.(*apiv1.Node)
-	if !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			errorf("couldn't cast deleted object to DeletedFinalStateUnknown, object: %+v", obj)
-			return
-		}
-		node, ok = tombstone.Obj.(*apiv1.Node)
-		if !ok {
-			errorf("received DeletedFinalStateUnknown object but it did not contain a Node, object: %+v", obj)
-			return
-		}
-		infof("Node was deleted (DeletedFinalStateUnknown), sync-loop will continue because the Kubelet might recreate the Node, node: %+v", node)
-		return
-	}
-	infof("Node was deleted, sync-loop will continue because the Kubelet might recreate the Node, node: %+v", node)
 }

@@ -213,11 +213,6 @@ func patchConfigOK(node *apiv1.Node, configOK *apiv1.NodeCondition) {
 	node.Status.Conditions = append(node.Status.Conditions, *configOK)
 }
 
-// configOKEq returns true if the conditions' messages, reasons, and statuses match, false otherwise.
-func configOKEq(a, b *apiv1.NodeCondition) bool {
-	return a.Message == b.Message && a.Reason == b.Reason && a.Status == b.Status
-}
-
 // getConfigOK returns the first NodeCondition in `cs` with Type == configOKType.
 // If no such condition exists, returns nil.
 func getConfigOK(cs []apiv1.NodeCondition) *apiv1.NodeCondition {
