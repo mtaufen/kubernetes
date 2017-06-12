@@ -17,6 +17,7 @@ limitations under the License.
 package nodeconfig
 
 import (
+	"fmt"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -72,6 +73,14 @@ func (cc *NodeConfigController) setConfigOK(message, reason string, status apiv1
 	cc.unsafe_setConfigOK(message, reason, status)
 }
 
+// pokeConfigOK notes that ConfigOK needs to be synced to the API server
+func (cc *NodeConfigController) pokeConfigOK() {
+	select {
+	case cc.pendingConfigOK <- true:
+	default:
+	}
+}
+
 // unsafe_setConfigOK constructs a new ConfigOK NodeCondition and sets it on the NodeConfigController
 // it does not grab the configOKMux lock, so you should generally use setConfigOK unless you need to grab the lock
 // at a higher level to synchronize additional operations
@@ -95,18 +104,32 @@ func (cc *NodeConfigController) unsafe_setConfigOK(message, reason string, statu
 		Type:    configOKType,
 	}
 
-	cc.configOKNeedsSync = true
+	cc.pokeConfigOK()
 }
 
 // syncConfigOK attempts to sync `cc.configOK` with the Node object for this Kubelet.
 // If syncing fails, an error is logged.
 func (cc *NodeConfigController) syncConfigOK() {
+	var err error
 	cc.configOKMux.Lock()
 	defer cc.configOKMux.Unlock()
+	defer func() {
+		// if the sync failed, we want to retry
+		if err != nil {
+			errorf(err.Error())
+			cc.pokeConfigOK()
+		}
+	}()
 
-	if !cc.configOKNeedsSync {
+	// check if we need to do anything
+	select {
+	case <-cc.pendingConfigOK:
+	default:
+		// no work to be done, return
 		return
-	} else if cc.client == nil {
+	}
+
+	if cc.client == nil {
 		infof("client is nil, skipping ConfigOK sync")
 		return
 	} else if cc.configOK == nil {
@@ -117,7 +140,7 @@ func (cc *NodeConfigController) syncConfigOK() {
 	// get the Node so we can check the current condition
 	node, err := cc.client.CoreV1().Nodes().Get(cc.nodeName, metav1.GetOptions{})
 	if err != nil {
-		errorf("could not get Node %q, will not sync ConfigOK condition, error: %v", cc.nodeName, err)
+		err = fmt.Errorf("could not get Node %q, will not sync ConfigOK condition, error: %v", cc.nodeName, err)
 		return
 	}
 
@@ -139,12 +162,12 @@ func (cc *NodeConfigController) syncConfigOK() {
 	mediaType := "application/json"
 	info, ok := kuberuntime.SerializerInfoForMediaType(api.Codecs.SupportedMediaTypes(), mediaType)
 	if !ok {
-		errorf("unsupported media type %q", mediaType)
+		err = fmt.Errorf("unsupported media type %q", mediaType)
 		return
 	}
 	versions := api.Registry.EnabledVersionsForGroup(api.GroupName)
 	if len(versions) == 0 {
-		errorf("no enabled versions for group %q", api.GroupName)
+		err = fmt.Errorf("no enabled versions for group %q", api.GroupName)
 		return
 	}
 	// the "best" version supposedly comes first in the list returned from apiv1.Registry.EnabledVersionsForGroup
@@ -152,33 +175,29 @@ func (cc *NodeConfigController) syncConfigOK() {
 
 	before, err := kuberuntime.Encode(encoder, node)
 	if err != nil {
-		errorf("failed to encode before node, error: %v", err)
+		err = fmt.Errorf("failed to encode before node, error: %v", err)
 		return
 	}
 
 	patchConfigOK(node, cc.configOK)
 	after, err := kuberuntime.Encode(encoder, node)
 	if err != nil {
-		errorf("failed to encode after node, error: %v", err)
+		err = fmt.Errorf("failed to encode after node, error: %v", err)
 		return
 	}
 
-	// generate the patch
 	patch, err := strategicpatch.CreateTwoWayMergePatch(before, after, apiv1.Node{})
 	if err != nil {
-		errorf("failed to generate patch for updating ConfigOK condition, error: %v", err)
+		err = fmt.Errorf("failed to generate patch for updating ConfigOK condition, error: %v", err)
 		return
 	}
 
 	// patch the remote Node object
 	_, err = cc.client.CoreV1().Nodes().PatchStatus(cc.nodeName, patch)
 	if err != nil {
-		errorf("could not update ConfigOK condition, error: %v", err)
+		err = fmt.Errorf("could not update ConfigOK condition, error: %v", err)
 		return
 	}
-
-	// if the sync succeeded, unset configOKNeedsSync
-	cc.configOKNeedsSync = false
 }
 
 // patchConfigOK replaces or adds the ConfigOK condition to the node

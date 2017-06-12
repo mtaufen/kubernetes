@@ -28,7 +28,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	kuberuntime "k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
@@ -65,21 +64,26 @@ type NodeConfigController struct {
 	// configOK is the current ConfigOK node condition, which will be reported in the Node.status.conditions
 	configOK *apiv1.NodeCondition
 
-	// configOKNeedsSync indicates whether the local configOK still needs to be pushed to the API server
-	configOKNeedsSync bool
-
 	// configOKMux is a mutex on the ConfigOK node condition (including configOKNeedsSync).
 	// We must take turns between writing the condition to the configOK variable and syncing
 	// the condition to the API server.
 	configOKMux sync.Mutex
+
+	// write to this channel to indicate that ConfigOK needs to be synced to the API server
+	pendingConfigOK chan bool
+
+	// write to this channel to indicate that the config source needs to be synced from the API server
+	pendingConfigSource chan bool
 }
 
 // NewNodeConfigController constructs a new NodeConfigController object and returns it.
 // If the client is nil, dynamic configuration (watching the API server) will not be used.
 func NewNodeConfigController(configDir string, defaultConfig *componentconfig.KubeletConfiguration) *NodeConfigController {
 	return &NodeConfigController{
-		configDir:     configDir,
-		defaultConfig: defaultConfig,
+		configDir:           configDir,
+		defaultConfig:       defaultConfig,
+		pendingConfigOK:     make(chan bool),
+		pendingConfigSource: make(chan bool),
 	}
 }
 
@@ -234,23 +238,14 @@ func (cc *NodeConfigController) StartSyncLoop(client clientset.Interface, nodeNa
 		informer := cache.NewSharedInformer(lw, &apiv1.Node{}, resyncPeriod)
 		informer.AddEventHandler(handler)
 
-		// start the configuration sync loop
-		go func() {
-			infof("starting sync loop")
-			defer func() {
-				// Rather than use utilruntime.HandleCrash, which doesn't actually crash in the Kubelet,
-				// we manually call the panic handlers and then crash. We have a better chance of recovering
-				// normal operation if we just restart the Kubelet in this case.
-				if r := recover(); r != nil {
-					for _, fn := range utilruntime.PanicHandlers {
-						fn(r)
-					}
-					panic(r)
-				}
-			}()
-			informer.Run(wait.NeverStop)
-			return
-		}()
+		// Start the informer loop
+		// Rather than use utilruntime.HandleCrash, which doesn't actually crash in the Kubelet,
+		// we manually call the panic handlers and then crash. We have a better chance of recovering
+		// normal operation if we just restart the Kubelet in this case.
+		go mkHandlePanic(func() { informer.Run(wait.NeverStop) })()
+
+		// start the config source sync loop
+		// go wait.JitterUntil(cc.syncConfigSource)
 
 		// start the ConfigOK condition sync loop
 		// TODO(mtaufen): condition syncing is kept separate from informer event handling, because I'm worried about the
@@ -262,19 +257,13 @@ func (cc *NodeConfigController) StartSyncLoop(client clientset.Interface, nodeNa
 	}
 }
 
+func (cc *NodeConfigController) syncConfigSource() {
+	// look at the store on the informer to get the latest node, and use that to sync
+}
+
 // onWatchNodeEvent checks for new config and downloads it if necessary.
 // If filesystem issues prevent proper operation of syncNodeConfig, a fatal error occurs.
 func (cc *NodeConfigController) onWatchNodeEvent(obj interface{}) {
-	defer func() {
-		// catch controller-level panics, the actual cause of controller-level
-		// panic-class errors will have already been logged by panicf (see log.go)
-		if r := recover(); r != nil {
-			if _, ok := r.(runtime.Error); ok {
-				panic(r)
-			}
-		}
-	}()
-
 	node, ok := obj.(*apiv1.Node)
 	if !ok {
 		errorf("failed to cast watched object to Node, couldn't handle event")
