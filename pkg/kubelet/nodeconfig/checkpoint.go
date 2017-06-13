@@ -32,7 +32,9 @@ type loadableCheckpoint interface{}
 type checkpoint interface {
 	// parsable // all checkpoints implement the parsable interface
 	// verifiable // all checkpoints implement the verifiable interface
-	save(cc *NodeConfigController) (string, error)
+	// save(s checkpointStore) (string, error)
+	bytes() ([]byte, error)
+	uid() string
 }
 
 // checkpointExists returns true if checkpoint for the config source identified by `uid` exists on disk.
@@ -93,80 +95,78 @@ func (cc *NodeConfigController) loadCheckpoint(relPath string) (verifiable, erro
 type configMapCheckpoint apiv1.ConfigMap
 
 // TODO(mtaufen): refactor this to pass a byte array to a saver interface
-func (c *configMapCheckpoint) save(cc *NodeConfigController) (cause string, reterr error) {
+// func (c *configMapCheckpoint) save(saver checkpointStore) (cause string, reterr error) {
+// 	data, reterr := c.bytes()
+// 	if reterr != nil {
+// 		return
+// 	}
+// 	reterr = saver.save(c.uid(), data)
+// 	if reterr != nil {
+// 		cause = fmt.Sprintf("failed to save checkpoint for object with UID %q", c.uid())
+// 		return
+// 	}
+
+// 	return
+
+// 	// TODO(mtaufen): return a loadableCheckpoint
+// }
+
+func (c *configMapCheckpoint) bytes() ([]byte, error) {
 	cm := (*apiv1.ConfigMap)(c)
-	uid := string(cm.ObjectMeta.UID)
 
 	// serialize to json
 	mediaType := "application/json"
 	info, ok := kuberuntime.SerializerInfoForMediaType(api.Codecs.SupportedMediaTypes(), mediaType)
 	if !ok {
-		reterr = fmt.Errorf("unsupported media type %q", mediaType)
-		return
+		return nil, fmt.Errorf("unsupported media type %q", mediaType)
 	}
 
 	versions := api.Registry.EnabledVersionsForGroup(apiv1.GroupName)
 	if len(versions) == 0 {
-		reterr = fmt.Errorf("no enabled versions for group %q", apiv1.GroupName)
-		return
+		return nil, fmt.Errorf("no enabled versions for group %q", apiv1.GroupName)
 	}
 
 	// the "best" version supposedly comes first in the list returned from api.Registry.EnabledVersionsForGroup
 	encoder := api.Codecs.EncoderForVersion(info.Serializer, versions[0])
-	data, reterr := kuberuntime.Encode(encoder, cm)
-	if reterr != nil {
-		return
+	data, err := kuberuntime.Encode(encoder, cm)
+	if err != nil {
+		return nil, err
 	}
-
-	// TODO(mtaufen): this stuff needs to be elevated to the controller construction and passed in to this fn as an arg
-	saver := cc.newFSCheckpointSaver()
-
-	// TODO(mtaufen): we'll still call this though:
-	reterr = saver.save(uid, data)
-	if reterr != nil {
-		cause = fmt.Sprintf("failed to save checkpoint for object with UID %q", uid)
-		return
-	}
-
-	return
-
-	// TODO(mtaufen): return a loadableCheckpoint
+	return data, nil
 }
 
-type checkpointLoader interface {
-	// load loads the checkpoint described by `uid` and returns the bytes that represent
-	// the checkpoint contents. The caller of load must deserialize the checkpoint.
-	load(uid string) ([]byte, error)
+func (c *configMapCheckpoint) uid() string {
+	return string(c.ObjectMeta.UID)
 }
 
-// fsCheckpointLoader is for loading checkpoints from the local filesystem
-type fsCheckpointLoader struct {
-}
-
-// Note: While the save() method on the checkpoint interface is for dispatching the proper
-// serialization process for the underlying object type, the save() method on checkpointSaver
-// is for plumbing that serialization to the proper storage location.
-type checkpointSaver interface {
+// While the save() method on the checkpoint interface is for dispatching the proper
+// serialization process for the underlying object type, the save() method on checkpointStore
+// is for plumbing that serialization to the proper storage location; similar for load().
+type checkpointStore interface {
 	// save saves the `data` representing a checkpoint to the appropriate location for `uid`.
 	// The caller must serialize any objects to bytes before saving.
-	save(uid string, data []byte) error
+	save(c checkpoint) error
+	// load loads the checkpoint described by `uid` and returns the bytes that represent
+	// the checkpoint contents. The caller of load must deserialize the checkpoint.
+	// load(uid string) (checkpoint, error)
 }
 
 // fsCheckpointSaver is for saving checkpoints to the local filesystem
-type fsCheckpointSaver struct {
-	// checkpointDir is an absolute path to the directory that checkpoints should be saved in,
-	// e.g. if using the controller: cc.configDir/checkpointsDir
-	checkpointDir string
+type fsCheckpointStore struct {
+	// checkpointsDir is an absolute path to the directory that checkpoints should be saved in,
+	// e.g. cc.configDir/checkpointsDir
+	checkpointsDir string
 }
 
-func (cc *NodeConfigController) newFSCheckpointSaver() *fsCheckpointSaver {
-	return &fsCheckpointSaver{
-		checkpointDir: filepath.Join(cc.configDir, checkpointsDir),
+// TODO(mtaufen): cause doesnt need to be this low level, elevate cause generation
+func (saver *fsCheckpointStore) save(c checkpoint) (reterr error) {
+	uid := c.uid()
+	data, reterr := c.bytes()
+	if reterr != nil {
+		return
 	}
-}
 
-func (saver *fsCheckpointSaver) save(uid string, data []byte) (reterr error) {
-	uidPath := filepath.Join(saver.checkpointDir, uid)
+	uidPath := filepath.Join(saver.checkpointsDir, uid)
 	err := os.Mkdir(uidPath, defaultPerm)
 	if err != nil {
 		reterr = fmt.Errorf("failed to save checkpoint for object with UID %s, err: %v", uid, err)
@@ -189,9 +189,13 @@ func (saver *fsCheckpointSaver) save(uid string, data []byte) (reterr error) {
 	// checkpoint the configmap object we got
 	filePath := filepath.Join(uidPath, "refactoring-kludge") // TODO(mtaufen): this is a kludge to carry me through the refactoring, will be gone soon
 
-	// TODO(mtaufen): write to a tmp file and to an mv to make this more atomic; don't want crashes in the middle of
+	// TODO(mtaufen): write to a tmp file and do a mv to make this more atomic; don't want crashes in the middle of
 	// saving to corrupt a real checkpoint file
 	// save the file
 	reterr = ioutil.WriteFile(filePath, data, defaultPerm)
 	return
 }
+
+// func (loader *fsCheckpointLoader) load(uid string) ([]byte, error) {
+// 	return
+// }

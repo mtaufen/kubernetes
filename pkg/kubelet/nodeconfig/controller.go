@@ -18,6 +18,7 @@ package nodeconfig
 
 import (
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -70,6 +71,9 @@ type NodeConfigController struct {
 
 	// informer is the informer that watches the Node object
 	informer cache.SharedInformer
+
+	// checkpointSaver saves config source checkpoints to disk
+	checkpointStore checkpointStore
 }
 
 // NewNodeConfigController constructs a new NodeConfigController object and returns it.
@@ -81,6 +85,9 @@ func NewNodeConfigController(configDir string, defaultConfig *componentconfig.Ku
 		// channels must have capacity at least 1, since we signal with non-blocking writes
 		pendingConfigOK:     make(chan bool, 1),
 		pendingConfigSource: make(chan bool, 1),
+		checkpointStore: &fsCheckpointStore{
+			checkpointsDir: filepath.Join(configDir, checkpointsDir),
+		},
 	}
 }
 

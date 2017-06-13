@@ -124,14 +124,16 @@ func (cc *NodeConfigController) syncConfigSourceHelper(node *apiv1.Node) (bool, 
 			return false, "", nil
 		}
 
-		ckpt, cause, err := source.download(cc.client)
+		checkpoint, cause, err := source.download(cc.client)
 		if err != nil {
 			return false, cause, fmt.Errorf("failed to download config, error: %v", err)
 		}
 
-		cause, err = ckpt.save(cc)
+		err = cc.checkpointStore.save(checkpoint)
 		if err != nil {
-			return false, cause, fmt.Errorf("failed to save checkpoint, error: %v", err)
+			return false,
+				fmt.Sprintf("failed to save checkpoint for object with UID %q", checkpoint.uid()),
+				fmt.Errorf("failed to save checkpoint, error: %v", err)
 		}
 
 		// if curUID is already correct we can skip updating the symlink
@@ -165,8 +167,9 @@ type remoteConfigSource interface {
 func newRemoteConfigSource(source apiv1.NodeConfigSource) (remoteConfigSource, string, error) {
 	// exactly one subfield of the config source must be non-nil, toady ConfigMapRef is the only reference
 	if source.ConfigMapRef == nil {
-		cause := "invalid NodeConfigSource, exactly one subfield must be non-nil, but all were nil"
-		return nil, cause, fmt.Errorf("%s, NodeConfigSource was: %+v", cause, source)
+		return nil,
+			"invalid NodeConfigSource, exactly one subfield must be non-nil, but all were nil",
+			fmt.Errorf("%s, NodeConfigSource was: %+v", cause, source)
 	}
 
 	// at this point we know we're using the ConfigMapRef subfield
@@ -174,8 +177,9 @@ func newRemoteConfigSource(source apiv1.NodeConfigSource) (remoteConfigSource, s
 
 	// name, namespace, and UID must all be non-empty
 	if ref.Name == "" || ref.Namespace == "" || string(ref.UID) == "" {
-		cause := "invalid ObjectReference, all of UID, Name, and Namespace must be specified"
-		return nil, cause, fmt.Errorf("%s, ObjectReference was: %+v", cause, ref)
+		return nil,
+			"invalid ObjectReference, all of UID, Name, and Namespace must be specified",
+			fmt.Errorf("%s, ObjectReference was: %+v", cause, ref)
 	}
 
 	cmSource := configMapRef(*ref)
@@ -189,7 +193,6 @@ func (ref *configMapRef) uid() string {
 	return string(ref.UID)
 }
 
-// TODO(mtaufen): see if we can get rid of the controller dependency here, or at least make the controller an interface
 func (ref *configMapRef) download(client clientset.Interface) (checkpoint, string, error) {
 	var cause string
 
