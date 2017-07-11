@@ -53,14 +53,13 @@ The Kubelet's current configuration type is an unreadable monolith. We should de
 ### Representing and Referencing Configuration
 
 #### Cluster-level object
-- The Kubelet's configuration information should be organized in the cluster as a structured monolith. 
+- The Kubelet's configuration should be:
   + *Structured* into sub-categories, so that it is readable.
-  + *Monolithic payload*, so that all Kubelet parameters roll out to a given `Node` in unison.
-  + Note that this does not mean the type itself has to be monolithic, just that the entire configuration should be contained in a single payload.
-- The Kubelet's configuration should be stored in the `Data` of a `ConfigMap` object. Each value should be a `YAML` blob, and should be associated with the correct key.
+  + *A bundled payload*, so that all Kubelet parameters roll out to a given `Node` in unison.
+- The Kubelet's configuration should be stored in the `Data` of a `ConfigMap` object. Each value should be a `YAML` or `JSON` blob, and should be associated with the correct key.
   + Note that today, there is only a single `KubeletConfiguration` object (required under the `kubelet` key).
 - The `ConfigMap` containing the desired configuration should be specified via the `Node` object corresponding to the Kubelet. The `Node` will have a new `spec` subfield, `configSource`, which is a new type, `NodeConfigSource` (described below).
-- The name of the `ConfigMap` containing the desired configuration should be of the form (using Go regexp syntax) `^(?P<nameDash>(?P<name>[a-z0-9.\-]*){0,1}-){0,1}(?P<alg>[a-z0-9]+)-(?P<hash>[a-f0-9]+)$`, where `name` is a human-readable identifier, `nameDash` is a helper to handle the dash separator between `name` and `alg`, `alg` is the hash algorithm to use, and `hash` is the lowercase hexadecimal value of the hash, as would be formatted by Go's `%x`.
+- The name of the `ConfigMap` containing the desired configuration should be of the form `{name}-{alg}-{hash}`, where `name` is a human-readable identifier, `alg` is the hash algorithm to use for verification, and `hash` is the lowercase hexadecimal value of the hash, as would be formatted by Go's `%x`.
   + For now, the only supported hash algorithm is `sha256`.
   + The Kubelet will verify the downloaded `ConfigMap` by performing the below procedure and comparing the result to the hash in the name. This helps prevent the "shoot yourself in the foot" scenario detailed below in *Operational Considerations/Rollout workflow*.
   + The hash will be produced extracting the key-value pairs from the `ConfigMap`'s `Data` field into a list, sorting them in byte-alphabetic order by key, serializing this sorted list to a string of the format `key:value,key:value,...,` (trailing comma if and only if `Data` is non-empty) and using `alg` to produce the hash of the string. For example, see this reference implementation in Go:
@@ -122,11 +121,15 @@ data:
 
 #### On-disk
 
-- The Kubelet should accept a `--node-config-dir` flag that specifies a directory (e.g. `config-dir`).
-- The Kubelet will use this directory to checkpoint downloaded `ConfigMap`s.
-  + When the Kubelet downloads a `ConfigMap`, it will checkpoint a serialization of the `ConfigMap` object to a file at `{node-config-dir}/checkpoints/{UID}/{object-name}`.
-  + We checkpoint the entire object, rather than unpacking the contents as a set of files, because the former is less complex and reduces chance for errors during the checkpoint process.
-- The user can additionally pre-populate `{node-config-dir}/init` with an initial set of configuration files, to be used prior to the Kubelet being able to access the API server (including when running in standalone mode). These files will be treated as if each filename is a key in a configuration `ConfigMap`, and as if each file's contents is the value associated with the respective key.
+There are two types of configuration that are stored on disk:
+- cached configurations from a remote source, e.g. `ConfigMaps` from etcd.
+- the local "init" configuration, e.g. the set of config files the node is provisioned with.
+
+The Kubelet should accept a `--dynamic-config-dir` flag, which specifies a directory for storing all of the information necessary for dynamic configuraiton from remote sources; e.g. the cached configurations, which configuration is currently in use, which configurations are known to be bad, etc.
+- When the Kubelet downloads a `ConfigMap`, it will checkpoint a serialization of the `ConfigMap` object to a file at `{dynamic-config-dir}/checkpoints/{UID}`.
+- We checkpoint the entire object, rather than unpacking the contents to disk, because the former is less complex and reduces chance for errors during the checkpoint process.
+
+The Kubelet should also accept a `--init-config-dir` flag, which specifies a directory containing a local set of "init" configuration files the node was provisioned with. The Kubelet will substitute these files for the built-in `KubeletConfiguration` defaults (and also for the existing command-line flags that map to `KubeletConfiguration` fields).
 
 ### Orchestration of configuration
 
@@ -162,23 +165,21 @@ The requirements of the `ConfigMapRef` subfield are as follows:
 - Both  `ConfigMapRef.UID` and the `ConfigMapRef.Namespace`-`ConfigMapRef.Name` pair must unambiguously refer to the same object.
 - The referenced object must exist.
 - The referenced object must be a `ConfigMap`.
-- As noted above, the referent `ConfigMap`'s name must be of the form `^(?P<nameDash>(?P<name>[a-z0-9.\-]*){0,1}-){0,1}(?P<alg>[a-z0-9]+-(?P<hash>[a-f0-9]+)$`.
+- As noted above, the referent `ConfigMap`'s name must be of the form `{name}-{alg}-{hash}`.
 
 The Kubelet must have permission to read `ConfigMap`s in the namespace that contains the referenced `ConfigMap`. 
 
-If the `spec.configSource` is empty, the Kubelet will use its `config-dir/init` configuration or built-in defaults (including values from flags that currently map to configuration) if `config-dir/init` is also absent.
+If the `spec.configSource` is empty, the Kubelet will use its "init" configuration or built-in defaults (including values from flags that currently map to configuration) if the "init" config is also absent.
 
 If the `spec.configSource` is invalid (or if some other issue prevents syncing configuration with what is specified on the `Node`):
-- If the Kubelet is in its startup sequence, it will defer to its LKG configuration and report the failure to determine the desired configuration in via a `NodeCondition` (discussed later).
+- If the Kubelet is in its startup sequence, it will defer to its LKG configuration and report the failure to determine the desired configuration via a `NodeCondition` (discussed later) when the status sync loop starts.
 - If the failure to determine desired configuration occurs as part of the configuration sync-loop operation of a live Kubelet, the failure will be reported in a `NodeCondition` (discussed later), but the Kubelet will not change its configuration. This is to prevent disrupting live Kubelets in the event of user error.
 
-If the `spec.configSource` is correct and using `ConfigMapRef`, the Kubelet checkpoints this `ConfigMap` to `config-dir`, as specified above in the *Representing and Referencing Configuration* section.
+If the `spec.configSource` is correct and using `ConfigMapRef`, the Kubelet checkpoints this `ConfigMap` to the `dynamic-config-dir`, as specified above in the *Representing and Referencing Configuration* section.
 
-The Kubelet sets its current configuration by directing a symlink called `.cur`, which lives at `{node-config-dir}/.cur`, to point at the directory associated with the desired configuration checkpoint. For instance, it might point to `{node-config-dir}/checkpoints/{UID}`. This symlink will not exist when the node is initially provisioned; the Kubelet will create it if it does not exist. The default destination of the symlink will be `/dev/zero`, which indicates that the init configuration or built-in defaults should be treated as the current configuration.
+The Kubelet serializes a "current" and "last-known-good" `NodeConfigSource` to disk to track which configuration it is currently using, and which to roll back to in the event of a failure. If either of these files is empty, the Kubelet interprets this as "use the local config," whether that means the combination of built-in defaults and flags, or the "init" config.
 
-To begin using a new configuration, the Kubelet simply sets `{node-config-dir}/.cur`, calls `os.Exit(0)`, and relies on the process manager (e.g. `systemd`) to restart it.
-
-The Kubelet detects new configuration by watching the `Node` object for changes to the `spec.configSource` field. When the Kubelet detects new configuration, it checkpoints it as necessary, sets `{node-config-dir}/.cur`, and restarts to begin using it.
+The Kubelet detects new configuration by watching the `Node` object for changes to the `spec.configSource` field. When the Kubelet detects new configuration, it checkpoints it as necessary, saves the new `NodeConfigSource` to the "current" file, and calls `os.Exit(0)`. This relies on the process manager (e.g. `systemd`) to restart the Kubelet. When the Kubelet restarts, it will attempt to load the new configuration.
 
 ##### Metrics for Bad Configuration
 
@@ -197,19 +198,17 @@ More advanced error detection is probably best left to an out-of-band component,
 
 ##### Tracking LKG (last-known-good) configuration
 
-The Kubelet will track its LKG configuration by directing a symlink called `.lkg`, which lives at `{node-config-dir}/.lkg`, to point at the directory associated with the LKG configuration checkpoint. This symlink will not exist when the node is initially provisioned; the Kubelet will create it if it does not exist. The default destination of the symlink will be `/dev/zero`, which indicates that the init configuration or built-in defaults should be treated as the LKG.
+The Kubelet tracks its "last-known-good" configuration by saving the relevant `NodeConfigSource` to a file, just as it does for its "current" configuration. If this file is empty, the Kubelet should treat the "init" config or combination of built-in defaults and flags as it's last-known-good config.
 
 Any configuration retrieved from the API server must persist beyond a trial period before it can be considered LKG. This trial period will be called `ConfigTrialDuration`, will be a `Duration` as defined by `k8s.io/apimachinery/pkg/apis/meta/v1/duration.go`, and will be a parameter of the `KubeletConfiguration`. The trial period on a given configuration is the trial period used for that configuration (as opposed to, say, using the trial period set on the previous configuration). This is useful if you have, for example, a configuration you want to roll out with a longer trial period for additional caution. 
 
 Similarly, the number of restarts tolerated during the trial period is exposed to the user via the `CrashLoopThreshold` field of the `KubeletConfiguration`. This field has a minimum of `0` and a maximum of `10`. The maximum of `10` is an arbitrary threshold to prevent unbounded growth of the startups-tracking file (discussed later). We implicitly allow one more restart than the user-provided threshold, because one restart is necessary to begin using a new configuration.
 
-If the Kubelet restarts after the trial period without changing `.cur`, `.lkg` will be set to point to the same configuration as `.cur`.
+The "init" configuration will be automatically considered good. If a node is provisioned with an init configuration, it MUST be a valid configuration. The Kubelet will always attempt to deserialize the init configuration and validate it on startup, regardless of whether a remote configuration exists. If this fails, the Kubelet will refuse to start. Similarly, the Kubelet will refuse to start if the sum total of built-in defaults and flag values that still map to configuration is invalid. This is to make invalid node provisioning extremely obvious.
 
-The init configuration (`config-dir/init`) will be automatically considered good. If a node is provisioned with an init configuration, it MUST be a valid configuration. The Kubelet will always attempt to deserialize the init configuration and validate it on startup, regardless of whether a remote configuration exists. If this fails, the Kubelet will refuse to start. Similarly, the Kubelet will refuse to start if the sum total of built-in defaults and flag values that still map to configuration is invalid. This is to make invalid node provisioning extremely obvious.
+It is very important to be strict about the validity of the init and default configurations, because these are the baseline last-known-good configurations. If either configuration turns out to be bad, there is nothing to fall back to. We presume a user provisions nodes with an init configuration when the Kubelet defaults are inappropriate for their use case. It would thus be inappropriate to fall back to the Kubelet defaults if the init configuration exists.
 
-It is very important to be strict about the validity of the init and default configurations, because the init configuration is the initial last-known-good configuration. If either configuration turns out to be bad, there is nothing to fall back to. We presume a user provisions nodes with an init configuration when the Kubelet defaults are inappropriate for their use case. It would thus be inappropriate to fall back to the Kubelet defaults if the init configuration exists.
-
-As the init configuration and the built-in defaults are automatically considered good, intentionally setting `spec.configSource` on the `Node` to its empty default will reset the last-known-good symlink to point to `/dev/zero`.
+As the init configuration and the built-in defaults are automatically considered good, intentionally setting `spec.configSource` on the `Node` to its empty default will reset the last-known-good back to whichever local config is in use.
 
 ##### Rolling back to the LKG config
 
@@ -218,7 +217,7 @@ When a configuration correlates too strongly with a crash loop, the Kubelet will
 2. The Kubelet must remember which configuration was bad, so it doesn't roll forward to that configuration again.
 3. The Kubelet must report that it rolled back to LKG due to the *belief* that it had a bad configuration.
 
-Regarding (2), when the Kubelet detects a bad configuration, it will add an entry to a file, `{node-config-dir}/.bad-configs.json`, mapping the namespace and name of the `ConfigMap` to the time at which it was determined to be a bad config and the reason it was marked bad. The Kubelet will not roll forward to any of these configurations again unless their entries are removed from this file. For example, the contents of this file might look like (shown here with a `reason` matching what would be reported in a `NodeCondition`:
+Regarding (2), when the Kubelet detects a bad configuration, it will add an entry to a  "bad configs" file in the `dynamic-config-dir`, mapping the namespace and name of the `ConfigMap` to the time at which it was determined to be a bad config and the reason it was marked bad. The Kubelet will not roll forward to any of these configurations again unless their entries are removed from this file. For example, the contents of this file might look like (shown here with a `reason` matching what would be reported in a `NodeCondition`:
 ```
 {
   "{uid}": {
@@ -228,7 +227,7 @@ Regarding (2), when the Kubelet detects a bad configuration, it will add an entr
 }
 ```
 
-Regarding (1), the Kubelet will check the `{node-config-dir}/.bad-configs.json` file on startup. It will use the config referenced by `{node-config-dir}/.lkg` if the config referenced by `{node-config-dir}/.cur` is listed in `{node-config-dir}/.bad-configs.json`.
+Regarding (1), the Kubelet will check the "bad configs" file on startup. It will use the "last-known-good" config if the "current" config referenced is listed in the "bad configs" file.
 
 Regarding (3), the Kubelet should report via the `Node`'s status:
 - That it is using LKG.
@@ -238,11 +237,11 @@ Regarding (3), the Kubelet should report via the `Node`'s status:
 
 ##### Tracking restart frequency against the current configuration
 
-Every time the Kubelet starts up, it will append the startup time to `{node-config-dir}/.startups.json`. This file is a JSON list of string RFC3339-formatted timestamps. On Kubelet startup, if the time elapsed since the last modification to `.cur` does not exceed `ConfigTrialDuration`, the Kubelet will count the number of timestamps in this file that occur after the last modification to `.cur`. If this number exceeds the `CrashLoopThreshold`, the configuration will be marked bad and considered the cause of the crash-loop. The Kubelet will then roll back to its LKG configuration. We use "exceeds" as the trigger, because the Kubelet must be able to restart once to adopt a new configuration. 
+Every time the Kubelet starts up, it will append the startup time to a "startups" file in the `dynamic-config-dir`. This file is a JSON list of string RFC3339-formatted timestamps. On Kubelet startup, if the time elapsed since the last modification to the "current" file does not exceed `ConfigTrialDuration`, the Kubelet will count the number of timestamps in the "startups" file that occur after the last modification to "current." If this number exceeds the `CrashLoopThreshold`, the configuration will be marked bad and considered the cause of the crash-loop. The Kubelet will then roll back to its LKG configuration. We use "exceeds" as the trigger, because the Kubelet must be able to restart once to adopt a new configuration. 
 
 ##### Dead-end states
 
-We may use imperfect indicators to detect bad configuration. It is possible for a crash-loop unrelated to the current configuration to cause that configuration to be marked bad. This becomes evident when the Kubelet rolls back to the LKG configuration and continues to crash. In this scenario, an out-of-band node repair is required to revive the Kubelet. Since the current configuration was not, in fact, the cause of the issue, the component in charge of node repair should also reset that belief by removing the entry for the current configuration from the `{node-config-dir}/.bad-configs.json` file.
+We may use imperfect indicators to detect bad configuration. It is possible for a crash-loop unrelated to the current configuration to cause that configuration to be marked bad. This becomes evident when the Kubelet rolls back to the LKG configuration and continues to crash. In this scenario, an out-of-band node repair is required to revive the Kubelet. Since the current configuration was not, in fact, the cause of the issue, the component in charge of node repair should also reset that belief by removing the entry for the current configuration from the "bad configs" file.
 
 ##### Reporting Configuration Status
 
