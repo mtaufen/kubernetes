@@ -58,7 +58,6 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
 	componentconfigv1alpha1 "k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1"
-	componentconfigvalidation "k8s.io/kubernetes/pkg/apis/componentconfig/validation"
 	"k8s.io/kubernetes/pkg/capabilities"
 	"k8s.io/kubernetes/pkg/client/chaosclient"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
@@ -97,7 +96,8 @@ const (
 
 // NewKubeletCommand creates a *cobra.Command object with default parameters
 func NewKubeletCommand() *cobra.Command {
-	s := options.NewKubeletServer()
+	// ignore the error, as this is just for generating docs and the like
+	s, _ := options.NewKubeletServer()
 	s.AddFlags(pflag.CommandLine)
 	cmd := &cobra.Command{
 		Use: componentKubelet,
@@ -206,24 +206,6 @@ func initConfigz(kc *componentconfig.KubeletConfiguration) (*configz.Config, err
 	return cz, err
 }
 
-// validateKubeletServer validates configuration of KubeletServer and returns an error if the input configuration is invalid
-func validateKubeletServer(s *options.KubeletServer) error {
-	// please add any KubeletConfiguration validation to the componentconfigvalidation.ValidateKubeletConfiguration function
-	componentconfigvalidation.ValidateKubeletConfiguration(&s.KubeletConfiguration)
-
-	// ensure that nobody sets DynamicConfigDir if the dynamic config feature gate is turned off
-	if s.DynamicConfigDir.Provided() && !utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) {
-		return fmt.Errorf("the DynamicKubeletConfig feature gate must be enabled in order to use the --dynamic-config-dir flag")
-	}
-
-	// ensure that nobody sets InitConfigDir if the dynamic config feature gate is turned off
-	if s.InitConfigDir.Provided() && !utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) {
-		return fmt.Errorf("the DynamicKubeletConfig feature gate must be enabled in order to use the --init-config-dir flag")
-	}
-
-	return nil
-}
-
 // makeEventRecorder sets up kubeDeps.Recorder if its nil. Its a no-op otherwise.
 func makeEventRecorder(s *componentconfig.KubeletConfiguration, kubeDeps *kubelet.KubeletDeps, nodeName types.NodeName) {
 	if kubeDeps.Recorder != nil {
@@ -247,7 +229,7 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.KubeletDeps) (err error) {
 		return err
 	}
 	// validate the initial KubeletServer (we set feature gates first, because this validation depends on feature gates)
-	if err := validateKubeletServer(s); err != nil {
+	if err := options.ValidateKubeletServer(s); err != nil {
 		return err
 	}
 
@@ -266,47 +248,6 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.KubeletDeps) (err error) {
 			if err := watchForLockfileContention(s.LockFilePath, done); err != nil {
 				return err
 			}
-		}
-	}
-
-	// Alpha Dynamic Configuration Implementation; this section only loads config from disk, it does not contact the API server
-	var kubeletConfigController *kubeletconfig.KubeletConfigController
-	if utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) && s.DynamicConfigDir.Provided() {
-		// compute absolute paths based on current working dir
-		initConfigDir := ""
-		if s.InitConfigDir.Provided() {
-			initConfigDir, err = filepath.Abs(s.InitConfigDir.Value())
-			if err != nil {
-				return fmt.Errorf("failed to get absolute path for --init-config-dir")
-			}
-		}
-		dynamicConfigDir := ""
-		if s.DynamicConfigDir.Provided() {
-			dynamicConfigDir, err = filepath.Abs(s.DynamicConfigDir.Value())
-			if err != nil {
-				return fmt.Errorf("failed to get absolute path for --dynamic-config-dir")
-			}
-		}
-
-		// get the latest KubeletConfiguration checkpoint from disk, or load the init or default config if no valid checkpoints exist
-		kubeletConfigController = kubeletconfig.NewKubeletConfigController(initConfigDir, dynamicConfigDir, &s.KubeletConfiguration)
-		kcToUse, err := kubeletConfigController.Bootstrap()
-		if err != nil {
-			return fmt.Errorf("failed to determine a valid configuration, error: %v", err)
-		}
-
-		// TODO(mtaufen): Hoist initial configuration bootstrap out of run() so that this reassignment to KubeletServer is not required.
-		// update KubeletServer so it has the latest configuration
-		s.KubeletConfiguration = *kcToUse
-
-		// update feature gates from any new config
-		err = utilfeature.DefaultFeatureGate.Set(s.KubeletConfiguration.FeatureGates)
-		if err != nil {
-			return err
-		}
-		// validate the latest KubeletServer as a whole
-		if err := validateKubeletServer(s); err != nil {
-			return err
 		}
 	}
 
@@ -409,9 +350,9 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.KubeletDeps) (err error) {
 	}
 
 	// Alpha Dynamic Configuration Implementation;
-	// if the nodeconfig controller is available, inject the latest client to start the config and status sync loops
-	if utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) && kubeletConfigController != nil && !standaloneMode && !s.RunOnce {
-		kubeletConfigController.StartSync(kubeDeps.KubeClient, string(nodeName))
+	// if the kubelet config controller is available, inject the latest to start the config and status sync loops
+	if utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) && kubeDeps.KubeletConfigController != nil && !standaloneMode && !s.RunOnce {
+		kubeDeps.KubeletConfigController.StartSync(kubeDeps.KubeClient, string(nodeName))
 	}
 
 	if kubeDeps.Auth == nil {
@@ -868,6 +809,36 @@ func parseResourceList(m componentconfig.ConfigurationMap) (v1.ResourceList, err
 		}
 	}
 	return rl, nil
+}
+
+// BootstrapKubeletConfigController constructs and bootstrap a configuration controller
+func BootstrapKubeletConfigController(flags *options.KubeletFlags,
+	defaultConfig *componentconfig.KubeletConfiguration) (*componentconfig.KubeletConfiguration, *kubeletconfig.KubeletConfigController, error) {
+	var err error
+	// Alpha Dynamic Configuration Implementation; this section only loads config from disk, it does not contact the API server
+	// compute absolute paths based on current working dir
+	initConfigDir := ""
+	if flags.InitConfigDir.Provided() {
+		initConfigDir, err = filepath.Abs(flags.InitConfigDir.Value())
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get absolute path for --init-config-dir")
+		}
+	}
+	dynamicConfigDir := ""
+	if flags.DynamicConfigDir.Provided() {
+		dynamicConfigDir, err = filepath.Abs(flags.DynamicConfigDir.Value())
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get absolute path for --dynamic-config-dir")
+		}
+	}
+
+	// get the latest KubeletConfiguration checkpoint from disk, or load the init or default config if no valid checkpoints exist
+	kubeletConfigController := kubeletconfig.NewKubeletConfigController(initConfigDir, dynamicConfigDir, defaultConfig)
+	kubeletConfig, err := kubeletConfigController.Bootstrap()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to determine a valid configuration, error: %v", err)
+	}
+	return kubeletConfig, kubeletConfigController, nil
 }
 
 // RunDockershim only starts the dockershim in current process. This is only used for cri validate testing purpose

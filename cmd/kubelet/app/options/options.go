@@ -18,6 +18,7 @@ limitations under the License.
 package options
 
 import (
+	"fmt"
 	_ "net/http/pprof"
 	"strings"
 
@@ -26,9 +27,10 @@ import (
 	utilflag "k8s.io/apiserver/pkg/util/flag"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
-	// Need to make sure the componentconfig api is installed so defaulting funcs work
-	_ "k8s.io/kubernetes/pkg/apis/componentconfig/install"
+	_ "k8s.io/kubernetes/pkg/apis/componentconfig/install" // Need to make sure the componentconfig api is installed so defaulting funcs work
 	"k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1"
+	componentconfigvalidation "k8s.io/kubernetes/pkg/apis/componentconfig/validation"
+	"k8s.io/kubernetes/pkg/features"
 	utiltaints "k8s.io/kubernetes/pkg/util/taints"
 
 	"github.com/spf13/pflag"
@@ -112,6 +114,43 @@ type KubeletFlags struct {
 	InitConfigDir flag.StringFlag
 }
 
+// NewKubeletFlags will create a new KubeletFlags with default values
+func NewKubeletFlags() *KubeletFlags {
+	return &KubeletFlags{
+		KubeConfig:              flag.NewStringFlag("/var/lib/kubelet/kubeconfig"),
+		RequireKubeConfig:       false,
+		ContainerRuntimeOptions: *NewContainerRuntimeOptions(),
+		// Note, APIServerList is deprecated
+		APIServerList: []string{},
+		CertDirectory: "/var/run/kubernetes",
+		CloudProvider: v1alpha1.AutoDetectCloudProvider,
+		RootDirectory: v1alpha1.DefaultRootDir,
+	}
+}
+
+func ValidateKubeletFlags(f *KubeletFlags) error {
+	// ensure that nobody sets DynamicConfigDir if the dynamic config feature gate is turned off
+	if f.DynamicConfigDir.Provided() && !utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) {
+		return fmt.Errorf("the DynamicKubeletConfig feature gate must be enabled in order to use the --dynamic-config-dir flag")
+	}
+	// ensure that nobody sets InitConfigDir if the dynamic config feature gate is turned off
+	if f.InitConfigDir.Provided() && !utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) {
+		return fmt.Errorf("the DynamicKubeletConfig feature gate must be enabled in order to use the --init-config-dir flag")
+	}
+	return nil
+}
+
+// NewKubeletConfiguration will create a new KubeletConfiguration with default values
+func NewKubeletConfiguration() (*componentconfig.KubeletConfiguration, error) {
+	versioned := &v1alpha1.KubeletConfiguration{}
+	api.Scheme.Default(versioned)
+	config := &componentconfig.KubeletConfiguration{}
+	if err := api.Scheme.Convert(versioned, config, nil); err != nil {
+		return nil, err
+	}
+	return config, nil
+}
+
 // KubeletServer encapsulates all of the parameters necessary for starting up
 // a kubelet. These can either be set via command line or directly.
 type KubeletServer struct {
@@ -120,33 +159,33 @@ type KubeletServer struct {
 }
 
 // NewKubeletServer will create a new KubeletServer with default values.
-func NewKubeletServer() *KubeletServer {
-	versioned := &v1alpha1.KubeletConfiguration{}
-	api.Scheme.Default(versioned)
-	config := componentconfig.KubeletConfiguration{}
-	api.Scheme.Convert(versioned, &config, nil)
-	return &KubeletServer{
-		KubeletFlags: KubeletFlags{
-			KubeConfig:              flag.NewStringFlag("/var/lib/kubelet/kubeconfig"),
-			RequireKubeConfig:       false,
-			ContainerRuntimeOptions: *NewContainerRuntimeOptions(),
-			// Note, APIServerList is deprecated
-			APIServerList: []string{},
-			CertDirectory: "/var/run/kubernetes",
-			CloudProvider: v1alpha1.AutoDetectCloudProvider,
-			RootDirectory: v1alpha1.DefaultRootDir,
-		},
-		KubeletConfiguration: config,
+func NewKubeletServer() (*KubeletServer, error) {
+	config, err := NewKubeletConfiguration()
+	if err != nil {
+		return nil, err
 	}
+	return &KubeletServer{
+		KubeletFlags:         *NewKubeletFlags(),
+		KubeletConfiguration: *config,
+	}, nil
 }
 
-type kubeletConfiguration componentconfig.KubeletConfiguration
+// validateKubeletServer validates configuration of KubeletServer and returns an error if the input configuration is invalid
+func ValidateKubeletServer(s *KubeletServer) error {
+	// please add any KubeletConfiguration validation to the componentconfigvalidation.ValidateKubeletConfiguration function
+	if err := componentconfigvalidation.ValidateKubeletConfiguration(&s.KubeletConfiguration); err != nil {
+		return err
+	}
+	if err := ValidateKubeletFlags(&s.KubeletFlags); err != nil {
+		return err
+	}
+	return nil
+}
 
 // AddFlags adds flags for a specific KubeletServer to the specified FlagSet
 func (s *KubeletServer) AddFlags(fs *pflag.FlagSet) {
-	var kc *kubeletConfiguration = (*kubeletConfiguration)(&s.KubeletConfiguration)
 	s.KubeletFlags.AddFlags(fs)
-	kc.addFlags(fs)
+	AddKubeletConfigFlags(fs, &s.KubeletConfiguration)
 }
 
 // AddFlags adds flags for a specific KubeletFlags to the specified FlagSet
@@ -190,8 +229,8 @@ func (f *KubeletFlags) AddFlags(fs *pflag.FlagSet) {
 	fs.Var(&f.InitConfigDir, "init-config-dir", "The Kubelet will look in this directory for the init configuration. The path may be absolute or relative; relative paths start at the Kubelet's current working directory. Omit this argument to use the built-in default configuration values. Presently, you must also enable the DynamicKubeletConfig feature gate to pass this flag.")
 }
 
-// addFlags adds flags for a specific componentconfig.KubeletConfiguration to the specified FlagSet
-func (c *kubeletConfiguration) addFlags(fs *pflag.FlagSet) {
+// AddKubeletConfigFlags adds flags for a specific componentconfig.KubeletConfiguration to the specified FlagSet
+func AddKubeletConfigFlags(fs *pflag.FlagSet, c *componentconfig.KubeletConfiguration) {
 	// TODO(#34726:1.8.0): Remove the opt-in for failing when swap is enabled.
 	fs.BoolVar(&c.ExperimentalFailSwapOn, "experimental-fail-swap-on", c.ExperimentalFailSwapOn, "Makes the Kubelet fail to start if swap is enabled on the node. This is a temporary opton to maintain legacy behavior, failing due to swap enabled will happen by default in v1.6.")
 

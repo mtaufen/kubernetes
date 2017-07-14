@@ -67,6 +67,7 @@ go_library(
         "//pkg/kubelet/gpu:go_default_library",
         "//pkg/kubelet/gpu/nvidia:go_default_library",
         "//pkg/kubelet/images:go_default_library",
+        "//pkg/kubelet/kubeletconfig:go_default_library",
         "//pkg/kubelet/kuberuntime:go_default_library",
         "//pkg/kubelet/lifecycle:go_default_library",
         "//pkg/kubelet/metrics:go_default_library",
