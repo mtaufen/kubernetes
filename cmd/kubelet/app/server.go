@@ -188,22 +188,6 @@ func checkPermissions() error {
 	return nil
 }
 
-func setConfigz(cz *configz.Config, kc *kubeletconfiginternal.KubeletConfiguration) {
-	tmp := kubeletconfigv1alpha1.KubeletConfiguration{}
-	api.Scheme.Convert(kc, &tmp, nil)
-	cz.Set(tmp)
-}
-
-func initConfigz(kc *kubeletconfiginternal.KubeletConfiguration) (*configz.Config, error) {
-	cz, err := configz.New("kubeletconfig")
-	if err == nil {
-		setConfigz(cz, kc)
-	} else {
-		glog.Errorf("unable to register configz: %s", err)
-	}
-	return cz, err
-}
-
 // makeEventRecorder sets up kubeDeps.Recorder if its nil. Its a no-op otherwise.
 func makeEventRecorder(s *kubeletconfiginternal.KubeletConfiguration, kubeDeps *kubelet.Dependencies, nodeName types.NodeName) {
 	if kubeDeps.Recorder != nil {
@@ -250,7 +234,7 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.Dependencies) (err error) {
 	}
 
 	// Register current configuration with /configz endpoint
-	_, err = initConfigz(&s.KubeletConfiguration)
+	err = configz.Register(s.scheme, &s.KubeletConfiguration)
 	if err != nil {
 		glog.Errorf("unable to register KubeletConfiguration with configz, error: %v", err)
 	}

@@ -422,9 +422,7 @@ func NewProxyServer(config *componentconfig.KubeProxyConfiguration, cleanupAndEx
 		return nil, errors.New("config is required")
 	}
 
-	if c, err := configz.New("componentconfig"); err == nil {
-		c.Set(config)
-	} else {
+	if err := configz.Register(scheme, config); err != nil {
 		return nil, fmt.Errorf("unable to register configz: %s", err)
 	}
 

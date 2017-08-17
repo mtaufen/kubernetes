@@ -17,70 +17,60 @@ limitations under the License.
 package configz
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"sync"
+
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
+)
+
+const (
+	jsonMediaType = "application/json"
 )
 
 var (
-	configsGuard sync.RWMutex
-	configs      = map[string]*Config{}
+	configsMutex sync.RWMutex
+	configs      = map[string]*config{}
 )
 
-type Config struct {
-	val interface{}
+type config struct {
+	scheme   *runtime.Scheme
+	codecs   serializer.CodecFactory
+	jsonInfo runtime.SerializerInfo
+	obj      runtime.Object
 }
 
-func InstallHandler(m mux) {
-	m.Handle("/configz", http.HandlerFunc(handle))
-}
+// Register registers the object for serving via /configz/group/version/kind.
+// All versions supported by the scheme can be served.
+// To update the object, simply Register it again.
+// Register will return an error if the scheme doesn't recognize the object
+func Register(scheme *runtime.Scheme, obj runtime.Object) error {
+	configsMutex.Lock()
+	defer configsMutex.Unlock()
 
-type mux interface {
-	Handle(string, http.Handler)
-}
+	gvk := obj.GetObjectKind().GroupVersionKind()
 
-func New(name string) (*Config, error) {
-	configsGuard.Lock()
-	defer configsGuard.Unlock()
-	if _, found := configs[name]; found {
-		return nil, fmt.Errorf("register config %q twice", name)
+	// make sure the scheme supports the object
+	if !scheme.Recognizes(gvk) {
+		return fmt.Errorf("scheme does not recognize object with GroupVersionKind %#v", gvk)
 	}
-	newConfig := Config{}
-	configs[name] = &newConfig
-	return &newConfig, nil
-}
 
-func Delete(name string) {
-	configsGuard.Lock()
-	defer configsGuard.Unlock()
-	delete(configs, name)
-}
+	codecs := serializer.NewCodecFactory(scheme)
 
-func (v *Config) Set(val interface{}) {
-	configsGuard.Lock()
-	defer configsGuard.Unlock()
-	v.val = val
-}
-
-func (v *Config) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.val)
-}
-
-func handle(w http.ResponseWriter, r *http.Request) {
-	if err := write(w); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// get json serializer
+	info, ok := runtime.SerializerInfoForMediaType(codecs.SupportedMediaTypes(), jsonMediaType)
+	if !ok {
+		return fmt.Errorf("%q not supported", jsonMediaType)
 	}
+
+	gk := gvk.GroupKind()
+	configs[(&gk).String()] = &config{scheme, codecs, info, obj}
+	return nil
 }
 
-func write(w io.Writer) error {
-	configsGuard.Lock()
-	defer configsGuard.Unlock()
-	b, err := json.Marshal(configs)
-	if err != nil {
-		return fmt.Errorf("error marshaling json: %v", err)
-	}
-	_, err = w.Write(b)
-	return err
+// Unregister deletes the registered object at the specified key.
+func Unregister(key string) {
+	configsMutex.Lock()
+	defer configsMutex.Unlock()
+	delete(configs, key)
 }
