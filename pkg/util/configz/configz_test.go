@@ -23,6 +23,8 @@ import (
 	"testing"
 )
 
+// TODO(mtaufen): test the handler
+
 func TestConfigz(t *testing.T) {
 	v, err := New("testing")
 	if err != nil {
