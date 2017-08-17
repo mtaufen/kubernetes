@@ -17,11 +17,8 @@ limitations under the License.
 package configz
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
-
-	restful "github.com/emicklei/go-restful"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -60,35 +57,24 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	// this is such a terrible way to parse a URL... don't we have something better?
 
 	// get rid of empty strings from leading or trailing slashes
-	split := strings.Split(r.URL.Path(), "/")
-	parts := []string{}
-	for _, s := range split {
-		if s != "" {
-			parts := append(parts, s)
-		}
+
+	// TODO(mtaufen): test whether Clean is necessary
+	parts := strings.Split(r.URL.Path, "/")
+	if parts[0] == "" {
+		parts = parts[1:]
 	}
 
 	switch len(parts) {
 	case 1: // /configz
 		getRoot(w)
 	case 3: // /configz/group/version
-		getGroupVersion(w, groupVersionFromParts(parts))
+		getGroupVersion(w, &schema.GroupVersion{Group: parts[1], Version: parts[2]})
 	case 4: // /configz/group/version/kind
-		getGroupVersionKind(w, groupVersionKindFromParts(parts))
+		getGroupVersionKind(w, &schema.GroupVersionKind{Group: parts[1], Version: parts[2], Kind: parts[3]})
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}
 	return
-}
-
-// obviously be careful to call this with a 3 or more components
-func groupVersionFromParts(parts []string) *runtime.GroupVersion {
-	return runtime.GroupVersion{Group: parts[1], Version: parts[2]}
-}
-
-// obviously be careful to call this with 4 or more components
-func groupVersionKindFromParts(parts []string) *runtime.GroupVersionKind {
-	return runtime.GroupVersion{Group: parts[1], Version: parts[2], Kind: parts[3]}
 }
 
 // get API paths for supported GroupVersions
@@ -101,13 +87,13 @@ func getRoot(w http.ResponseWriter) {
 }
 
 // get API paths for supported Kinds in a given GroupVersion
-func getGroupVersion(w http.ResponseWriter, gv *runtime.GroupVersion) {
+func getGroupVersion(w http.ResponseWriter, gv *schema.GroupVersion) {
 	w.Write([]byte("put kind discovery stuff here"))
 	return
 }
 
 // get the concrete object registered with the GroupVersionKind
-func getGroupVersionKind(w http.ResponseWriter, gvk *runtime.GroupVersionKind) {
+func getGroupVersionKind(w http.ResponseWriter, gvk *schema.GroupVersionKind) {
 	configsMutex.Lock()
 	defer configsMutex.Unlock()
 
@@ -120,7 +106,7 @@ func getGroupVersionKind(w http.ResponseWriter, gvk *runtime.GroupVersionKind) {
 	}
 
 	// ensure that the scheme recognizes the requested group, version, and kind
-	if !config.scheme.Recognizes(gvk) {
+	if !config.scheme.Recognizes(*gvk) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}

@@ -63,8 +63,7 @@ func Register(scheme *runtime.Scheme, obj runtime.Object) error {
 		return fmt.Errorf("%q not supported", jsonMediaType)
 	}
 
-	gk := gvk.GroupKind()
-	configs[(&gk).String()] = &config{scheme, codecs, info, obj}
+	configs[KeyForObject(obj)] = &config{scheme, codecs, info, obj}
 	return nil
 }
 
@@ -73,4 +72,10 @@ func Unregister(key string) {
 	configsMutex.Lock()
 	defer configsMutex.Unlock()
 	delete(configs, key)
+}
+
+// KeyForObject returns the configz registration key for an object. Typically used to unregister objects.
+func KeyForObject(obj runtime.Object) string {
+	gk := obj.GetObjectKind().GroupVersionKind().GroupKind()
+	return (&gk).String()
 }
