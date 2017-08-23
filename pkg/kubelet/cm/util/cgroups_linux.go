@@ -59,10 +59,10 @@ func getCgroupPath(cgroupPath string) (string, error) {
 
 // getCgroupParentPath gets the parent filepath to this cgroup, for resolving relative cgroup paths.
 func getCgroupParentPath(mountpoint, root string) (string, error) {
-	// Use GetThisCgroupDir instead of GetInitCgroupDir, because the creating
+	// Use GetOwnCgroup instead of GetInitCgroup, because the creating
 	// process could in container and shared pid namespace with host, and
 	// /proc/1/cgroup could point to whole other world of cgroups.
-	initPath, err := libcontainercgroups.GetThisCgroupDir("devices")
+	initPath, err := libcontainercgroups.GetOwnCgroup("devices")
 	if err != nil {
 		return "", err
 	}

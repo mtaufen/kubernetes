@@ -10,6 +10,7 @@ go_library(
         "generic_error.go",
         "process.go",
         "stats.go",
+        "sync.go",
     ] + select({
         "@io_bazel_rules_go//go/platform:linux_amd64": [
             "capabilities_linux.go",
@@ -43,15 +44,18 @@ go_library(
     deps = [
         "//vendor/github.com/opencontainers/runc/libcontainer/configs:go_default_library",
         "//vendor/github.com/opencontainers/runc/libcontainer/stacktrace:go_default_library",
+        "//vendor/github.com/opencontainers/runc/libcontainer/utils:go_default_library",
     ] + select({
         "@io_bazel_rules_go//go/platform:linux_amd64": [
             "//vendor/github.com/Sirupsen/logrus:go_default_library",
             "//vendor/github.com/docker/docker/pkg/mount:go_default_library",
             "//vendor/github.com/docker/docker/pkg/symlink:go_default_library",
             "//vendor/github.com/golang/protobuf/proto:go_default_library",
+            "//vendor/github.com/mrunalp/fileutils:go_default_library",
             "//vendor/github.com/opencontainers/runc/libcontainer/apparmor:go_default_library",
             "//vendor/github.com/opencontainers/runc/libcontainer/cgroups:go_default_library",
             "//vendor/github.com/opencontainers/runc/libcontainer/cgroups/fs:go_default_library",
+            "//vendor/github.com/opencontainers/runc/libcontainer/cgroups/rootless:go_default_library",
             "//vendor/github.com/opencontainers/runc/libcontainer/cgroups/systemd:go_default_library",
             "//vendor/github.com/opencontainers/runc/libcontainer/configs/validate:go_default_library",
             "//vendor/github.com/opencontainers/runc/libcontainer/criurpc:go_default_library",
@@ -60,7 +64,6 @@ go_library(
             "//vendor/github.com/opencontainers/runc/libcontainer/seccomp:go_default_library",
             "//vendor/github.com/opencontainers/runc/libcontainer/system:go_default_library",
             "//vendor/github.com/opencontainers/runc/libcontainer/user:go_default_library",
-            "//vendor/github.com/opencontainers/runc/libcontainer/utils:go_default_library",
             "//vendor/github.com/syndtr/gocapability/capability:go_default_library",
             "//vendor/github.com/vishvananda/netlink:go_default_library",
             "//vendor/github.com/vishvananda/netlink/nl:go_default_library",

@@ -28,7 +28,10 @@ go_library(
         "//conditions:default": [],
     }),
     visibility = ["//visibility:public"],
-    deps = ["//vendor/github.com/Sirupsen/logrus:go_default_library"],
+    deps = [
+        "//vendor/github.com/Sirupsen/logrus:go_default_library",
+        "//vendor/github.com/opencontainers/runtime-spec/specs-go:go_default_library",
+    ],
 )
 
 filegroup(
