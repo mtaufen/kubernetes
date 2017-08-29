@@ -1,0 +1,125 @@
+{
+  "configTrialDuration": "10m0s",
+  "podManifestPath": "/etc/kubernetes/manifests",
+  "syncFrequency": "1m0s",
+  "fileCheckFrequency": "20s",
+  "httpCheckFrequency": "20s",
+  "manifestURL": "",
+  "manifestURLHeader": "",
+  "enableServer": true,
+  "address": "0.0.0.0",
+  "port": 10250,
+  "readOnlyPort": 10255,
+  "tlsCertFile": "/var/lib/kubelet/pki/kubelet.crt",
+  "tlsPrivateKeyFile": "/var/lib/kubelet/pki/kubelet.key",
+  "authentication": {
+    "x509": {
+      "clientCAFile": "/etc/srv/kubernetes/pki/ca-certificates.crt"
+    },
+    "webhook": {
+      "enabled": false,
+      "cacheTTL": "2m0s"
+    },
+    "anonymous": {
+      "enabled": false
+    }
+  },
+  "authorization": {
+    "mode": "Webhook",
+    "webhook": {
+      "cacheAuthorizedTTL": "5m0s",
+      "cacheUnauthorizedTTL": "30s"
+    }
+  },
+  "seccompProfileRoot": "/var/lib/kubelet/seccomp",
+  "allowPrivileged": true,
+  "hostNetworkSources": [
+    "*"
+  ],
+  "hostPIDSources": [
+    "*"
+  ],
+  "hostIPCSources": [
+    "*"
+  ],
+  "registryPullQPS": 5,
+  "registryBurst": 10,
+  "eventRecordQPS": 5,
+  "eventBurst": 10,
+  "enableDebuggingHandlers": true,
+  "enableContentionProfiling": false,
+  "minimumGCAge": "0s",
+  "maxPerPodContainerCount": 1,
+  "maxContainerCount": -1,
+  "cAdvisorPort": 4194,
+  "healthzPort": 10248,
+  "healthzBindAddress": "127.0.0.1",
+  "oomScoreAdj": -999,
+  "registerNode": true,
+  "clusterDomain": "cluster.local",
+  "masterServiceNamespace": "default",
+  "clusterDNS": [
+    "10.0.0.10"
+  ],
+  "streamingConnectionIdleTimeout": "4h0m0s",
+  "nodeStatusUpdateFrequency": "10s",
+  "imageMinimumGCAge": "2m0s",
+  "imageGCHighThresholdPercent": 85,
+  "imageGCLowThresholdPercent": 80,
+  "volumeStatsAggPeriod": "1m0s",
+  "volumePluginDir": "/etc/srv/kubernetes/kubelet-plugins/volume/exec",
+  "kubeletCgroups": "",
+  "runtimeCgroups": "",
+  "systemCgroups": "",
+  "cgroupRoot": "/",
+  "cgroupsPerQOS": true,
+  "cgroupDriver": "cgroupfs",
+  "containerRuntime": "docker",
+  "remoteRuntimeEndpoint": "unix:///var/run/dockershim.sock",
+  "remoteImageEndpoint": "",
+  "runtimeRequestTimeout": "2m0s",
+  "experimentalMounterPath": "/home/kubernetes/containerized_mounter/mounter",
+  "lockFilePath": "",
+  "exitOnLockContention": false,
+  "hairpinMode": "promiscuous-bridge",
+  "maxPods": 110,
+  "podCIDR": "",
+  "resolvConf": "/etc/resolv.conf",
+  "cpuCFSQuota": true,
+  "containerized": false,
+  "maxOpenFiles": 1000000,
+  "registerSchedulable": true,
+  "registerWithTaints": null,
+  "contentType": "application/vnd.kubernetes.protobuf",
+  "kubeAPIQPS": 5,
+  "kubeAPIBurst": 10,
+  "serializeImagePulls": true,
+  "nodeLabels": {
+    "beta.kubernetes.io/fluentd-ds-ready": "true",
+    "beta.kubernetes.io/metadata-proxy-ready": "true"
+  },
+  "nonMasqueradeCIDR": "10.0.0.0/8",
+  "enableCustomMetrics": false,
+  "evictionHard": "memory.available<250Mi,nodefs.available<10%,nodefs.inodesFree<5%",
+  "evictionSoft": "",
+  "evictionSoftGracePeriod": "",
+  "evictionPressureTransitionPeriod": "5m0s",
+  "evictionMaxPodGracePeriod": 0,
+  "evictionMinimumReclaim": "",
+  "experimentalKernelMemcgNotification": false,
+  "podsPerCore": 0,
+  "enableControllerAttachDetach": true,
+  "experimentalQOSReserved": {},
+  "protectKernelDefaults": false,
+  "makeIPTablesUtilChains": true,
+  "iptablesMasqueradeBit": 14,
+  "iptablesDropBit": 15,
+  "featureGates": "DynamicKubeletConfig=true,AppArmor=false",
+  "failSwapOn": true,
+  "experimentalCheckNodeCapabilitiesBeforeMount": true,
+  "systemReserved": {},
+  "kubeReserved": {},
+  "enforceNodeAllocatable": [
+    "pods"
+  ]
+}
