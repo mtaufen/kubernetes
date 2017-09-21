@@ -22,7 +22,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
@@ -34,10 +36,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig"
 	kubeletscheme "k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/scheme"
 	kubeletconfigv1alpha1 "k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/v1alpha1"
 	stats "k8s.io/kubernetes/pkg/kubelet/apis/stats/v1alpha1"
+	utilcodec "k8s.io/kubernetes/pkg/kubelet/kubeletconfig/util/codec"
 	kubeletmetrics "k8s.io/kubernetes/pkg/kubelet/metrics"
 	"k8s.io/kubernetes/test/e2e/framework"
 	"k8s.io/kubernetes/test/e2e/framework/metrics"
@@ -46,6 +50,8 @@ import (
 	. "github.com/onsi/gomega"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 )
+
+// TODO(mtaufen): refactor all of the utils in this file into their own package
 
 // TODO(random-liu): Get this automatically from kubelet flag.
 var kubeletAddress = flag.String("kubelet-address", "http://127.0.0.1:10255", "Host and port of the kubelet")
@@ -363,4 +369,78 @@ func runCommand(cmd ...string) (string, error) {
 		return "", fmt.Errorf("failed to run %q: %s (%s)", strings.Join(cmd, " "), err, output)
 	}
 	return string(output), nil
+}
+
+// Utils for standalone mode:
+
+func encodePod(pod *apiv1.Pod) ([]byte, error) {
+	encoder, err := utilcodec.NewJSONEncoder(apiv1.GroupName)
+	if err != nil {
+		return nil, err
+	}
+	data, err := runtime.Encode(encoder, pod)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func createPodManifestFile(pod *apiv1.Pod) error {
+	data, err := encodePod(pod)
+	if err != nil {
+		return err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	// TODO(mtaufen): would be good to be able to get this from the testing framework somehow
+	// testing framework sets up the manifest dir at $cwd/pod-manifest
+	return ioutil.WriteFile(filepath.Join(cwd, "pod-manifest", pod.Name), data, 0666)
+}
+
+func checkStaticPodStarted(name string) error {
+	const endpoint = "http://127.0.0.1:10255/pods"
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Add("Accept", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	obj, _, err := api.Codecs.UniversalDecoder().Decode(body, nil, nil)
+	if err != nil {
+		return err
+	}
+
+	pods, ok := obj.(*api.PodList)
+	if !ok {
+		return fmt.Errorf("failed type assertion of decoded response to PodList, body was: %s", body)
+	}
+	// static pods get the node name appended to the pod name by the Kubelet
+	// TODO(mtaufen): hostname is a bit of a hack, how node names are determined can differ across cloud provicers,
+	// OTOH we pretty much only run this test on GCE... right? Or maybe a Kubelet in standalone mode should not do this renaming?
+	hostname, err := os.Hostname()
+	if err != nil {
+		return err
+	}
+	fullname := fmt.Sprintf("%s-%s", name, hostname)
+	for _, pod := range pods.Items {
+		if pod.Name == fullname {
+			// TODO(mtaufen): IIRC, static pods are reported at most Pending at the Kubelet's /pods endpoint,
+			// even though they do show up as Running on the API server. So we just check for Pending for now...
+			// see issue: https://github.com/kubernetes/kubernetes/issues/44955, I should fix this
+			if pod.Status.Phase != api.PodPending {
+				return fmt.Errorf("pod is in phase: %s", pod.Status.Phase)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("pod named %q not found", name)
 }

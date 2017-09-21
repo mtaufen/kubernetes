@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2017 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,21 +23,20 @@ import (
 	"github.com/golang/glog"
 )
 
-// NodeE2ERemote contains the specific functions in the node e2e test suite.
-type NodeE2ERemote struct{}
+// StandaloneRemote contains the specific functions in the standalone node test suite
+type StandaloneRemote struct{}
 
-func InitNodeE2ERemote() TestSuite {
-	// TODO: Register flags.
-	return &NodeE2ERemote{}
+func InitStandaloneRemote() TestSuite {
+	return &StandaloneRemote{}
 }
 
 // SetupTestPackage sets up the test package with binaries k8s required for node e2e tests
-func (n *NodeE2ERemote) SetupTestPackage(tardir, systemSpecName string) error {
+func (n *StandaloneRemote) SetupTestPackage(tardir, systemSpecName string) error {
 	return setupDefaultTestPackage(tardir, systemSpecName)
 }
 
 // RunTest runs test on the node.
-func (n *NodeE2ERemote) RunTest(host, workspace, results, imageDesc, junitFilePrefix, testArgs, ginkgoArgs, systemSpecName string, timeout time.Duration) (string, error) {
+func (n *StandaloneRemote) RunTest(host, workspace, results, imageDesc, junitFilePrefix, testArgs, ginkgoArgs, systemSpecName string, timeout time.Duration) (string, error) {
 	// Install the cni plugins and add a basic CNI configuration.
 	if err := setupCNI(host, workspace); err != nil {
 		return "", err
@@ -61,13 +60,13 @@ func (n *NodeE2ERemote) RunTest(host, workspace, results, imageDesc, junitFilePr
 		systemSpecFile = systemSpecName + ".yaml"
 	}
 
-	// TODO(mtaufen): hardcode skipping [standalone] tests
+	// TODO(mtaufen): hardcode focusing on [standalone] tests
 
 	// Run the tests
 	glog.V(2).Infof("Starting tests on %q", host)
 	cmd := getSSHCommand(" && ",
 		fmt.Sprintf("cd %s", workspace),
-		fmt.Sprintf("timeout -k 30s %fs ./ginkgo %s ./e2e_node.test -- --system-spec-name=%s --system-spec-file=%s --logtostderr --v 4 --node-name=%s --report-dir=%s --report-prefix=%s --image-description=\"%s\" %s",
+		fmt.Sprintf("timeout -k 30s %fs ./ginkgo %s ./e2e_node.test -- --standalone=true --system-spec-name=%s --system-spec-file=%s --logtostderr --v 4 --node-name=%s --report-dir=%s --report-prefix=%s --image-description=\"%s\" %s",
 			timeout.Seconds(), ginkgoArgs, systemSpecName, systemSpecFile, host, results, junitFilePrefix, imageDesc, testArgs),
 	)
 	return SSH(host, "sh", "-c", cmd)

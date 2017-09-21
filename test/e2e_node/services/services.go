@@ -75,14 +75,21 @@ func NewE2EServices(monitorParent bool) *E2EServices {
 // standard kubelet launcher)
 func (e *E2EServices) Start() error {
 	var err error
-	if !framework.TestContext.NodeConformance {
-		// Start kubelet
-		e.kubelet, err = e.startKubelet()
-		if err != nil {
-			return fmt.Errorf("failed to start kubelet: %v", err)
+	if framework.TestContext.Standalone {
+		// standalone node tests don't require the internal services, and require
+		// the Kubelet to be started with a different set of flags and manifests
+		e.kubelet, err = e.startKubeletStandalone()
+	} else {
+		if !framework.TestContext.NodeConformance {
+			// start kubelet
+			e.kubelet, err = e.startKubelet()
+			if err != nil {
+				return fmt.Errorf("failed to start kubelet: %v", err)
+			}
 		}
+		// start internal services
+		e.services, err = e.startInternalServices()
 	}
-	e.services, err = e.startInternalServices()
 	return err
 }
 

@@ -90,8 +90,7 @@ const (
 	kubeletHealthCheckURL = "http://127.0.0.1:" + kubeletReadOnlyPort + "/healthz"
 )
 
-// startKubelet starts the Kubelet in a separate process or returns an error
-// if the Kubelet fails to start.
+// startKubelet starts the Kubelet in a separate process or returns an error if the Kubelet fails to start.
 func (e *E2EServices) startKubelet() (*server, error) {
 	glog.Info("Starting kubelet")
 
@@ -114,36 +113,11 @@ func (e *E2EServices) startKubelet() (*server, error) {
 	if err != nil {
 		return nil, err
 	}
-	var killCommand, restartCommand *exec.Cmd
-	var isSystemd bool
-	// Apply default kubelet flags.
-	cmdArgs := []string{}
-	if systemdRun, err := exec.LookPath("systemd-run"); err == nil {
-		// On systemd services, detection of a service / unit works reliably while
-		// detection of a process started from an ssh session does not work.
-		// Since kubelet will typically be run as a service it also makes more
-		// sense to test it that way
-		isSystemd = true
-		unitName := fmt.Sprintf("kubelet-%d.service", rand.Int31())
-		cmdArgs = append(cmdArgs, systemdRun, "--unit="+unitName, "--slice=runtime.slice", "--remain-after-exit", builder.GetKubeletServerBin())
-		killCommand = exec.Command("systemctl", "kill", unitName)
-		restartCommand = exec.Command("systemctl", "restart", unitName)
-		e.logFiles["kubelet.log"] = logFileData{
-			journalctlCommand: []string{"-u", unitName},
-		}
-		cmdArgs = append(cmdArgs,
-			"--kubelet-cgroups=/kubelet.slice",
-			"--cgroup-root=/",
-		)
-	} else {
-		cmdArgs = append(cmdArgs, builder.GetKubeletServerBin())
-		cmdArgs = append(cmdArgs,
-			"--runtime-cgroups=/docker-daemon",
-			"--kubelet-cgroups=/kubelet",
-			"--cgroup-root=/",
-			"--system-cgroups=/system",
-		)
-	}
+
+	// set up the babysitter, e.g. systemd
+	cmdArgs, killCommand, restartCommand, isSystemd := e.kubeletBabysitterSetup()
+
+	// set up the rest of the kubelet args
 	cmdArgs = append(cmdArgs,
 		"--kubeconfig", kubeconfigPath,
 		"--address", "0.0.0.0",
@@ -222,14 +196,141 @@ func (e *E2EServices) startKubelet() (*server, error) {
 	return server, server.start()
 }
 
+// startKubelet starts the Kubelet in standalone mode in a separate process or returns an error if the Kubelet fails to start.
+func (e *E2EServices) startKubeletStandalone() (*server, error) {
+	glog.Info("Starting kubelet in standalone mode")
+
+	// set feature gates so we can check which features are enabled and pass the appropriate flags
+	utilfeature.DefaultFeatureGate.Set(framework.TestContext.FeatureGates)
+
+	// TODO(mtaufen): what manifests need to exist for standalone mode tests?
+	// is there a way to create the manifests from each test?
+
+	// Create pod manifest path
+	manifestPath, err := createPodManifestDirectory()
+	if err != nil {
+		return nil, err
+	}
+	e.rmDirs = append(e.rmDirs, manifestPath)
+	err = createRootDirectory(kubeletRootDirectory)
+	if err != nil {
+		return nil, err
+	}
+
+	// set up the babysitter, e.g. systemd
+	cmdArgs, killCommand, restartCommand, isSystemd := e.kubeletBabysitterSetup()
+
+	// set up the rest of the kubelet args
+	// note that we intentionally omit the --kubeconfig flag, which results in a standalone kubelet
+	cmdArgs = append(cmdArgs,
+		"--address", "0.0.0.0",
+		"--port", kubeletPort,
+		"--read-only-port", kubeletReadOnlyPort,
+		"--root-dir", kubeletRootDirectory,
+		"--volume-stats-agg-period", "10s", // Aggregate volumes frequently so tests don't need to wait as long
+		"--allow-privileged", "true",
+		"--serialize-image-pulls", "false",
+		"--pod-manifest-path", manifestPath,
+		"--file-check-frequency", "10s", // Check file frequently so tests won't wait too long
+		"--docker-disable-shared-pid=false",
+		// Assign a fixed CIDR because we are in standalone mode.
+		// TODO(mtaufen): not sure if the note below is true for standalone
+		// Note: this MUST be in sync with with the IP in
+		// - cluster/gce/config-test.sh and
+		// - test/e2e_node/conformance/run_test.sh.
+		"--pod-cidr", "10.100.0.0/24",
+		"--eviction-pressure-transition-period", "30s",
+		// Apply test framework feature gates by default. This could also be overridden
+		// by kubelet-flags.
+		"--feature-gates", framework.TestContext.FeatureGates,
+		"--eviction-hard", "memory.available<250Mi,nodefs.available<10%,nodefs.inodesFree<5%", // The hard eviction thresholds.
+		"--eviction-minimum-reclaim", "nodefs.available=5%,nodefs.inodesFree=5%", // The minimum reclaimed resources after eviction.
+		"--v", LOG_VERBOSITY_LEVEL, "--logtostderr",
+	)
+
+	// TODO(mtaufen): how much of this networking stuff is necessary in standalone mode
+
+	// Enable kubenet by default.
+	cniBinDir, err := getCNIBinDirectory()
+	if err != nil {
+		return nil, err
+	}
+
+	cniConfDir, err := getCNIConfDirectory()
+	if err != nil {
+		return nil, err
+	}
+
+	cmdArgs = append(cmdArgs,
+		"--network-plugin=kubenet",
+		"--cni-bin-dir", cniBinDir,
+		"--cni-conf-dir", cniConfDir)
+
+	// Keep hostname override for convenience.
+	if framework.TestContext.NodeName != "" { // If node name is specified, set hostname override.
+		cmdArgs = append(cmdArgs, "--hostname-override", framework.TestContext.NodeName)
+	}
+
+	// Override the default kubelet flags.
+	cmdArgs = append(cmdArgs, kubeletArgs...)
+
+	// Adjust the args if we are running kubelet with systemd.
+	if isSystemd {
+		adjustArgsForSystemd(cmdArgs)
+	}
+
+	cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
+	server := newServer(
+		"kubelet",
+		cmd,
+		killCommand,
+		restartCommand,
+		[]string{kubeletHealthCheckURL},
+		"kubelet.log",
+		e.monitorParent,
+		true /* restartOnExit */)
+	return server, server.start()
+}
+
+// kubeletBabysitterSetup sets up the Kubelet's babysitter
+func (e *E2EServices) kubeletBabysitterSetup() (cmdArgs []string, killCommand, restartCommand *exec.Cmd, isSystemd bool) {
+	if systemdRun, err := exec.LookPath("systemd-run"); err == nil {
+		// On systemd services, detection of a service / unit works reliably while
+		// detection of a process started from an ssh session does not work.
+		// Since kubelet will typically be run as a service it also makes more
+		// sense to test it that way
+		isSystemd = true
+		unitName := fmt.Sprintf("kubelet-%d.service", rand.Int31())
+		cmdArgs = append(cmdArgs, systemdRun, "--unit="+unitName, "--slice=runtime.slice", "--remain-after-exit", builder.GetKubeletServerBin())
+		killCommand = exec.Command("systemctl", "kill", unitName)
+		restartCommand = exec.Command("systemctl", "restart", unitName)
+		e.logFiles["kubelet.log"] = logFileData{
+			journalctlCommand: []string{"-u", unitName},
+		}
+		cmdArgs = append(cmdArgs,
+			"--kubelet-cgroups=/kubelet.slice",
+			"--cgroup-root=/",
+		)
+	} else {
+		cmdArgs = append(cmdArgs, builder.GetKubeletServerBin())
+		cmdArgs = append(cmdArgs,
+			"--runtime-cgroups=/docker-daemon",
+			"--kubelet-cgroups=/kubelet",
+			"--cgroup-root=/",
+			"--system-cgroups=/system",
+		)
+	}
+	return
+}
+
 // createPodManifestDirectory creates pod manifest directory.
 func createPodManifestDirectory() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("failed to get current working directory: %v", err)
 	}
-	path, err := ioutil.TempDir(cwd, "pod-manifest")
-	if err != nil {
+	path := filepath.Join(cwd, "pod-manifest")
+	if err := os.Mkdir(path, 0666); err != nil {
 		return "", fmt.Errorf("failed to create static pod manifest directory: %v", err)
 	}
 	return path, nil

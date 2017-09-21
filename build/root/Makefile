@@ -261,6 +261,8 @@ define TEST_E2E_NODE_HELP_INFO
 #    test/e2e_node/system/specs/. For example, "SYSTEM_SPEC_NAME=gke" will use
 #    the spec at test/e2e_node/system/specs/gke.yaml. If unspecified, the
 #    default built-in spec (system.DefaultSpec) will be used.
+#  STANDALONE: Run the Kubelet in standalone mode. Remember to also focus the
+#    [standalone] tests w/ FOCUS when you have this option on.
 #
 # Example:
 #   make test-e2e-node FOCUS=Kubelet SKIP=container

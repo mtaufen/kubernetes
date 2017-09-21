@@ -136,6 +136,8 @@ type NodeTestContextType struct {
 	NodeName string
 	// NodeConformance indicates whether the test is running in node conformance mode.
 	NodeConformance bool
+	// Standalone indicates whether the test is running in standalone node mode (e.g. standalone Kubelet).
+	Standalone bool
 	// PrepullImages indicates whether node e2e framework should prepull images.
 	PrepullImages bool
 	// KubeletConfig is the kubelet configuration the test is running against.
@@ -271,6 +273,7 @@ func RegisterNodeFlags() {
 	// For different situation we need to mount different things into the container, run different commands.
 	// It is hard and unnecessary to deal with the complexity inside the test suite.
 	flag.BoolVar(&TestContext.NodeConformance, "conformance", false, "If true, the test suite will not start kubelet, and fetch system log (kernel, docker, kubelet log etc.) to the report directory.")
+	flag.BoolVar(&TestContext.Standalone, "standalone", false, "If true, the test suite will not start the internal services (apiserver, etcd, etc.), and will run Kubelet in standalone mode.")
 	flag.BoolVar(&TestContext.PrepullImages, "prepull-images", true, "If true, prepull images so image pull failures do not cause test failures.")
 	flag.StringVar(&TestContext.ImageDescription, "image-description", "", "The description of the image which the test will be running on.")
 	flag.StringVar(&TestContext.SystemSpecName, "system-spec-name", "", "The name of the system spec (e.g., gke) that's used in the node e2e test. The system specs are in test/e2e_node/system/specs/. This is used by the test framework to determine which tests to run for validating the system requirements.")

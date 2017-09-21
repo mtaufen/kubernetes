@@ -84,6 +84,13 @@ if [ $remote = true ] ; then
   cleanup=${CLEANUP:-"true"}
   delete_instances=${DELETE_INSTANCES:-"false"}
 
+  # standalone mode
+  standalone=${STANDALONE:-"false"}
+  standaloneSubCmd=""
+  if [[ $standalone == "true" ]]; then
+    standaloneSubCmd="standalone"
+  fi
+
   # Get the compute zone
   zone=$(gcloud info --format='value(config.properties.compute.zone)')
   if [[ $zone == "" ]]; then
@@ -129,8 +136,10 @@ if [ $remote = true ] ; then
   echo "Ginkgo Flags: $ginkgoflags"
   echo "Instance Metadata: $metadata"
   echo "Image Config File: $image_config_file"
+  echo "Standalone Kubelet: $standalone"
+
   # Invoke the runner
-  go run test/e2e_node/runner/remote/run_remote.go  --logtostderr --vmodule=*=4 --ssh-env="gce" \
+  go run test/e2e_node/runner/remote/run_remote.go $standaloneSubCmd --logtostderr --vmodule=*=4 --ssh-env="gce" \
     --zone="$zone" --project="$project" --gubernator="$gubernator" \
     --hosts="$hosts" --images="$images" --cleanup="$cleanup" \
     --results-dir="$artifacts" --ginkgo-flags="$ginkgoflags" \

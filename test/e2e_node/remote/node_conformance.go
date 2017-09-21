@@ -289,6 +289,8 @@ func (c *ConformanceRemote) RunTest(host, workspace, results, imageDesc, junitFi
 		}
 	}()
 
+	// TODO(mtaufen): hardcode skipping [standalone] tests?
+
 	// Run the tests
 	glog.V(2).Infof("Starting tests on %q", host)
 	podManifestPath := getPodManifestPath(workspace)

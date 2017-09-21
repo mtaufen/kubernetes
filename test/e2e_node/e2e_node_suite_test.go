@@ -163,8 +163,12 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		glog.Infof("Running tests without starting services.")
 	}
 
-	glog.Infof("Wait for the node to be ready")
-	waitForNodeReady()
+	// TODO(mtaufen): skipping this wait when the tests are in standalone mode is maybe a little hacky,
+	// OTOH all the services have already been started, and that includes the Kubelet, so....
+	if !framework.TestContext.Standalone {
+		glog.Infof("Wait for the node to be ready")
+		waitForNodeReady()
+	}
 
 	// Reference common test to make the import valid.
 	commontest.CurrentSuite = commontest.NodeE2E
@@ -242,6 +246,11 @@ func waitForNodeReady() {
 // TODO(random-liu): Using dynamic kubelet configuration feature to
 // update test context with node configuration.
 func updateTestContext() error {
+	// just skip all this if testing standalone kubelet
+	if framework.TestContext.Standalone {
+		return nil
+	}
+
 	client, err := getAPIServerClient()
 	if err != nil {
 		return fmt.Errorf("failed to get apiserver client: %v", err)
