@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/api"
+	utilcodec "k8s.io/kubernetes/pkg/kubelet/kubeletconfig/util/codec"
 	utilequal "k8s.io/kubernetes/pkg/kubelet/kubeletconfig/util/equal"
 	utillog "k8s.io/kubernetes/pkg/kubelet/kubeletconfig/util/log"
 )
@@ -137,7 +138,7 @@ func NewConfigOKCondition() ConfigOKCondition {
 }
 
 // unsafeSet sets the current state of the condition
-// it does not grab the conditionMux lock, so you should generally use setConfigOK unless you need to grab the lock
+// it does not grab the conditionMux lock, so you should generally use Set unless you need to grab the lock
 // at a higher level to synchronize additional operations
 func (c *configOKCondition) unsafeSet(message, reason string, status apiv1.ConditionStatus) {
 	// We avoid an empty Message, Reason, or Status on the condition. Since we use Patch to update conditions, an empty
@@ -205,10 +206,6 @@ func (c *configOKCondition) Sync(client clientset.Interface, nodeName string) {
 		return
 	}
 
-	// grab the lock
-	c.conditionMux.Lock()
-	defer c.conditionMux.Unlock()
-
 	// if the sync fails, we want to retry
 	var err error
 	defer func() {
@@ -218,96 +215,113 @@ func (c *configOKCondition) Sync(client clientset.Interface, nodeName string) {
 		}
 	}()
 
+	// grab the lock
+	c.conditionMux.Lock()
+	defer c.conditionMux.Unlock()
+
+	err = c.unsafeSync(client, nodeName)
+}
+
+// unsafeSync contains the meat of the sync operation, should be wrapped by something that takes
+// the locks at the appropriate time, handles any possible error, etc.
+func (c *configOKCondition) unsafeSync(client clientset.Interface, nodeName string) error {
 	if c.condition == nil {
 		utillog.Infof("ConfigOK condition is nil, skipping ConfigOK sync")
-		return
+		return nil
 	}
 
 	// get the Node so we can check the current condition
 	node, err := client.CoreV1().Nodes().Get(nodeName, metav1.GetOptions{})
 	if err != nil {
-		err = fmt.Errorf("could not get Node %q, will not sync ConfigOK condition, error: %v", nodeName, err)
-		return
+		return fmt.Errorf("could not get Node %q, will not sync ConfigOK condition, error: %v", nodeName, err)
 	}
 
-	// set timestamps
-	syncTime := metav1.NewTime(time.Now())
-	c.condition.LastHeartbeatTime = syncTime
-	if remote := getConfigOK(node.Status.Conditions); remote == nil || !utilequal.ConfigOKEq(remote, c.condition) {
-		// update transition time the first time we create the condition,
-		// or if we are semantically changing the condition
-		c.condition.LastTransitionTime = syncTime
-	} else {
-		// since the conditions are semantically equal, use lastTransitionTime from the condition currently on the Node
-		// we need to do this because the field will always be represented in the patch generated below, and this copy
-		// prevents nullifying the field during the patch operation
-		c.condition.LastTransitionTime = remote.LastTransitionTime
-	}
-
-	// overlay the failedSyncReason if necessary
-	var condition *apiv1.NodeCondition
-	if len(c.failedSyncReason) > 0 {
-		// get a copy of the condition before we add the overlay
-		condition = c.condition.DeepCopy()
-		condition.Reason = c.failedSyncReason
-		condition.Status = apiv1.ConditionFalse
-	} else {
-		condition = c.condition
-	}
-
-	// generate the patch
-	mediaType := "application/json"
-	info, ok := kuberuntime.SerializerInfoForMediaType(api.Codecs.SupportedMediaTypes(), mediaType)
-	if !ok {
-		err = fmt.Errorf("unsupported media type %q", mediaType)
-		return
-	}
-	versions := api.Registry.EnabledVersionsForGroup(api.GroupName)
-	if len(versions) == 0 {
-		err = fmt.Errorf("no enabled versions for group %q", api.GroupName)
-		return
-	}
-	// the "best" version supposedly comes first in the list returned from apiv1.Registry.EnabledVersionsForGroup
-	encoder := api.Codecs.EncoderForVersion(info.Serializer, versions[0])
-
-	before, err := kuberuntime.Encode(encoder, node)
+	// update the configOK condition as necessary and generate the patch
+	patch, err := configOKPatch(node,
+		addFailedSyncOverlay(c.failedSyncReason,
+			updateTimestamps(getConfigOK(node.Status.Conditions), c.condition, time.Now())))
 	if err != nil {
-		err = fmt.Errorf(`failed to encode "before" node while generating patch, error: %v`, err)
-		return
-	}
-
-	patchConfigOK(node, condition)
-	after, err := kuberuntime.Encode(encoder, node)
-	if err != nil {
-		err = fmt.Errorf(`failed to encode "after" node while generating patch, error: %v`, err)
-		return
-	}
-
-	patch, err := strategicpatch.CreateTwoWayMergePatch(before, after, apiv1.Node{})
-	if err != nil {
-		err = fmt.Errorf("failed to generate patch for updating ConfigOK condition, error: %v", err)
-		return
+		return fmt.Errorf("failed to generate patch for updating ConfigOK condition, error: %v", err)
 	}
 
 	// patch the remote Node object
 	_, err = client.CoreV1().Nodes().PatchStatus(nodeName, patch)
 	if err != nil {
-		err = fmt.Errorf("could not update ConfigOK condition, error: %v", err)
-		return
+		return fmt.Errorf("could not update ConfigOK condition, error: %v", err)
 	}
 }
 
-// patchConfigOK replaces or adds the ConfigOK condition to the node
-func patchConfigOK(node *apiv1.Node, configOK *apiv1.NodeCondition) {
+// configOKPatch returns a two-way strategic merge patch that applies `configOK` to `node`.
+// This function modifies `node` as part of creating the patch.
+func configOKPatch(node *apiv1.Node, configOK *apiv1.NodeCondition) ([]byte, error) {
+	// generate the patch
+	encoder, err := utilcodec.NewJSONEncoder(api.GroupName)
+	if err != nil {
+		return fmt.Errorf("failed to get encoder, error: %v", err)
+	}
+
+	// encode the original node
+	before, err := kuberuntime.Encode(encoder, node)
+	if err != nil {
+		return fmt.Errorf(`failed to encode "before" node while generating patch, error: %v`, err)
+	}
+
+	// update the node with the new condition, and encode again
+	after, err := kuberuntime.Encode(encoder, setConfigOK(node, condition))
+	if err != nil {
+		return fmt.Errorf(`failed to encode "after" node while generating patch, error: %v`, err)
+	}
+
+	return strategicpatch.CreateTwoWayMergePatch(before, after, apiv1.Node{})
+}
+
+// updateTimestamps updates the timestamps of the newConfigOK condition in place.
+// Returns `newConfigOK`.
+func updateTimestamps(oldConfigOK *apiv1.NodeCondition, newConfigOK *apiv1.NodeCondition, now time.Time) *apiv1.NodeCondition {
+	// convert now to the API's time type
+	now := metav1.NewTime(now)
+	newConfigOK.LastHeartbeatTime = now
+	if oldConfigOK == nil || !utilequal.ConfigOKEq(oldConfigOK, newConfigOK) {
+		// update transition time the first time we create the condition,
+		// or if we are semantically changing the condition
+		newConfigOK.LastTransitionTime = now
+	} else {
+		// since the conditions are semantically equal, use lastTransitionTime from the condition currently on the Node
+		// we need to do this because the field will always be represented in the patch generated below, and this copy
+		// prevents nullifying the field during the patch operation
+		newConfigOK.LastTransitionTime = oldConfigOK.LastTransitionTime
+	}
+	return newConfigOK
+}
+
+// addFailedSyncOverlay copies the configOK condition and applies the failure reason to the copy if
+// the reason is non-empty, otherwise makes no modifications. In the former, it returns the copy,
+// in the latter case it returns the original.
+func addFailedSyncOverlay(failedSyncReason string, configOK *apiv1.NodeCondition) *apiv1.NodeCondition {
+	if len(failedSyncReason) > 0 {
+		// get a copy of the condition before we add the overlay, so that
+		// the overlay can be removed in a future update by simply skipping this step
+		cpy := configOK.DeepCopy()
+		cpy.Reason = failedSyncReason
+		cpy.Status = apiv1.ConditionFalse
+		return cpy
+	}
+	return configOK
+}
+
+// setConfigOK replaces or adds the ConfigOK condition to the node
+// returns node for easy function composition
+func setConfigOK(node *apiv1.Node, configOK *apiv1.NodeCondition) *apiv1.Node {
 	for i := range node.Status.Conditions {
 		if node.Status.Conditions[i].Type == apiv1.NodeConfigOK {
 			// edit the condition
 			node.Status.Conditions[i] = *configOK
-			return
+			return node
 		}
 	}
 	// append the condition
 	node.Status.Conditions = append(node.Status.Conditions, *configOK)
+	return node
 }
 
 // getConfigOK returns the first NodeCondition in `cs` with Type == apiv1.NodeConfigOK,
