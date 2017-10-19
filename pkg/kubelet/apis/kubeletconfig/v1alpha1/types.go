@@ -66,7 +66,7 @@ type KubeletConfiguration struct {
 	ManifestURL string `json:"manifestURL"`
 	// manifestURLHeader is the HTTP header to use when accessing the manifest
 	// URL, with the key separated from the value with a ':', as in 'key:value'
-	ManifestURLHeader string `json:"manifestURLHeader"`
+	ManifestURLHeader map[string]string `json:"manifestURLHeader"`
 	// enableServer enables the Kubelet's server
 	EnableServer *bool `json:"enableServer"`
 	// address is the IP address for the Kubelet to serve on (set to 0.0.0.0
@@ -219,7 +219,7 @@ type KubeletConfiguration struct {
 	// In cluster mode, this is obtained from the master.
 	PodCIDR string `json:"podCIDR"`
 	// ResolverConfig is the resolver configuration file used as the basis
-	// for the container DNS resolution configuration."), []
+	// for the container DNS resolution configuration.
 	ResolverConfig string `json:"resolvConf"`
 	// cpuCFSQuota is Enable CPU CFS quota enforcement for containers that
 	// specify CPU limits
@@ -245,17 +245,17 @@ type KubeletConfiguration struct {
 	// nodeLabels to add when registering the node in the cluster.
 	NodeLabels map[string]string `json:"nodeLabels"`
 	// Comma-delimited list of hard eviction expressions.  For example, 'memory.available<300Mi'.
-	EvictionHard *string `json:"evictionHard"`
+	EvictionHard map[string]string `json:"evictionHard"`
 	// Comma-delimited list of soft eviction expressions.  For example, 'memory.available<300Mi'.
-	EvictionSoft string `json:"evictionSoft"`
+	EvictionSoft map[string]string `json:"evictionSoft"`
 	// Comma-delimeted list of grace periods for each soft eviction signal.  For example, 'memory.available=30s'.
-	EvictionSoftGracePeriod string `json:"evictionSoftGracePeriod"`
+	EvictionSoftGracePeriod map[string]string `json:"evictionSoftGracePeriod"`
 	// Duration for which the kubelet has to wait before transitioning out of an eviction pressure condition.
 	EvictionPressureTransitionPeriod metav1.Duration `json:"evictionPressureTransitionPeriod"`
 	// Maximum allowed grace period (in seconds) to use when terminating pods in response to a soft eviction threshold being met.
 	EvictionMaxPodGracePeriod int32 `json:"evictionMaxPodGracePeriod"`
 	// Comma-delimited list of minimum reclaims (e.g. imagefs.available=2Gi) that describes the minimum amount of resource the kubelet will reclaim when performing a pod eviction if that resource is under pressure.
-	EvictionMinimumReclaim string `json:"evictionMinimumReclaim"`
+	EvictionMinimumReclaim map[string]string `json:"evictionMinimumReclaim"`
 	// Maximum number of pods per core. Cannot exceed MaxPods
 	PodsPerCore int32 `json:"podsPerCore"`
 	// enableControllerAttachDetach enables the Attach/Detach controller to

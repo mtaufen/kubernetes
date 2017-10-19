@@ -70,7 +70,7 @@ type KubeletConfiguration struct {
 	ManifestURL string
 	// manifestURLHeader is the HTTP header to use when accessing the manifest
 	// URL, with the key separated from the value with a ':', as in 'key:value'
-	ManifestURLHeader string
+	ManifestURLHeader map[string]string
 	// enableServer enables the Kubelet's server
 	EnableServer bool
 	// address is the IP address for the Kubelet to serve on (set to 0.0.0.0
@@ -227,7 +227,7 @@ type KubeletConfiguration struct {
 	// In cluster mode, this is obtained from the master.
 	PodCIDR string
 	// ResolverConfig is the resolver configuration file used as the basis
-	// for the container DNS resolution configuration."), []
+	// for the container DNS resolution configuration.
 	ResolverConfig string
 	// cpuCFSQuota is Enable CPU CFS quota enforcement for containers that
 	// specify CPU limits
@@ -254,13 +254,13 @@ type KubeletConfiguration struct {
 	NodeLabels map[string]string
 	// Comma-delimited list of hard eviction expressions.  For example, 'memory.available<300Mi'.
 	// +optional
-	EvictionHard string
+	EvictionHard map[string]string
 	// Comma-delimited list of soft eviction expressions.  For example, 'memory.available<300Mi'.
 	// +optional
-	EvictionSoft string
+	EvictionSoft map[string]string
 	// Comma-delimeted list of grace periods for each soft eviction signal.  For example, 'memory.available=30s'.
 	// +optional
-	EvictionSoftGracePeriod string
+	EvictionSoftGracePeriod map[string]string
 	// Duration for which the kubelet has to wait before transitioning out of an eviction pressure condition.
 	// +optional
 	EvictionPressureTransitionPeriod metav1.Duration
@@ -269,7 +269,7 @@ type KubeletConfiguration struct {
 	EvictionMaxPodGracePeriod int32
 	// Comma-delimited list of minimum reclaims (e.g. imagefs.available=2Gi) that describes the minimum amount of resource the kubelet will reclaim when performing a pod eviction if that resource is under pressure.
 	// +optional
-	EvictionMinimumReclaim string
+	EvictionMinimumReclaim map[string]string
 	// Maximum number of pods per core. Cannot exceed MaxPods
 	PodsPerCore int32
 	// enableControllerAttachDetach enables the Attach/Detach controller to

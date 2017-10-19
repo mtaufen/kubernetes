@@ -146,6 +146,13 @@ func (in *KubeletConfiguration) DeepCopyInto(out *KubeletConfiguration) {
 	out.SyncFrequency = in.SyncFrequency
 	out.FileCheckFrequency = in.FileCheckFrequency
 	out.HTTPCheckFrequency = in.HTTPCheckFrequency
+	if in.ManifestURLHeader != nil {
+		in, out := &in.ManifestURLHeader, &out.ManifestURLHeader
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.EnableServer != nil {
 		in, out := &in.EnableServer, &out.EnableServer
 		if *in == nil {
@@ -343,14 +350,33 @@ func (in *KubeletConfiguration) DeepCopyInto(out *KubeletConfiguration) {
 	}
 	if in.EvictionHard != nil {
 		in, out := &in.EvictionHard, &out.EvictionHard
-		if *in == nil {
-			*out = nil
-		} else {
-			*out = new(string)
-			**out = **in
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+	if in.EvictionSoft != nil {
+		in, out := &in.EvictionSoft, &out.EvictionSoft
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+	if in.EvictionSoftGracePeriod != nil {
+		in, out := &in.EvictionSoftGracePeriod, &out.EvictionSoftGracePeriod
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
 		}
 	}
 	out.EvictionPressureTransitionPeriod = in.EvictionPressureTransitionPeriod
+	if in.EvictionMinimumReclaim != nil {
+		in, out := &in.EvictionMinimumReclaim, &out.EvictionMinimumReclaim
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.EnableControllerAttachDetach != nil {
 		in, out := &in.EnableControllerAttachDetach, &out.EnableControllerAttachDetach
 		if *in == nil {
