@@ -60,6 +60,9 @@ import (
 	"k8s.io/kubernetes/pkg/util/configz"
 	"k8s.io/kubernetes/pkg/version"
 
+	nodeconfigclientset "k8s.io/kubernetes/pkg/controller/node/nodeconfig/client-go/clientset/versioned"
+	nodeconfiginformers "k8s.io/kubernetes/pkg/controller/node/nodeconfig/client-go/informers/externalversions"
+
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
@@ -156,6 +159,7 @@ func Run(s *options.CMServer) error {
 		}
 
 		ctx.InformerFactory.Start(ctx.Stop)
+		ctx.NodeConfigInformerFactory.Start(ctx.Stop)
 		close(ctx.InformersStarted)
 
 		select {}
@@ -251,6 +255,9 @@ type ControllerContext struct {
 
 	// InformerFactory gives access to informers for the controller.
 	InformerFactory informers.SharedInformerFactory
+
+	// NodeConfigInformerFactory gives access to nodeconfig API informers for the controller.
+	NodeConfigInformerFactory nodeconfiginformers.SharedInformerFactory
 
 	// Options provides access to init options for a given controller
 	Options options.CMServer
@@ -425,6 +432,11 @@ func CreateControllerContext(s *options.CMServer, rootClientBuilder, clientBuild
 	versionedClient := rootClientBuilder.ClientOrDie("shared-informers")
 	sharedInformers := informers.NewSharedInformerFactory(versionedClient, ResyncPeriod(s)())
 
+	// TODO(mtaufen): not really sure whether we should be using rootClientBuilder or clientBuilder here
+	// also OMG that cast is such a HACK
+	nodeconfigClient := nodeconfigclientset.NewForConfigOrDie(rootClientBuilder.(controller.SimpleControllerClientBuilder).ClientConfig)
+	nodeconfigSharedInformers := nodeconfiginformers.NewSharedInformerFactory(nodeconfigClient, ResyncPeriod(s)())
+
 	availableResources, err := GetAvailableResources(rootClientBuilder)
 	if err != nil {
 		return ControllerContext{}, err
@@ -448,13 +460,14 @@ func CreateControllerContext(s *options.CMServer, rootClientBuilder, clientBuild
 	}
 
 	ctx := ControllerContext{
-		ClientBuilder:      clientBuilder,
-		InformerFactory:    sharedInformers,
-		Options:            *s,
-		AvailableResources: availableResources,
-		Cloud:              cloud,
-		Stop:               stop,
-		InformersStarted:   make(chan struct{}),
+		ClientBuilder:             clientBuilder,
+		InformerFactory:           sharedInformers,
+		NodeConfigInformerFactory: nodeconfigSharedInformers,
+		Options:                   *s,
+		AvailableResources:        availableResources,
+		Cloud:                     cloud,
+		Stop:                      stop,
+		InformersStarted:          make(chan struct{}),
 	}
 	return ctx, nil
 }
