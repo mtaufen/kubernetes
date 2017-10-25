@@ -1,0 +1,7 @@
+apiVersion: nodeconfig.k8s.io/v1alpha1
+kind: NodeConfigSourcePool
+metadata:
+  name: default-pool
+spec:
+  percentNew: 0
+# history omitted for initial
