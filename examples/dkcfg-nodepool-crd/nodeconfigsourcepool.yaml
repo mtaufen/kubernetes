@@ -26,7 +26,7 @@ spec:
     openAPIV3Schema:
       properties:
         spec:
-          properties:
+          properties: #TODO(mtaufen): add a selector that identifies the pool
             percentNew: #TODO(mtaufen): description
               type: integer
               minimum: 0

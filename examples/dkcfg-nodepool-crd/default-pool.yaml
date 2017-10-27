@@ -5,3 +5,5 @@ metadata:
 spec:
   percentNew: 0
 # history omitted for initial
+# TODO(mtaufen): probably useful to have a status here that includes the % actually on new
+# TODO(mtaufen): should have a way of "pushing" the local default onto the history... maybe just append nil?

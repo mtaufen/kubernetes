@@ -48,9 +48,10 @@ var UpdateNodeSpecBackoff = wait.Backoff{
 }
 
 type CloudNodeController struct {
-	nodeInformer coreinformers.NodeInformer
-	kubeClient   clientset.Interface
-	recorder     record.EventRecorder
+	nodeInformer                 coreinformers.NodeInformer
+	nodeConfigSourcePoolInformer cache.SharedInformer
+	kubeClient                   clientset.Interface
+	recorder                     record.EventRecorder
 
 	cloud cloudprovider.Interface
 
@@ -60,6 +61,8 @@ type CloudNodeController struct {
 	nodeMonitorPeriod time.Duration
 
 	nodeStatusUpdateFrequency time.Duration
+
+	pendingNodeConfigSourcePools chan bool
 }
 
 const (
@@ -73,6 +76,7 @@ const (
 // NewCloudNodeController creates a CloudNodeController object
 func NewCloudNodeController(
 	nodeInformer coreinformers.NodeInformer,
+	nodeConfigSourcePoolInformer cache.SharedInformer,
 	kubeClient clientset.Interface,
 	cloud cloudprovider.Interface,
 	nodeMonitorPeriod time.Duration,
@@ -89,16 +93,24 @@ func NewCloudNodeController(
 	}
 
 	cnc := &CloudNodeController{
-		nodeInformer:              nodeInformer,
-		kubeClient:                kubeClient,
-		recorder:                  recorder,
-		cloud:                     cloud,
-		nodeMonitorPeriod:         nodeMonitorPeriod,
-		nodeStatusUpdateFrequency: nodeStatusUpdateFrequency,
+		nodeInformer:                 nodeInformer,
+		nodeConfigSourcePoolInformer: nodeConfigSourcePoolInformer,
+		kubeClient:                   kubeClient,
+		recorder:                     recorder,
+		cloud:                        cloud,
+		nodeMonitorPeriod:            nodeMonitorPeriod,
+		nodeStatusUpdateFrequency:    nodeStatusUpdateFrequency,
 	}
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: cnc.AddCloudNode,
+		AddFunc:    cnc.AddCloudNode,
+		DeleteFunc: cnc.DeleteCloudNode,
+	})
+
+	nodePoolNodeConfigSourceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    cnc.AddNodeConfigSourcePool,
+		UpdateFunc: cnc.UpdateNodeConfigSourcePool,
+		DeleteFunc: cnc.DeleteNodeConfigSourcePool,
 	})
 
 	return cnc
@@ -369,6 +381,124 @@ func (cnc *CloudNodeController) AddCloudNode(obj interface{}) {
 	}
 
 	glog.Infof("Successfully initialized node %s with cloud provider", node.Name)
+}
+
+func (cnc *CloudNodeController) DeleteCloudNode(obj interface{}) {
+	// TODO(mtaufen): update nodes based on new number of nodes and percentage from config source pool
+}
+
+// TODO(mtaufen): obviously move the type somewhere else if we actually implement the CRD
+type NodeConfigSourcePool struct {
+	metav1.ObjectMeta
+	metav1.TypeMeta
+	Spec NodeCofnigSourcePoolSpec
+}
+
+type NodeConfigSourcePoolSpec struct {
+	LabelSelector *metav1.LabelSelector
+	PercentNew    uint
+	History       []*v1core.NodeConfigSource
+}
+
+func (cnc *CloudNodeController) AddNodeConfigSourcePool(obj interface{}) {
+	pool, ok := obj.(*NodeConfigSourcePool)
+	if !ok {
+		utilruntime.HandleError(fmt.Errorf("AddNodeConfigSourcePool event handler got an object that wasn't a NodeConfigSourcePool"))
+		return
+	}
+	pokeNodeConfigSourcePoolWorker()
+}
+
+func (cnc *CloudNodeController) UpdateNodeConfigSourcePool(oldObj interface{}, newObj interface{}) {
+	// TODO(mtaufen): compare old to new and skip update if they are the same
+	pool, ok := newObj.(*NodeConfigSourcePool)
+	if !ok {
+		utilruntime.HandleError(fmt.Errorf("UpdateNodeConfigSourcePool event handler got an object that wasn't a NodeConfigSourcePool"))
+		return
+	}
+	pokeNodeConfigSourcePoolWorker()
+}
+
+func (cnc *CloudNodeController) DeleteNodeConfigSourcePool(obj interface{}) {
+	// TODO(mtaufen): revert nodes to defaults?
+}
+
+func (cnc *CloudNodeController) pokeNodeConfigSourcePoolWorker() {
+	select {
+	case cnc.pendingNodeConfigSourcePools <- true:
+	default:
+	}
+}
+
+func (cnc *CloudNodeController) reconcileNodeConfigSourcePool() {
+	// TODO(mtaufen): update nodes based on percentage
+	// TODO(mtaufen): single-writer principle: have this actually poke a worker that processes a queue of reconciliation requests
+
+	select {
+	case <-cnc.pendingNodeConfigSourcePools:
+	default:
+		// no work to be done, return
+		return
+	}
+
+	// if the sync fails, we want to retry
+	var syncerr error
+	defer func() {
+		if syncerr != nil {
+			utilruntime.HandleError(syncerr.Error())
+			cnc.pokeNodeConfigSourcePoolWorker()
+		}
+	}()
+
+	// get the nodes from the local cache
+	objs, err := cnc.nodeInformer.Informer().GetStore().List()
+	if err != nil {
+		syncerr = err
+		return
+	}
+	nodes, ok := objs.([]*v1core.Node)
+	if !ok {
+		syncerr = fmt.Errorf("nodeInformer doesn't have Nodes? OHHH NOOOOOOOOOOOO!")
+	}
+
+	// get the nodeConfigSourcePools from the local cache
+	objs, err = cnc.nodeConfigSourcePoolInformer.GetStore().List()
+	if err != nil {
+		syncerr = err
+		return
+	}
+	nodeConfigSourcePools, ok := objs.([]*NodeConfigSourcePool)
+	if !ok {
+		syncerr = fmt.Errorf("nodeConfigSourcePoolInformer doesn't have NodeConfigSourcePools? OHHH NOOOOOOOOOOOO!")
+	}
+
+	for _, pool := range nodeConfigSourcePools {
+		var oldSource, newSource *v1core.NodeConfigSource
+		// note this strategy will force default config on old-configured nodes for an empty or 1 element history
+		n := len(pool.History)
+		if n == 1 {
+			newSource := pool.History[0]
+		} else if n > 1 {
+			newSource := pool.History[n-1]
+			oldSource := pool.History[n-2]
+		}
+
+		newSourceNodes := []*v1core.Node{}
+		oldSourceNodes := []*v1core.Node{}
+
+		for _, node := range nodes {
+			// if equal to the new source, put in the new bucket,
+			// otherwise set to the old source and put it in the old bucket
+			if
+		}
+	}
+
+	// sort into nodes on the new config, nodes on the previous config, and nodes on neither config
+	// immediately reconfigure "neither" nodes to be on previous config (can do this during sorting)
+	// compute actual percentNew
+	// if we need to increase % to match specified, reconfigure "previous" nodes
+	// if we need to decrease % to match specified, reconfigure "new" nodes
+
 }
 
 func getCloudTaint(taints []v1.Taint) *v1.Taint {
