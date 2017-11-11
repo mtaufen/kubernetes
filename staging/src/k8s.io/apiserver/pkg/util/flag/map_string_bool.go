@@ -54,6 +54,7 @@ func (m MapStringBool) Set(value string) error {
 		m[k] = boolValue
 	}
 	return nil
+	//change
 }
 
 // Type implements github.com/spf13/pflag.Value
