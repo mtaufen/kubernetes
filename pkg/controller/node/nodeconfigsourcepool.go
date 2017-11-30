@@ -43,13 +43,13 @@ func (nc *Controller) needsNodeConfigSourcePoolSync() {
 
 // checks if work needs to be done to sync configurations, does work if necessary
 func (nc *Controller) syncNodeConfigSourcePools() {
-	glog.Errorf("will sync NodeConfigSourcePools if necessary")
-	select {
-	case <-nc.pendingNodeConfigSourcePoolSync:
-	default:
-		// no work to be done, return
-		return
-	}
+	// glog.Errorf("will sync NodeConfigSourcePools if necessary")
+	// select {
+	// case <-nc.pendingNodeConfigSourcePoolSync:
+	// default:
+	// 	// no work to be done, return
+	// 	return
+	// }
 
 	glog.Infof("will definitely sync NodeConfigSourcePools")
 
