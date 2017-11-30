@@ -23,6 +23,8 @@ import (
 	rest "k8s.io/client-go/rest"
 	scheme "k8s.io/kubernetes/pkg/controller/node/nodeconfig/client-go/clientset/versioned/scheme"
 	v1alpha1 "k8s.io/kubernetes/pkg/controller/node/nodeconfig/v1alpha1"
+
+	"github.com/golang/glog"
 )
 
 // NodeConfigSourcePoolsGetter has a method to return a NodeConfigSourcePoolInterface.
@@ -81,6 +83,7 @@ func (c *nodeConfigSourcePools) List(opts v1.ListOptions) (result *v1alpha1.Node
 
 // Watch returns a watch.Interface that watches the requested nodeConfigSourcePools.
 func (c *nodeConfigSourcePools) Watch(opts v1.ListOptions) (watch.Interface, error) {
+	glog.Infof("watching nodeconfigsourcepools via generated client")
 	opts.Watch = true
 	return c.client.Get().
 		Resource("nodeconfigsourcepools").
