@@ -27,8 +27,8 @@ $kubectl get ncsp -o yaml
 
 # create a new node config source configmap
 $kubectl proxy &
-# remember to replace NODE_NAME and set the object kind on the downloaded object
-curl http://localhost:8001/api/v1/proxy/nodes/${NODE_NAME}/configz | jq .kubeletconfig > examples/dkcfg-nodepool-crd/kubelet
+# remember to replace NODE_NAME
+curl http://localhost:8001/api/v1/proxy/nodes/${NODE_NAME}/configz | jq '.kubeletconfig|.kind="KubeletConfiguration"|.apiVersion="kubeletconfig/v1alpha1"' > examples/dkcfg-nodepool-crd/kubelet
 $kubectl -n kube-system create configmap default-pool --from-file=examples/dkcfg-nodepool-crd/kubelet --append-hash -o yaml
 $kubectl -n kube-system get configmaps
 
