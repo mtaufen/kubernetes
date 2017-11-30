@@ -17,7 +17,7 @@ $kubectl get no -o json | jq ".items|.[].metadata.labels"
 $kubectl create -f examples/dkcfg-nodepool-crd/nodeconfigsourcepool.yaml
 $kubectl get customresourcedefinitions
 
-# create a pool with percentNew at 0 and no history
+# create a pool with percentNew at 0, labelselector for default-pool, and no history
 $kubectl create -f examples/dkcfg-nodepool-crd/default-pool.yaml
 $kubectl get ncsp -o yaml
 

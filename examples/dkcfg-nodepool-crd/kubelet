@@ -103,5 +103,7 @@
   "kubeReserved": null,
   "enforceNodeAllocatable": [
     "pods"
-  ]
+  ],
+  "kind": "KubeletConfiguration",
+  "apiVersion": "kubeletconfig/v1alpha1"
 }
