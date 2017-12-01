@@ -372,7 +372,21 @@ func (r *Reflector) watchHandler(w watch.Interface, resourceVersion *string, err
 	if r.expectedType == nil {
 		glog.Infof("expectedType is nil")
 	} else {
-		glog.Infof("expectedType is %s", r.expectedType.Name())
+		glog.Infof(`expectedType is:
+NumMethod() int   -> %d
+Name() string     -> %s
+PkgPath() string  -> %s
+Size() uintptr    -> %s
+String() string   -> %s
+Kind() Kind       -> %s
+Comparable() bool -> %t`,
+			r.expectedType.NumMethod(),
+			r.expectedType.Name(),
+			r.expectedType.PkgPath(),
+			r.expectedType.Size(),
+			r.expectedType.String(),
+			r.expectedType.Kind().String(),
+			r.expectedType.Comparable())
 	}
 	if r.expectedType != nil && strings.Contains(r.expectedType.Name(), "NodeConfig") {
 		logExtra = true
