@@ -28,6 +28,7 @@ import (
 	"net/url"
 	"path"
 	"reflect"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -504,6 +505,12 @@ func (r *Request) Watch() (watch.Interface, error) {
 			glog.Infof("watching nodeconfigsourcepools: error: %v", fmt.Errorf("watching resources is not possible with this client (content-type: %s)", r.content.ContentType))
 		}
 		return nil, fmt.Errorf("watching resources is not possible with this client (content-type: %s)", r.content.ContentType)
+	}
+
+	if logExtra {
+		glog.Infof("expected content-type is: %s", r.content.ContentType)
+		glog.Infof("framer is: %#v", r.serializers.Framer)
+		glog.Infof("stack trace:\n%s", string(debug.Stack()))
 	}
 
 	url := r.URL().String()
