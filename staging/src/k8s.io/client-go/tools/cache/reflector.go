@@ -372,21 +372,7 @@ func (r *Reflector) watchHandler(w watch.Interface, resourceVersion *string, err
 	if r.expectedType == nil {
 		glog.Infof("expectedType is nil")
 	} else {
-		glog.Infof(`expectedType is:
-NumMethod() int   -> %d
-Name() string     -> %s
-PkgPath() string  -> %s
-Size() uintptr    -> %s
-String() string   -> %s
-Kind() Kind       -> %s
-Comparable() bool -> %t`,
-			r.expectedType.NumMethod(),
-			r.expectedType.Name(),
-			r.expectedType.PkgPath(),
-			r.expectedType.Size(),
-			r.expectedType.String(),
-			r.expectedType.Kind().String(),
-			r.expectedType.Comparable())
+		glog.Infof("expectedType is: %s", r.expectedType.String())
 	}
 	if r.expectedType != nil && strings.Contains(r.expectedType.String(), "NodeConfig") {
 		logExtra = true
@@ -409,6 +395,8 @@ loop:
 			}
 			if logExtra {
 				glog.Infof("watch handler for nodeconfig: got event: %#v", event)
+			} else {
+				glog.Infof("watch handler for everything else: got event: %#v", event)
 			}
 			if event.Type == watch.Error {
 				return apierrs.FromObject(event.Object)
