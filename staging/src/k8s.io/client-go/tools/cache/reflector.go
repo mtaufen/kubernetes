@@ -388,7 +388,7 @@ Comparable() bool -> %t`,
 			r.expectedType.Kind().String(),
 			r.expectedType.Comparable())
 	}
-	if r.expectedType != nil && strings.Contains(r.expectedType.Name(), "NodeConfig") {
+	if r.expectedType != nil && strings.Contains(r.expectedType.String(), "NodeConfig") {
 		logExtra = true
 		glog.Infof("watch handler for nodeconfig: will log extra")
 	}
