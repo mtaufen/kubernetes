@@ -433,8 +433,22 @@ func CreateControllerContext(s *options.CMServer, rootClientBuilder, clientBuild
 	sharedInformers := informers.NewSharedInformerFactory(versionedClient, ResyncPeriod(s)())
 
 	// TODO(mtaufen): not really sure whether we should be using rootClientBuilder or clientBuilder here
-	// also OMG that cast is such a HACK
-	nodeconfigClient := nodeconfigclientset.NewForConfigOrDie(rootClientBuilder.(controller.SimpleControllerClientBuilder).ClientConfig)
+	// with the cast I'm totally guessing at the underlying interface
+	// HACKY HACKY HACKY
+	// shallow-copy the client config, which should enable me to independently change the content type
+	clientConfig := *(rootClientBuilder.(controller.SimpleControllerClientBuilder).ClientConfig)
+	// set the content type to json
+	// clientConfig.AcceptContentTypes = ""
+	clientConfig.ContentType = "application/json"
+
+	glog.Infof("root client builder content type: %s, accept content types: %s",
+		rootClientBuilder.(controller.SimpleControllerClientBuilder).ClientConfig.ContentType,
+		rootClientBuilder.(controller.SimpleControllerClientBuilder).ClientConfig.AcceptContentTypes)
+	glog.Infof("nodeconfig client builder content type: %s, accept content types: %s",
+		clientConfig.ContentType,
+		clientConfig.AcceptContentTypes)
+
+	nodeconfigClient := nodeconfigclientset.NewForConfigOrDie(&clientConfig)
 	nodeconfigSharedInformers := nodeconfiginformers.NewSharedInformerFactory(nodeconfigClient, ResyncPeriod(s)())
 
 	availableResources, err := GetAvailableResources(rootClientBuilder)
