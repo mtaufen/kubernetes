@@ -85,9 +85,20 @@ func Version(name string, value versionValue, usage string) *versionValue {
 	return p
 }
 
-var (
-	versionFlag = Version("version", VersionFalse, "Print version information and quit")
+const (
+	versionFlagName = "version"
+	versionFlagHelp = "Print version information and quit"
 )
+
+var (
+	versionFlag = Version(versionFlagName, VersionFalse, versionFlagHelp)
+)
+
+func AddFlags(fs *flag.FlagSet) {
+	f := flag.Lookup(versionFlagName)
+	fs.Var(f.Value, versionFlagName, versionFlagHelp)
+	fs.Lookup(versionFlagName).NoOptDefVal = "true"
+}
 
 // PrintAndExitIfRequested will check if the -version flag was passed
 // and, if so, print the version and exit.

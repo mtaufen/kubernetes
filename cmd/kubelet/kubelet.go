@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/golang/glog"
 	"github.com/spf13/pflag"
 
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
@@ -32,9 +33,32 @@ import (
 	"k8s.io/kubernetes/cmd/kubelet/app"
 	"k8s.io/kubernetes/cmd/kubelet/app/options"
 	_ "k8s.io/kubernetes/pkg/client/metrics/prometheus" // for client metric registration
-	_ "k8s.io/kubernetes/pkg/version/prometheus"        // for version metric registration
+	"k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig"
+	_ "k8s.io/kubernetes/pkg/version/prometheus" // for version metric registration
 	"k8s.io/kubernetes/pkg/version/verflag"
 )
+
+func newFlagSet(kf *options.KubeletFlags, kc *kubeletconfig.KubeletConfiguration) *pflag.FlagSet {
+	fs := pflag.NewFlagSet(os.Args[0], pflag.ExitOnError)
+	// set the normalize func, similar to k8s.io/apiserver/pkg/util/flag/flags.go:InitFlags
+	fs.SetNormalizeFunc(flag.WordSepNormalizeFunc)
+	// explicitly add flags from libs that register global flags
+	options.AddGlobalFlags(fs)
+	// add the flags that target Kubelet objects
+	kf.AddFlags(fs)
+	options.AddKubeletConfigFlags(fs, kc)
+	return fs
+}
+
+func parseFlagSet(fs *pflag.FlagSet) error {
+	if err := fs.Parse(os.Args[1:]); err != nil {
+		return err
+	}
+	fs.VisitAll(func(flag *pflag.Flag) {
+		glog.V(2).Infof("FLAG: --%s=%q", flag.Name, flag.Value)
+	})
+	return nil
+}
 
 func die(err error) {
 	fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -42,19 +66,19 @@ func die(err error) {
 }
 
 func main() {
-	// construct KubeletFlags object and register command line flags mapping
 	kubeletFlags := options.NewKubeletFlags()
-	kubeletFlags.AddFlags(pflag.CommandLine)
 
 	// construct KubeletConfiguration object and register command line flags mapping
 	defaultConfig, err := options.NewKubeletConfiguration()
 	if err != nil {
 		die(err)
 	}
-	options.AddKubeletConfigFlags(pflag.CommandLine, defaultConfig)
 
-	// parse the command line flags into the respective objects
-	flag.InitFlags()
+	// construct a flag set, register flags, and parse
+	fs := newFlagSet(kubeletFlags, defaultConfig)
+	if err := parseFlagSet(fs); err != nil {
+		die(err)
+	}
 
 	// initialize logging and defer flush
 	logs.InitLogs()

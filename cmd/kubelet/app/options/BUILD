@@ -10,6 +10,7 @@ go_library(
     name = "go_default_library",
     srcs = [
         "container_runtime.go",
+        "globalflags.go",
         "options.go",
     ],
     importpath = "k8s.io/kubernetes/cmd/kubelet/app/options",
@@ -24,10 +25,20 @@ go_library(
         "//pkg/kubelet/config:go_default_library",
         "//pkg/kubelet/types:go_default_library",
         "//pkg/util/taints:go_default_library",
+        "//pkg/version/verflag:go_default_library",
+        "//vendor/github.com/golang/glog:go_default_library",
+        "//vendor/github.com/google/cadvisor/container/common:go_default_library",
+        "//vendor/github.com/google/cadvisor/container/containerd:go_default_library",
+        "//vendor/github.com/google/cadvisor/container/docker:go_default_library",
+        "//vendor/github.com/google/cadvisor/container/raw:go_default_library",
+        "//vendor/github.com/google/cadvisor/machine:go_default_library",
+        "//vendor/github.com/google/cadvisor/manager:go_default_library",
+        "//vendor/github.com/google/cadvisor/storage:go_default_library",
         "//vendor/github.com/spf13/pflag:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
         "//vendor/k8s.io/apiserver/pkg/util/feature:go_default_library",
         "//vendor/k8s.io/apiserver/pkg/util/flag:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/util/logs:go_default_library",
     ],
 )
 
