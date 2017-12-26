@@ -25,11 +25,20 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/golang/glog"
+	"github.com/spf13/pflag"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	utilflag "k8s.io/apiserver/pkg/util/flag"
+	"k8s.io/kubernetes/cmd/kubelet/app/options"
 	"k8s.io/kubernetes/pkg/features"
+	"k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig"
+	"k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/scheme"
+	"k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/v1alpha1"
 	"k8s.io/kubernetes/test/e2e/framework"
 	"k8s.io/kubernetes/test/e2e_node/builder"
 )
@@ -62,11 +71,14 @@ func (a *args) Set(value string) error {
 var kubeletArgs args
 var kubeletContainerized bool
 var hyperkubeImage string
+var genKubeletConfigFile bool
 
 func init() {
 	flag.Var(&kubeletArgs, "kubelet-flags", "Kubelet flags passed to kubelet, this will override default kubelet flags in the test. Flags specified in multiple kubelet-flags will be concatenate.")
 	flag.BoolVar(&kubeletContainerized, "kubelet-containerized", false, "Run kubelet in a docker container")
 	flag.StringVar(&hyperkubeImage, "hyperkube-image", "", "Docker image with containerized kubelet")
+	flag.BoolVar(&genKubeletConfigFile, "generate-kubelet-config-file", false, "The test runner will generate a Kubelet config file containing test defaults instead of passing default flags to the Kubelet. "+
+		"If you use this test framework feature, ensure that the KubeletConfigFile feature gate is enabled.")
 }
 
 // RunKubelet starts kubelet and waits for termination signal. Once receives the
@@ -112,6 +124,12 @@ func (e *E2EServices) startKubelet() (*server, error) {
 		return nil, err
 	}
 
+	// KubeletConfiguration file path
+	kubeletConfigPath, err := kubeletConfigCWDPath()
+	if err != nil {
+		return nil, err
+	}
+
 	// Create pod manifest path
 	manifestPath, err := createPodManifestDirectory()
 	if err != nil {
@@ -122,6 +140,34 @@ func (e *E2EServices) startKubelet() (*server, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// set up the default kubeletconfiguration
+	kc, err := options.NewKubeletConfiguration()
+	if err != nil {
+		return nil, err
+	}
+	kc.CgroupRoot = "/"
+	kc.VolumeStatsAggPeriod = metav1.Duration{Duration: 10 * time.Second} // Aggregate volumes frequently so tests don't need to wait as long
+	kc.AllowPrivileged = true
+	kc.SerializeImagePulls = false
+	kc.PodManifestPath = manifestPath
+	kc.FileCheckFrequency = metav1.Duration{Duration: 10 * time.Second} // Check file frequently so tests won't wait too long
+	// Assign a fixed CIDR to the node because there is no node controller.
+	// Note: this MUST be in sync with with the IP in
+	// - cluster/gce/config-test.sh and
+	// - test/e2e_node/conformance/run_test.sh.
+	kc.PodCIDR = "10.100.0.0/24"
+	kc.EvictionPressureTransitionPeriod = metav1.Duration{Duration: 30 * time.Second}
+	kc.EvictionHard = map[string]string{
+		"memory.available":  "250Mi",
+		"nodefs.available":  "10%",
+		"nodefs.inodesFree": "5%",
+	}
+	kc.EvictionMinimumReclaim = map[string]string{
+		"nodefs.available":  "5%",
+		"nodefs.inodesFree": "5%",
+	}
+
 	var killCommand, restartCommand *exec.Cmd
 	var isSystemd bool
 	// Apply default kubelet flags.
@@ -151,12 +197,22 @@ func (e *E2EServices) startKubelet() (*server, error) {
 				"-v", "/var/lib/kubelet:/var/lib/kubelet:rw,rslave",
 				"-v", "/var/log:/var/log",
 				"-v", manifestPath+":"+manifestPath+":rw",
-				hyperkubeImage, "/hyperkube", "kubelet",
-				"--containerized",
 			)
+
+			// if we will generate a kubelet config file, we need to mount that path into the container too
+			if genKubeletConfigFile {
+				cmdArgs = append(cmdArgs, "-v", filepath.Dir(kubeletConfigPath)+":"+filepath.Dir(kubeletConfigPath)+":ro")
+			}
+
+			cmdArgs = append(cmdArgs, hyperkubeImage, "/hyperkube", "kubelet", "--containerized")
 			kubeconfigPath = "/etc/kubernetes/kubeconfig"
 		} else {
-			cmdArgs = append(cmdArgs, systemdRun, "--unit="+unitName, "--slice=runtime.slice", "--remain-after-exit", builder.GetKubeletServerBin())
+			cmdArgs = append(cmdArgs,
+				systemdRun,
+				"--unit="+unitName,
+				"--slice=runtime.slice",
+				"--remain-after-exit",
+				builder.GetKubeletServerBin())
 		}
 
 		killCommand = exec.Command("systemctl", "kill", unitName)
@@ -165,41 +221,18 @@ func (e *E2EServices) startKubelet() (*server, error) {
 			Name:              "kubelet.log",
 			JournalctlCommand: []string{"-u", unitName},
 		}
-		cmdArgs = append(cmdArgs,
-			"--kubelet-cgroups=/kubelet.slice",
-			"--cgroup-root=/",
-		)
+		kc.KubeletCgroups = "/kubelet.slice"
 	} else {
 		cmdArgs = append(cmdArgs, builder.GetKubeletServerBin())
-		cmdArgs = append(cmdArgs,
-			// TODO(random-liu): Get rid of this docker specific thing.
-			"--runtime-cgroups=/docker-daemon",
-			"--kubelet-cgroups=/kubelet",
-			"--cgroup-root=/",
-			"--system-cgroups=/system",
-		)
+		// TODO(random-liu): Get rid of this docker specific thing.
+		cmdArgs = append(cmdArgs, "--runtime-cgroups=/docker-daemon")
+		kc.KubeletCgroups = "/kubelet"
+		kc.SystemCgroups = "/system"
 	}
 	cmdArgs = append(cmdArgs,
 		"--kubeconfig", kubeconfigPath,
-		"--address", "0.0.0.0",
-		"--port", kubeletPort,
-		"--read-only-port", kubeletReadOnlyPort,
 		"--root-dir", KubeletRootDirectory,
-		"--volume-stats-agg-period", "10s", // Aggregate volumes frequently so tests don't need to wait as long
-		"--allow-privileged", "true",
-		"--serialize-image-pulls", "false",
-		"--pod-manifest-path", manifestPath,
-		"--file-check-frequency", "10s", // Check file frequently so tests won't wait too long
 		"--docker-disable-shared-pid=false",
-		// Assign a fixed CIDR to the node because there is no node controller.
-		//
-		// Note: this MUST be in sync with with the IP in
-		// - cluster/gce/config-test.sh and
-		// - test/e2e_node/conformance/run_test.sh.
-		"--pod-cidr", "10.100.0.0/24",
-		"--eviction-pressure-transition-period", "30s",
-		"--eviction-hard", "memory.available<250Mi,nodefs.available<10%,nodefs.inodesFree<5%", // The hard eviction thresholds.
-		"--eviction-minimum-reclaim", "nodefs.available=5%,nodefs.inodesFree=5%", // The minimum reclaimed resources after eviction.
 		"--v", LOG_VERBOSITY_LEVEL, "--logtostderr",
 	)
 
@@ -207,6 +240,7 @@ func (e *E2EServices) startKubelet() (*server, error) {
 	// by kubelet-flags.
 	if framework.TestContext.FeatureGates != "" {
 		cmdArgs = append(cmdArgs, "--feature-gates", framework.TestContext.FeatureGates)
+		utilflag.NewMapStringBool(&kc.FeatureGates).Set(framework.TestContext.FeatureGates)
 	}
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) {
@@ -239,6 +273,32 @@ func (e *E2EServices) startKubelet() (*server, error) {
 		cmdArgs = append(cmdArgs, "--hostname-override", framework.TestContext.NodeName)
 	}
 
+	// Write config file or flags, depending on whether --generate-kubelet-config-file was provided
+	if genKubeletConfigFile {
+		if err := writeKubeletConfigFile(kc, kubeletConfigPath); err != nil {
+			return nil, err
+		}
+		// add the flag to load config from a file
+		cmdArgs = append(cmdArgs, "--kubelet-config-file", kubeletConfigPath)
+	} else {
+		// generate command line flags from the default config, since --generated-kubelet-config-file was not provided
+		fs := pflag.NewFlagSet("kubelet", pflag.ExitOnError)
+		options.AddKubeletConfigFlags(fs, kc)
+		// Walking the whole object results in a gigantic command line, so we just manually construct the flags we care about.
+		cmdArgs = append(cmdArgs, "--cgroup-root", fs.Lookup("cgroup-root").Value.String())
+		cmdArgs = append(cmdArgs, "--volume-stats-agg-period", fs.Lookup("volume-stats-agg-period").Value.String())
+		cmdArgs = append(cmdArgs, "--allow-privileged", fs.Lookup("allow-privileged").Value.String())
+		cmdArgs = append(cmdArgs, "--serialize-image-pulls", fs.Lookup("serialize-image-pulls").Value.String())
+		cmdArgs = append(cmdArgs, "--pod-manifest-path", fs.Lookup("pod-manifest-path").Value.String())
+		cmdArgs = append(cmdArgs, "--file-check-frequency", fs.Lookup("file-check-frequency").Value.String())
+		cmdArgs = append(cmdArgs, "--pod-cidr", fs.Lookup("pod-cidr").Value.String())
+		cmdArgs = append(cmdArgs, "--eviction-pressure-transition-period", fs.Lookup("eviction-pressure-transition-period").Value.String())
+		cmdArgs = append(cmdArgs, "--eviction-hard", fs.Lookup("eviction-hard").Value.String())
+		cmdArgs = append(cmdArgs, "--eviction-minimum-reclaim", fs.Lookup("eviction-minimum-reclaim").Value.String())
+		cmdArgs = append(cmdArgs, "--kubelet-cgroups", fs.Lookup("kubelet-cgroups").Value.String())
+		cmdArgs = append(cmdArgs, "--system-cgroups", fs.Lookup("system-cgroups").Value.String())
+	}
+
 	// Override the default kubelet flags.
 	cmdArgs = append(cmdArgs, kubeletArgs...)
 
@@ -258,6 +318,52 @@ func (e *E2EServices) startKubelet() (*server, error) {
 		e.monitorParent,
 		true /* restartOnExit */)
 	return server, server.start()
+}
+
+// writeKubeletConfigFile writes the kubelet config file based on the args and returns the filename
+func writeKubeletConfigFile(internal *kubeletconfig.KubeletConfiguration, path string) error {
+	// extract the KubeletConfiguration and convert to versioned
+	versioned := &v1alpha1.KubeletConfiguration{}
+	scheme, _, err := scheme.NewSchemeAndCodecs()
+	if err != nil {
+		return err
+	}
+	if err := scheme.Convert(internal, versioned, nil); err != nil {
+		return err
+	}
+	// encode
+	encoder, err := newKubeletConfigJSONEncoder()
+	if err != nil {
+		return err
+	}
+	data, err := runtime.Encode(encoder, versioned)
+	if err != nil {
+		return err
+	}
+	// create the directory, if it does not exist
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	// write the file
+	if err := ioutil.WriteFile(path, data, 0755); err != nil {
+		return err
+	}
+	return nil
+}
+
+func newKubeletConfigJSONEncoder() (runtime.Encoder, error) {
+	_, kubeletCodecs, err := scheme.NewSchemeAndCodecs()
+	if err != nil {
+		return nil, err
+	}
+
+	mediaType := "application/json"
+	info, ok := runtime.SerializerInfoForMediaType(kubeletCodecs.SupportedMediaTypes(), mediaType)
+	if !ok {
+		return nil, fmt.Errorf("unsupported media type %q", mediaType)
+	}
+	return kubeletCodecs.EncoderForVersion(info.Serializer, v1alpha1.SchemeGroupVersion), nil
 }
 
 // createPodManifestDirectory creates pod manifest directory.
@@ -314,6 +420,15 @@ func kubeconfigCWDPath() (string, error) {
 		return "", fmt.Errorf("failed to get current working directory: %v", err)
 	}
 	return filepath.Join(cwd, "kubeconfig"), nil
+}
+
+func kubeletConfigCWDPath() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current working directory: %v", err)
+	}
+	// DO NOT name this file "kubelet" - you will overwrite the the kubelet binary and be very confused :)
+	return filepath.Join(cwd, "kubelet-config"), nil
 }
 
 // like createKubeconfig, but creates kubeconfig at current-working-directory/kubeconfig
