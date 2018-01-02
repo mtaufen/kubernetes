@@ -23,7 +23,9 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/spf13/pflag"
+
 	"k8s.io/apimachinery/pkg/util/wait"
+	flagutil "k8s.io/apiserver/pkg/util/flag"
 )
 
 const logFlushFreqFlagName = "log-flush-frequency"
@@ -36,8 +38,13 @@ func init() {
 }
 
 // AddFlags registers this package's flags on arbitrary FlagSets, such that they point to the
-// same value as the global flags.
-func AddFlags(fs *pflag.FlagSet) {
+// same value as the global flags. If fake is true, will register the flag names,
+// but point them at values with noop Set implementations.
+func AddFlags(fs *pflag.FlagSet, fake bool) {
+	if fake {
+		fs.Var(flagutil.NoOp{}, logFlushFreqFlagName, "")
+		return
+	}
 	fs.AddFlag(pflag.Lookup(logFlushFreqFlagName))
 }
 
