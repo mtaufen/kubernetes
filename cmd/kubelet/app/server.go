@@ -34,6 +34,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -74,11 +75,13 @@ import (
 	dockerremote "k8s.io/kubernetes/pkg/kubelet/dockershim/remote"
 	"k8s.io/kubernetes/pkg/kubelet/eviction"
 	evictionapi "k8s.io/kubernetes/pkg/kubelet/eviction/api"
-	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig"
+	dynamickubeletconfig "k8s.io/kubernetes/pkg/kubelet/kubeletconfig"
+	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/configfiles"
 	"k8s.io/kubernetes/pkg/kubelet/server"
 	"k8s.io/kubernetes/pkg/kubelet/server/streaming"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/util/configz"
+	utilfs "k8s.io/kubernetes/pkg/util/filesystem"
 	"k8s.io/kubernetes/pkg/util/flock"
 	kubeio "k8s.io/kubernetes/pkg/util/io"
 	"k8s.io/kubernetes/pkg/util/mount"
@@ -96,13 +99,6 @@ const (
 
 // NewKubeletCommand creates a *cobra.Command object with default parameters
 func NewKubeletCommand() *cobra.Command {
-	kubeletFlags := options.NewKubeletFlags()
-	kubeletConfiguration, err := options.NewKubeletConfiguration()
-	// programmer error
-	if err != nil {
-		glog.Fatal(err)
-	}
-
 	cmd := &cobra.Command{
 		Use: componentKubelet,
 		Long: `The kubelet is the primary "node agent" that runs on each
@@ -124,25 +120,70 @@ is checked every 20 seconds (also configurable with a flag).
 
 HTTP server: The kubelet can also listen for HTTP and respond to a simple API
 (underspec'd currently) to submit a new manifest.`,
+		// The Kubelet has special flag parsing requirements to enforce flag precedence rules,
+		// so we do all our parsing manually in Run, below. DisableFlagParsing=true gives us
+		// the full command line in args, without Cobra's interference.
+		DisableFlagParsing: true,
 		Run: func(cmd *cobra.Command, args []string) {
-			// short-circuit on verflag
-			verflag.PrintAndExitIfRequested()
+			fs := newFlagSetWithGlobals()
 
-			// TODO(mtaufen): won't need this this once dynamic config is GA
-			// set feature gates so we can check if dynamic config is enabled
-			if err := utilfeature.DefaultFeatureGate.SetFromMap(kubeletConfiguration.FeatureGates); err != nil {
+			// register kubelet flags
+			kubeletFlags := options.NewKubeletFlags()
+			kubeletFlags.AddFlags(fs)
+
+			// register kubelet config flags
+			kubeletConfig, err := options.NewKubeletConfiguration()
+			// programmer error
+			if err != nil {
 				glog.Fatal(err)
 			}
-			// validate the initial KubeletFlags, to make sure the dynamic-config-related flags aren't used unless the feature gate is on
+			options.AddKubeletConfigFlags(fs, kubeletConfig)
+
+			// parse flags
+			if err := fs.Parse(args); err != nil {
+				glog.Fatal(err)
+			}
+			// set feature gates from initial flags-based config
+			if err := utilfeature.DefaultFeatureGate.SetFromMap(kubeletConfig.FeatureGates); err != nil {
+				glog.Fatal(err)
+			}
+			// log flags
+			fs.VisitAll(func(flag *pflag.Flag) {
+				glog.V(2).Infof("FLAG: --%s=%q", flag.Name, flag.Value)
+			})
+			// validate the initial KubeletFlags
 			if err := options.ValidateKubeletFlags(kubeletFlags); err != nil {
 				glog.Fatal(err)
 			}
-			// bootstrap the kubelet config controller, app.BootstrapKubeletConfigController will check
-			// feature gates and only turn on relevant parts of the controller
-			kubeletConfig, kubeletConfigController, err := BootstrapKubeletConfigController(
-				kubeletConfiguration, kubeletFlags.KubeletConfigFile, kubeletFlags.DynamicConfigDir)
-			if err != nil {
-				glog.Fatal(err)
+
+			// short-circuit on verflag
+			verflag.PrintAndExitIfRequested()
+
+			if configFile := kubeletFlags.KubeletConfigFile.Value(); len(configFile) > 0 {
+				kubeletConfig, err = loadConfigFile(configFile)
+				if err != nil {
+					glog.Fatal(err)
+				}
+				// We must enforce flag precedence by re-parsing the command line into the new object.
+				// This is necessary to preserve backwards-compatibility across binary upgrades.
+				// See issue #56171 for more details.
+				if err := kubeletConfigFlagPrecedence(kubeletConfig, args); err != nil {
+					glog.Fatal(err)
+				}
+			}
+
+			var kubeletConfigController *dynamickubeletconfig.Controller
+			if dynamicConfigDir := kubeletFlags.DynamicConfigDir.Value(); len(dynamicConfigDir) > 0 {
+				kubeletConfig, kubeletConfigController, err = app.BootstrapKubeletConfigController(kubeletConfig, dynamicConfigDir)
+				if err != nil {
+					die(err)
+				}
+				// We must enforce flag precedence by re-parsing the command line into the new object.
+				// This is necessary to preserve backwards-compatibility across binary upgrades.
+				// See issue #56171 for more details.
+				if err := kubeletConfigFlagPrecedence(kubeletConfig, args); err != nil {
+					die(err)
+				}
 			}
 
 			// construct a KubeletServer from kubeletFlags and kubeletConfig
@@ -174,11 +215,86 @@ HTTP server: The kubelet can also listen for HTTP and respond to a simple API
 		},
 	}
 
+	// Flags registered here only produce help text. Flag parsing is handled privately in Run, above.
+	kubeletFlags := options.NewKubeletFlags()
+	kubeletConfig, err := options.NewKubeletConfiguration()
+	// programmer error
+	if err != nil {
+		glog.Fatal(err)
+	}
 	kubeletFlags.AddFlags(cmd.Flags())
-	options.AddKubeletConfigFlags(cmd.Flags(), kubeletConfiguration)
+	options.AddKubeletConfigFlags(cmd.Flags(), kubeletConfig)
 	options.AddGlobalFlags(cmd.Flags())
 
 	return cmd
+}
+
+// newFlagSetWithGlobals constructs a new pflag.FlagSet with global flags registered
+// on it.
+func newFlagSetWithGlobals() *pflag.FlagSet {
+	fs := pflag.NewFlagSet("", pflag.ExitOnError)
+	// set the normalize func, similar to k8s.io/apiserver/pkg/util/flag/flags.go:InitFlags
+	fs.SetNormalizeFunc(flag.WordSepNormalizeFunc)
+	// explicitly add flags from libs that register global flags
+	options.AddGlobalFlags(fs)
+	return fs
+}
+
+// newFakeFlagSet constructs a pflag.FlagSet with the same flags as fs, but where
+// all values have noop Set implementations
+func newFakeFlagSet(fs *pflag.FlagSet) *pflag.FlagSet {
+	ret := pflag.NewFlagSet("", pflag.ExitOnError)
+	ret.SetNormalizeFunc(fs.GetNormalizeFunc())
+	fs.VisitAll(func(f *pflag.Flag) {
+		ret.VarP(flag.NoOp{}, f.Name, f.Shorthand, f.Usage)
+	})
+	return ret
+}
+
+// kubeletConfigFlagPrecedence re-parses flags over the KubeletConfiguration object,
+// and ensures that feature gates accumulate across flag precedence enforcements.
+// We must enforce flag precedence by re-parsing the command line into the new object.
+// This is necessary to preserve backwards-compatibility across binary upgrades.
+// See issue #56171 for more details.
+func kubeletConfigFlagPrecedence(kc *kubeletconfiginternal.KubeletConfiguration, args []string) error {
+	// We set feature gates before and after layering the flags, to produce an additive
+	// result where flags that set feature gates override files/dynamic config in
+	// a piecewise manner.
+	if err := utilfeature.DefaultFeatureGate.SetFromMap(kc.FeatureGates); err != nil {
+		return err
+	}
+	// We use a throwaway kubeletFlags and a fake global flagset to avoid double-parses,
+	// as some Set implementations accumulate values from multiple flag invocations.
+	globalfs := newFlagSetWithGlobals()
+	newfs := newFakeFlagSet(globalfs)
+	// register throwaway KubeletFlags
+	tmp := options.NewKubeletFlags()
+	tmp.AddFlags(newfs)
+	// register new KubeletConfiguration
+	options.AddKubeletConfigFlags(newfs, kc)
+	// re-parse flags
+	if err := newfs.Parse(args); err != nil {
+		return err
+	}
+	return utilfeature.DefaultFeatureGate.SetFromMap(kc.FeatureGates)
+}
+
+func loadConfigFile(name string) (*kubeletconfiginternal.KubeletConfiguration, error) {
+	const errFmt = "failed to load Kubelet config file %s, error %v"
+	// compute absolute path based on current working dir
+	kubeletConfigFile, err := filepath.Abs(name)
+	if err != nil {
+		return nil, fmt.Errorf(errFmt, name, err)
+	}
+	loader, err := configfiles.NewFsLoader(utilfs.DefaultFs{}, kubeletConfigFile)
+	if err != nil {
+		return nil, fmt.Errorf(errFmt, name, err)
+	}
+	kc, err := loader.Load()
+	if err != nil {
+		return nil, fmt.Errorf(errFmt, name, err)
+	}
+	return kc, err
 }
 
 // UnsecuredDependencies returns a Dependencies suitable for being run, or an error if the server setup
@@ -448,9 +564,9 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.Dependencies) (err error) {
 		}
 	}
 
-	// Alpha Dynamic Configuration Implementation;
-	// if the kubelet config controller is available, inject the latest to start the config and status sync loops
-	if utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) && kubeDeps.KubeletConfigController != nil && !standaloneMode && !s.RunOnce {
+	// If the kubelet config controller is available, and dynamic config is enabled, start the config and status sync loops
+	if utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) && len(s.DynamicConfigDir.Value()) > 0 &&
+		kubeDeps.KubeletConfigController != nil && !standaloneMode && !s.RunOnce {
 		kubeDeps.KubeletConfigController.StartSync(kubeDeps.KubeClient, kubeDeps.EventClient, string(nodeName))
 	}
 
@@ -927,36 +1043,26 @@ func parseResourceList(m map[string]string) (v1.ResourceList, error) {
 
 // BootstrapKubeletConfigController constructs and bootstrap a configuration controller
 func BootstrapKubeletConfigController(defaultConfig *kubeletconfiginternal.KubeletConfiguration,
-	kubeletConfigFileFlag flag.StringFlag,
-	dynamicConfigDirFlag flag.StringFlag) (*kubeletconfiginternal.KubeletConfiguration, *kubeletconfig.Controller, error) {
-	var err error
-	// Alpha Dynamic Configuration Implementation; this section only loads config from disk, it does not contact the API server
-	// compute absolute paths based on current working dir
-	kubeletConfigFile := ""
-	if utilfeature.DefaultFeatureGate.Enabled(features.KubeletConfigFile) && kubeletConfigFileFlag.Provided() {
-		kubeletConfigFile, err = filepath.Abs(kubeletConfigFileFlag.Value())
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get absolute path for --config")
-		}
+	dynamicConfigDir string) (*kubeletconfiginternal.KubeletConfiguration, *dynamickubeletconfig.Controller, error) {
+	if !utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) {
+		return nil, nil, fmt.Errorf("failed to bootstrap Kubelet config controller, you must enable the DynamicKubeletConfig feature gate")
 	}
-	dynamicConfigDir := ""
-	if utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) && dynamicConfigDirFlag.Provided() {
-		dynamicConfigDir, err = filepath.Abs(dynamicConfigDirFlag.Value())
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get absolute path for --dynamic-config-dir")
-		}
+	if len(dynamicConfigDir) == 0 {
+		return nil, nil, fmt.Errorf("cannot bootstrap Kubelet config controller, --dynamic-config-dir was not provided")
 	}
 
-	// get the latest KubeletConfiguration checkpoint from disk, or load the kubelet config file or default config if no valid checkpoints exist
-	kubeletConfigController, err := kubeletconfig.NewController(defaultConfig, kubeletConfigFile, dynamicConfigDir)
+	// compute absolute path and bootstrap controller
+	dir, err := filepath.Abs(dynamicConfigDir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to construct controller, error: %v", err)
+		return nil, nil, fmt.Errorf("failed to get absolute path for --dynamic-config-dir=%s", dynamicConfigDir)
 	}
-	kubeletConfig, err := kubeletConfigController.Bootstrap()
+	// get the latest KubeletConfiguration checkpoint from disk, or return the default config if no valid checkpoints exist
+	c := dynamickubeletconfig.NewController(defaultConfig, dir)
+	kc, err := c.Bootstrap()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to determine a valid configuration, error: %v", err)
 	}
-	return kubeletConfig, kubeletConfigController, nil
+	return kc, c, nil
 }
 
 // RunDockershim only starts the dockershim in current process. This is only used for cri validate testing purpose
