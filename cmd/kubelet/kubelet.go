@@ -32,9 +32,10 @@ import (
 	"k8s.io/apiserver/pkg/util/logs"
 	"k8s.io/kubernetes/cmd/kubelet/app"
 	"k8s.io/kubernetes/cmd/kubelet/app/options"
+	"k8s.io/kubernetes/pkg/version/verflag"
+
 	_ "k8s.io/kubernetes/pkg/client/metrics/prometheus" // for client metric registration
 	_ "k8s.io/kubernetes/pkg/version/prometheus"        // for version metric registration
-	"k8s.io/kubernetes/pkg/version/verflag"
 )
 
 func parseFlagSet(fs *pflag.FlagSet, args []string) error {
@@ -52,12 +53,21 @@ func die(err error) {
 	os.Exit(1)
 }
 
-func main() {
+// newFlagSetWithGlobals constructs a new pflag.FlagSet with global flags registered
+// on it. Pass fake=true to get a FlagSet where global names are registered, but parsing
+// args into the FlagSet will not mutate any values.
+func newFlagSetWithGlobals(fake bool) *pflag.FlagSet {
 	fs := pflag.NewFlagSet(os.Args[0], pflag.ExitOnError)
 	// set the normalize func, similar to k8s.io/apiserver/pkg/util/flag/flags.go:InitFlags
 	fs.SetNormalizeFunc(flag.WordSepNormalizeFunc)
 	// explicitly add flags from libs that register global flags
-	options.AddGlobalFlags(fs)
+	options.AddGlobalFlags(fs, fake)
+	return fs
+}
+
+func main() {
+	cliArgs := os.Args[1:]
+	fs := newFlagSetWithGlobals(false)
 
 	// register kubelet flags
 	kubeletFlags := options.NewKubeletFlags()
@@ -71,7 +81,7 @@ func main() {
 	options.AddKubeletConfigFlags(fs, defaultConfig)
 
 	// parse flags
-	if err := parseFlagSet(fs, os.Args[1:]); err != nil {
+	if err := parseFlagSet(fs, cliArgs); err != nil {
 		die(err)
 	}
 
@@ -97,6 +107,28 @@ func main() {
 		defaultConfig, kubeletFlags.KubeletConfigFile, kubeletFlags.DynamicConfigDir)
 	if err != nil {
 		die(err)
+	}
+
+	// If the config returned from the controller is a different object than defaultConfig,
+	// we must enforce flag precedence by re-parsing the command line into the new object.
+	// This is necessary to preserve backwards-compatibility across binary upgrades.
+	// See issue #56171 for more details.
+	if kubeletConfig != defaultConfig {
+		// we use a throwaway kubeletFlags and a fake global flagset to avoid double-parses,
+		// as some Set implementations accumulate values from multiple flag invocations
+		fs := newFlagSetWithGlobals(true)
+
+		// register throwaway KubeletFlags
+		tmp := options.NewKubeletFlags()
+		tmp.AddFlags(fs)
+
+		// register new KubeletConfiguration
+		options.AddKubeletConfigFlags(fs, kubeletConfig)
+
+		// re-parse flags
+		if err := parseFlagSet(fs, cliArgs); err != nil {
+			die(err)
+		}
 	}
 
 	// construct a KubeletServer from kubeletFlags and kubeletConfig
