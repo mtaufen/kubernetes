@@ -12,7 +12,6 @@ go_library(
     deps = [
         "//pkg/version:go_default_library",
         "//vendor/github.com/spf13/pflag:go_default_library",
-        "//vendor/k8s.io/apiserver/pkg/util/flag:go_default_library",
     ],
 )
 

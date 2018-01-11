@@ -25,7 +25,6 @@ import (
 
 	flag "github.com/spf13/pflag"
 
-	flagutil "k8s.io/apiserver/pkg/util/flag"
 	"k8s.io/kubernetes/pkg/version"
 )
 
@@ -93,13 +92,8 @@ var (
 )
 
 // AddFlags registers this package's flags on arbitrary FlagSets, such that they point to the
-// same value as the global flags. If fake is true, will register the flag names,
-// but point them at values with noop Set implementations.
-func AddFlags(fs *flag.FlagSet, fake bool) {
-	if fake {
-		fs.Var(flagutil.NoOp{}, versionFlagName, "")
-		return
-	}
+// same value as the global flags.
+func AddFlags(fs *flag.FlagSet) {
 	fs.AddFlag(flag.Lookup(versionFlagName))
 }
 

@@ -22,5 +22,5 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func addCadvisorFlags(fs *pflag.FlagSet, fake bool) {
+func addCadvisorFlags(fs *pflag.FlagSet) {
 }
