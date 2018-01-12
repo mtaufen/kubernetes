@@ -866,18 +866,10 @@ func parseResourceList(m map[string]string) (v1.ResourceList, error) {
 
 // BootstrapKubeletConfigController constructs and bootstrap a configuration controller
 func BootstrapKubeletConfigController(defaultConfig *kubeletconfiginternal.KubeletConfiguration,
-	kubeletConfigFileFlag flag.StringFlag,
 	dynamicConfigDirFlag flag.StringFlag) (*kubeletconfiginternal.KubeletConfiguration, *kubeletconfig.Controller, error) {
 	var err error
 	// Alpha Dynamic Configuration Implementation; this section only loads config from disk, it does not contact the API server
 	// compute absolute paths based on current working dir
-	kubeletConfigFile := ""
-	if utilfeature.DefaultFeatureGate.Enabled(features.KubeletConfigFile) && kubeletConfigFileFlag.Provided() {
-		kubeletConfigFile, err = filepath.Abs(kubeletConfigFileFlag.Value())
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get absolute path for --config")
-		}
-	}
 	dynamicConfigDir := ""
 	if utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) && dynamicConfigDirFlag.Provided() {
 		dynamicConfigDir, err = filepath.Abs(dynamicConfigDirFlag.Value())
@@ -885,12 +877,8 @@ func BootstrapKubeletConfigController(defaultConfig *kubeletconfiginternal.Kubel
 			return nil, nil, fmt.Errorf("failed to get absolute path for --dynamic-config-dir")
 		}
 	}
-
-	// get the latest KubeletConfiguration checkpoint from disk, or load the kubelet config file or default config if no valid checkpoints exist
-	kubeletConfigController, err := kubeletconfig.NewController(defaultConfig, kubeletConfigFile, dynamicConfigDir)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to construct controller, error: %v", err)
-	}
+	// get the latest KubeletConfiguration checkpoint from disk, or load the default config if no valid checkpoints exist
+	kubeletConfigController := kubeletconfig.NewController(defaultConfig, dynamicConfigDir)
 	kubeletConfig, err := kubeletConfigController.Bootstrap()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to determine a valid configuration, error: %v", err)

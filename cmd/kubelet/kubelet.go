@@ -23,6 +23,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/golang/glog"
 	"github.com/spf13/pflag"
@@ -33,6 +34,9 @@ import (
 	"k8s.io/apiserver/pkg/util/logs"
 	"k8s.io/kubernetes/cmd/kubelet/app"
 	"k8s.io/kubernetes/cmd/kubelet/app/options"
+	"k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig"
+	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/configfiles"
+	utilfs "k8s.io/kubernetes/pkg/util/filesystem"
 	"k8s.io/kubernetes/pkg/version/verflag"
 
 	_ "k8s.io/kubernetes/pkg/client/metrics/prometheus" // for client metric registration
@@ -66,6 +70,29 @@ func newFakeFlagSet(fs *pflag.FlagSet) *pflag.FlagSet {
 	return ret
 }
 
+// flagPrecedence re-parses flags over the KubeletConfiguration object
+// We must enforce flag precedence by re-parsing the command line into the new object.
+// This is necessary to preserve backwards-compatibility across binary upgrades.
+// See issue #56171 for more details.
+func flagPrecedence(kc *kubeletconfig.KubeletConfiguration, args []string) {
+	// We use a throwaway kubeletFlags and a fake global flagset to avoid double-parses,
+	// as some Set implementations accumulate values from multiple flag invocations.
+	globalfs := newFlagSetWithGlobals()
+	newfs := newFakeFlagSet(globalfs)
+
+	// register throwaway KubeletFlags
+	tmp := options.NewKubeletFlags()
+	tmp.AddFlags(newfs)
+
+	// register new KubeletConfiguration
+	options.AddKubeletConfigFlags(newfs, kc)
+
+	// re-parse flags
+	if err := newfs.Parse(args); err != nil {
+		die(err)
+	}
+}
+
 func main() {
 	cliArgs := os.Args[1:]
 	fs := newFlagSetWithGlobals()
@@ -97,6 +124,29 @@ func main() {
 	// short-circuit on verflag
 	verflag.PrintAndExitIfRequested()
 
+	// load Kubelet config file if necessary
+	if kubeletFlags.KubeletConfigFile.Provided() {
+		// compute absolute paths based on current working dir
+		kubeletConfigFile, err := filepath.Abs(kubeletFlags.KubeletConfigFile.Value())
+		if err != nil {
+			die(fmt.Errorf("failed to get absolute path for --config"))
+		}
+		loader, err := configfiles.NewFsLoader(utilfs.DefaultFs{}, kubeletConfigFile)
+		if err != nil {
+			die(err)
+		}
+		fileConfig, err := loader.Load()
+		if err != nil {
+			die(err)
+		}
+		// We must enforce flag precedence by re-parsing the command line into the new object.
+		// This is necessary to preserve backwards-compatibility across binary upgrades.
+		// See issue #56171 for more details.
+		flagPrecedence(fileConfig, cliArgs)
+		// replace with file-based config
+		defaultConfig = fileConfig
+	}
+
 	// TODO(mtaufen): won't need this this once dynamic config is GA
 	// set feature gates so we can check if dynamic config is enabled
 	if err := utilfeature.DefaultFeatureGate.SetFromMap(defaultConfig.FeatureGates); err != nil {
@@ -109,7 +159,7 @@ func main() {
 	// bootstrap the kubelet config controller, app.BootstrapKubeletConfigController will check
 	// feature gates and only turn on relevant parts of the controller
 	kubeletConfig, kubeletConfigController, err := app.BootstrapKubeletConfigController(
-		defaultConfig, kubeletFlags.KubeletConfigFile, kubeletFlags.DynamicConfigDir)
+		defaultConfig, kubeletFlags.DynamicConfigDir)
 	if err != nil {
 		die(err)
 	}
@@ -117,22 +167,7 @@ func main() {
 	// We must enforce flag precedence by re-parsing the command line into the new object.
 	// This is necessary to preserve backwards-compatibility across binary upgrades.
 	// See issue #56171 for more details.
-	// We use a throwaway kubeletFlags and a fake global flagset to avoid double-parses,
-	// as some Set implementations accumulate values from multiple flag invocations.
-	globalfs := newFlagSetWithGlobals()
-	newfs := newFakeFlagSet(globalfs)
-
-	// register throwaway KubeletFlags
-	tmp := options.NewKubeletFlags()
-	tmp.AddFlags(newfs)
-
-	// register new KubeletConfiguration
-	options.AddKubeletConfigFlags(newfs, kubeletConfig)
-
-	// re-parse flags
-	if err := newfs.Parse(cliArgs); err != nil {
-		die(err)
-	}
+	flagPrecedence(kubeletConfig, cliArgs)
 
 	// construct a KubeletServer from kubeletFlags and kubeletConfig
 	kubeletServer := &options.KubeletServer{

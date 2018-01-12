@@ -267,8 +267,8 @@ func (e *E2EServices) startKubelet() (*server, error) {
 	// Apply test framework feature gates by default. This could also be overridden
 	// by kubelet-flags.
 	if framework.TestContext.FeatureGates != "" {
-		cmdArgs = append(cmdArgs, "--feature-gates", framework.TestContext.FeatureGates)
 		utilflag.NewMapStringBool(&kc.FeatureGates).Set(framework.TestContext.FeatureGates)
+		kubeletConfigFlags = append(kubeletConfigFlags, "feature-gates")
 	}
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) {
