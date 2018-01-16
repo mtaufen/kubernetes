@@ -132,10 +132,6 @@ func main() {
 	fs.VisitAll(func(flag *pflag.Flag) {
 		glog.V(2).Infof("FLAG: --%s=%q", flag.Name, flag.Value)
 	})
-	// validate the initial KubeletFlags
-	if err := options.ValidateKubeletFlags(kubeletFlags); err != nil {
-		die(err)
-	}
 
 	// initialize logging and defer flush
 	logs.InitLogs()

@@ -396,7 +396,7 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.Dependencies) (err error) {
 
 	// Alpha Dynamic Configuration Implementation;
 	// if the kubelet config controller is available, inject the latest to start the config and status sync loops
-	if utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) && kubeDeps.KubeletConfigController != nil && !standaloneMode && !s.RunOnce {
+	if kubeDeps.KubeletConfigController != nil && !standaloneMode && !s.RunOnce {
 		kubeDeps.KubeletConfigController.StartSync(kubeDeps.KubeClient, kubeDeps.EventClient, string(nodeName))
 	}
 
@@ -871,7 +871,7 @@ func BootstrapKubeletConfigController(defaultConfig *kubeletconfiginternal.Kubel
 	// Alpha Dynamic Configuration Implementation; this section only loads config from disk, it does not contact the API server
 	// compute absolute paths based on current working dir
 	dynamicConfigDir := ""
-	if utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) && dynamicConfigDirFlag.Provided() {
+	if dynamicConfigDirFlag.Provided() {
 		dynamicConfigDir, err = filepath.Abs(dynamicConfigDirFlag.Value())
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get absolute path for --dynamic-config-dir")

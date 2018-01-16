@@ -120,6 +120,12 @@ func tempSetCurrentKubeletConfig(f *framework.Framework, updateFunction func(ini
 }
 
 // Returns true if kubeletConfig is enabled, false otherwise or if we cannot determine if it is.
+// NOTE(mtaufen): We can assume that if the node e2e test framework failed to set
+// DynamicKubeletConfig=true on the Kubelet, it also failed to do so on the API server,
+// because it sets the same feature gates on all cluster components.
+// This is a bit of a hack, but in most cases it catches the issue early.
+// This may not catch the issue ASAP if someone passed DynamicKubeletConfig=true in the kubelet args
+// instead of the test framework args, in which case an error will be returned later, during the test.
 func isKubeletConfigEnabled(f *framework.Framework) (bool, error) {
 	cfgz, err := getCurrentKubeletConfig()
 	if err != nil {

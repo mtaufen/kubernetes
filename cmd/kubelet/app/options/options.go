@@ -18,7 +18,6 @@ limitations under the License.
 package options
 
 import (
-	"fmt"
 	_ "net/http/pprof"
 	"path/filepath"
 	"runtime"
@@ -31,7 +30,6 @@ import (
 	"k8s.io/apiserver/pkg/util/flag"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
 	"k8s.io/kubernetes/pkg/apis/core"
-	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig"
 	kubeletscheme "k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/scheme"
 	"k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/v1alpha1"
@@ -99,13 +97,11 @@ type KubeletFlags struct {
 	// The Kubelet will create this directory if it does not already exist.
 	// The path may be absolute or relative; relative paths are under the Kubelet's current working directory.
 	// Providing this flag enables dynamic kubelet configuration.
-	// To use this flag, the DynamicKubeletConfig feature gate must be enabled.
 	DynamicConfigDir flag.StringFlag
 
 	// The Kubelet will load its initial configuration from this file.
 	// The path may be absolute or relative; relative paths are under the Kubelet's current working directory.
 	// Omit this flag to use the combination of built-in default configuration values and flags.
-	// To use this flag, the KubeletConfigFile feature gate must be enabled.
 	KubeletConfigFile flag.StringFlag
 
 	// registerNode enables automatic registration with the apiserver.
@@ -241,18 +237,6 @@ func NewKubeletFlags() *KubeletFlags {
 	}
 }
 
-func ValidateKubeletFlags(f *KubeletFlags) error {
-	// ensure that nobody sets DynamicConfigDir if the dynamic config feature gate is turned off
-	if f.DynamicConfigDir.Provided() && !utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) {
-		return fmt.Errorf("the DynamicKubeletConfig feature gate must be enabled in order to use the --dynamic-config-dir flag")
-	}
-	// ensure that nobody sets KubeletConfigFile if the KubeletConfigFile feature gate is turned off
-	if f.KubeletConfigFile.Provided() && !utilfeature.DefaultFeatureGate.Enabled(features.KubeletConfigFile) {
-		return fmt.Errorf("the KubeletConfigFile feature gate must be enabled in order to use the --config flag")
-	}
-	return nil
-}
-
 // NewKubeletConfiguration will create a new KubeletConfiguration with default values
 func NewKubeletConfiguration() (*kubeletconfig.KubeletConfiguration, error) {
 	scheme, _, err := kubeletscheme.NewSchemeAndCodecs()
@@ -291,9 +275,6 @@ func NewKubeletServer() (*KubeletServer, error) {
 func ValidateKubeletServer(s *KubeletServer) error {
 	// please add any KubeletConfiguration validation to the kubeletconfigvalidation.ValidateKubeletConfiguration function
 	if err := kubeletconfigvalidation.ValidateKubeletConfiguration(&s.KubeletConfiguration); err != nil {
-		return err
-	}
-	if err := ValidateKubeletFlags(&s.KubeletFlags); err != nil {
 		return err
 	}
 	return nil
@@ -341,14 +322,13 @@ func (f *KubeletFlags) AddFlags(fs *pflag.FlagSet) {
 
 	fs.StringVar(&f.RootDirectory, "root-dir", f.RootDirectory, "Directory path for managing kubelet files (volume mounts,etc).")
 
-	fs.Var(&f.DynamicConfigDir, "dynamic-config-dir", "The Kubelet will use this directory for checkpointing downloaded configurations and tracking configuration health. The Kubelet will create this directory if it does not already exist. The path may be absolute or relative; relative paths start at the Kubelet's current working directory. Providing this flag enables dynamic Kubelet configuration. Presently, you must also enable the DynamicKubeletConfig feature gate to pass this flag.")
-	fs.Var(&f.KubeletConfigFile, "config", "The Kubelet will load its initial configuration from this file. The path may be absolute or relative; relative paths start at the Kubelet's current working directory. Omit this flag to use the built-in default configuration values. You must also enable the KubeletConfigFile feature gate to pass this flag.")
-
 	fs.BoolVar(&f.RegisterNode, "register-node", f.RegisterNode, "Register the node with the apiserver. If --kubeconfig is not provided, this flag is irrelevant, as the Kubelet won't have an apiserver to register with. Default=true.")
 	fs.Var(utiltaints.NewTaintsVar(&f.RegisterWithTaints), "register-with-taints", "Register the node with the given list of taints (comma separated \"<key>=<value>:<effect>\"). No-op if register-node is false.")
 	fs.BoolVar(&f.Containerized, "containerized", f.Containerized, "Running kubelet in a container.")
 
 	// EXPERIMENTAL FLAGS
+	fs.Var(&f.KubeletConfigFile, "config", "<Warning: Alpha feature> The Kubelet will load its initial configuration from this file. The path may be absolute or relative; relative paths start at the Kubelet's current working directory. Omit this flag to use the built-in default configuration values.")
+	fs.Var(&f.DynamicConfigDir, "dynamic-config-dir", "<Warning: Alpha feature> The Kubelet will use this directory for checkpointing downloaded configurations and tracking configuration health. The Kubelet will create this directory if it does not already exist. The path may be absolute or relative; relative paths start at the Kubelet's current working directory. Providing this flag enables dynamic Kubelet configuration.")
 	fs.StringVar(&f.ExperimentalMounterPath, "experimental-mounter-path", f.ExperimentalMounterPath, "[Experimental] Path of mounter binary. Leave empty to use the default mount.")
 	fs.StringSliceVar(&f.AllowedUnsafeSysctls, "experimental-allowed-unsafe-sysctls", f.AllowedUnsafeSysctls, "Comma-separated whitelist of unsafe sysctls or unsafe sysctl patterns (ending in *). Use these at your own risk.")
 	fs.BoolVar(&f.ExperimentalKernelMemcgNotification, "experimental-kernel-memcg-notification", f.ExperimentalKernelMemcgNotification, "If enabled, the kubelet will integrate with the kernel memcg notification to determine if memory eviction thresholds are crossed rather than polling.")
