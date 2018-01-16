@@ -23,6 +23,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/golang/glog"
 	"github.com/spf13/pflag"
@@ -33,6 +34,9 @@ import (
 	"k8s.io/apiserver/pkg/util/logs"
 	"k8s.io/kubernetes/cmd/kubelet/app"
 	"k8s.io/kubernetes/cmd/kubelet/app/options"
+	"k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig"
+	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/configfiles"
+	utilfs "k8s.io/kubernetes/pkg/util/filesystem"
 	"k8s.io/kubernetes/pkg/version/verflag"
 
 	_ "k8s.io/kubernetes/pkg/client/metrics/prometheus" // for client metric registration
@@ -66,6 +70,41 @@ func newFakeFlagSet(fs *pflag.FlagSet) *pflag.FlagSet {
 	return ret
 }
 
+// kubeletConfigFlagPrecedence re-parses flags over the KubeletConfiguration object,
+// and ensures that feature gates accumulate across flag precedence enforcements.
+// We must enforce flag precedence by re-parsing the command line into the new object.
+// This is necessary to preserve backwards-compatibility across binary upgrades.
+// See issue #56171 for more details.
+func kubeletConfigFlagPrecedence(kc *kubeletconfig.KubeletConfiguration, args []string) {
+	// We set feature gates before and after layering the flags, to produce an additive
+	// result where flags that set feature gates override files/dynamic config in
+	// a piecewise manner.
+	setFeatureGates := func() {
+		if err := utilfeature.DefaultFeatureGate.SetFromMap(kc.FeatureGates); err != nil {
+			die(err)
+		}
+	}
+	setFeatureGates()
+	defer setFeatureGates()
+
+	// We use a throwaway kubeletFlags and a fake global flagset to avoid double-parses,
+	// as some Set implementations accumulate values from multiple flag invocations.
+	globalfs := newFlagSetWithGlobals()
+	newfs := newFakeFlagSet(globalfs)
+
+	// register throwaway KubeletFlags
+	tmp := options.NewKubeletFlags()
+	tmp.AddFlags(newfs)
+
+	// register new KubeletConfiguration
+	options.AddKubeletConfigFlags(newfs, kc)
+
+	// re-parse flags
+	if err := newfs.Parse(args); err != nil {
+		die(err)
+	}
+}
+
 func main() {
 	cliArgs := os.Args[1:]
 	fs := newFlagSetWithGlobals()
@@ -85,10 +124,18 @@ func main() {
 	if err := fs.Parse(cliArgs); err != nil {
 		die(err)
 	}
+	// set feature gates from initial flags-based config
+	if err := utilfeature.DefaultFeatureGate.SetFromMap(defaultConfig.FeatureGates); err != nil {
+		die(err)
+	}
 	// log flags
 	fs.VisitAll(func(flag *pflag.Flag) {
 		glog.V(2).Infof("FLAG: --%s=%q", flag.Name, flag.Value)
 	})
+	// validate the initial KubeletFlags
+	if err := options.ValidateKubeletFlags(kubeletFlags); err != nil {
+		die(err)
+	}
 
 	// initialize logging and defer flush
 	logs.InitLogs()
@@ -97,19 +144,32 @@ func main() {
 	// short-circuit on verflag
 	verflag.PrintAndExitIfRequested()
 
-	// TODO(mtaufen): won't need this this once dynamic config is GA
-	// set feature gates so we can check if dynamic config is enabled
-	if err := utilfeature.DefaultFeatureGate.SetFromMap(defaultConfig.FeatureGates); err != nil {
-		die(err)
+	// load Kubelet config file if necessary
+	if kubeletFlags.KubeletConfigFile.Provided() {
+		// compute absolute path based on current working dir
+		kubeletConfigFile, err := filepath.Abs(kubeletFlags.KubeletConfigFile.Value())
+		if err != nil {
+			die(fmt.Errorf("failed to get absolute path for --config"))
+		}
+		loader, err := configfiles.NewFsLoader(utilfs.DefaultFs{}, kubeletConfigFile)
+		if err != nil {
+			die(err)
+		}
+		fileConfig, err := loader.Load()
+		if err != nil {
+			die(err)
+		}
+		// We must enforce flag precedence by re-parsing the command line into the new object.
+		// This is necessary to preserve backwards-compatibility across binary upgrades.
+		// See issue #56171 for more details.
+		kubeletConfigFlagPrecedence(fileConfig, cliArgs)
+		// replace with file-based config
+		defaultConfig = fileConfig
 	}
-	// validate the initial KubeletFlags, to make sure the dynamic-config-related flags aren't used unless the feature gate is on
-	if err := options.ValidateKubeletFlags(kubeletFlags); err != nil {
-		die(err)
-	}
+
 	// bootstrap the kubelet config controller, app.BootstrapKubeletConfigController will check
 	// feature gates and only turn on relevant parts of the controller
-	kubeletConfig, kubeletConfigController, err := app.BootstrapKubeletConfigController(
-		defaultConfig, kubeletFlags.KubeletConfigFile, kubeletFlags.DynamicConfigDir)
+	kubeletConfig, kubeletConfigController, err := app.BootstrapKubeletConfigController(defaultConfig, kubeletFlags.DynamicConfigDir)
 	if err != nil {
 		die(err)
 	}
@@ -117,22 +177,7 @@ func main() {
 	// We must enforce flag precedence by re-parsing the command line into the new object.
 	// This is necessary to preserve backwards-compatibility across binary upgrades.
 	// See issue #56171 for more details.
-	// We use a throwaway kubeletFlags and a fake global flagset to avoid double-parses,
-	// as some Set implementations accumulate values from multiple flag invocations.
-	globalfs := newFlagSetWithGlobals()
-	newfs := newFakeFlagSet(globalfs)
-
-	// register throwaway KubeletFlags
-	tmp := options.NewKubeletFlags()
-	tmp.AddFlags(newfs)
-
-	// register new KubeletConfiguration
-	options.AddKubeletConfigFlags(newfs, kubeletConfig)
-
-	// re-parse flags
-	if err := newfs.Parse(cliArgs); err != nil {
-		die(err)
-	}
+	kubeletConfigFlagPrecedence(kubeletConfig, cliArgs)
 
 	// construct a KubeletServer from kubeletFlags and kubeletConfig
 	kubeletServer := &options.KubeletServer{

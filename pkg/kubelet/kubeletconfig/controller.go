@@ -31,7 +31,6 @@ import (
 
 	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/checkpoint"
 	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/checkpoint/store"
-	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/configfiles"
 	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/status"
 	utillog "k8s.io/kubernetes/pkg/kubelet/kubeletconfig/util/log"
 	utilpanic "k8s.io/kubernetes/pkg/kubelet/kubeletconfig/util/panic"
@@ -56,9 +55,6 @@ type Controller struct {
 	// defaultConfig is the configuration to use if no initConfig is provided
 	defaultConfig *kubeletconfig.KubeletConfiguration
 
-	// fileLoader is for loading the Kubelet's local config files from disk
-	fileLoader configfiles.Loader
-
 	// pendingConfigSource; write to this channel to indicate that the config source needs to be synced from the API server
 	pendingConfigSource chan bool
 
@@ -73,23 +69,9 @@ type Controller struct {
 }
 
 // NewController constructs a new Controller object and returns it. Directory paths must be absolute.
-// If the `kubeletConfigFile` is an empty string, skips trying to load the kubelet config file.
 // If the `dynamicConfigDir` is an empty string, skips trying to load checkpoints or download new config,
 // but will still sync the ConfigOK condition if you call StartSync with a non-nil client.
-func NewController(defaultConfig *kubeletconfig.KubeletConfiguration,
-	kubeletConfigFile string,
-	dynamicConfigDir string) (*Controller, error) {
-	var err error
-
-	fs := utilfs.DefaultFs{}
-
-	var fileLoader configfiles.Loader
-	if len(kubeletConfigFile) > 0 {
-		fileLoader, err = configfiles.NewFsLoader(fs, kubeletConfigFile)
-		if err != nil {
-			return nil, err
-		}
-	}
+func NewController(defaultConfig *kubeletconfig.KubeletConfiguration, dynamicConfigDir string) *Controller {
 	dynamicConfig := false
 	if len(dynamicConfigDir) > 0 {
 		dynamicConfig = true
@@ -101,9 +83,8 @@ func NewController(defaultConfig *kubeletconfig.KubeletConfiguration,
 		// channels must have capacity at least 1, since we signal with non-blocking writes
 		pendingConfigSource: make(chan bool, 1),
 		configOK:            status.NewConfigOKCondition(),
-		checkpointStore:     store.NewFsStore(fs, filepath.Join(dynamicConfigDir, checkpointsDir)),
-		fileLoader:          fileLoader,
-	}, nil
+		checkpointStore:     store.NewFsStore(utilfs.DefaultFs{}, filepath.Join(dynamicConfigDir, checkpointsDir)),
+	}
 }
 
 // Bootstrap attempts to return a valid KubeletConfiguration based on the configuration of the Controller,
@@ -111,11 +92,12 @@ func NewController(defaultConfig *kubeletconfig.KubeletConfiguration,
 func (cc *Controller) Bootstrap() (*kubeletconfig.KubeletConfiguration, error) {
 	utillog.Infof("starting controller")
 
-	// Load and validate the local config (defaults + flags, file)
-	local, err := cc.loadLocalConfig()
-	if err != nil {
-		return nil, err
-	} // Assert: the default and file configs are both valid
+	// ALWAYS validate the local config. This makes incorrectly provisioned nodes an error.
+	// It must be valid because it is the default last-known-good config.
+	utillog.Infof("validating local config")
+	if err := validation.ValidateKubeletConfiguration(cc.defaultConfig); err != nil {
+		return nil, fmt.Errorf("local config failed validation, error: %v", err)
+	}
 
 	// if dynamic config is disabled, we just stop here
 	if !cc.dynamicConfig {
@@ -124,7 +106,7 @@ func (cc *Controller) Bootstrap() (*kubeletconfig.KubeletConfiguration, error) {
 		// This is because the feature gate covers dynamic config AND config status reporting, while the
 		// --dynamic-config-dir flag just covers dynamic config.
 		cc.configOK.Set(status.NotDynamicLocalMessage, status.NotDynamicLocalReason, apiv1.ConditionTrue)
-		return local, nil
+		return cc.defaultConfig, nil
 	} // Assert: dynamic config is enabled
 
 	// ensure the filesystem is initialized
@@ -132,7 +114,7 @@ func (cc *Controller) Bootstrap() (*kubeletconfig.KubeletConfiguration, error) {
 		return nil, err
 	}
 
-	assigned, curSource, reason, err := cc.loadAssignedConfig(local)
+	assigned, curSource, reason, err := cc.loadAssignedConfig(cc.defaultConfig)
 	if err == nil {
 		// set the status to indicate we will use the assigned config
 		if curSource != nil {
@@ -159,7 +141,7 @@ func (cc *Controller) Bootstrap() (*kubeletconfig.KubeletConfiguration, error) {
 	utillog.Errorf(fmt.Sprintf("%s, error: %v", reason, err))
 
 	// load the last-known-good config
-	lkg, lkgSource, err := cc.loadLastKnownGoodConfig(local)
+	lkg, lkgSource, err := cc.loadLastKnownGoodConfig(cc.defaultConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -219,33 +201,6 @@ func (cc *Controller) StartSync(client clientset.Interface, eventClient v1core.E
 	} else {
 		utillog.Infof("dynamic config not enabled, will not sync to remote config")
 	}
-}
-
-// loadLocalConfig returns the local config: either the defaults provided to the controller or
-// a local config file, if the Kubelet is configured to use the local file
-func (cc *Controller) loadLocalConfig() (*kubeletconfig.KubeletConfiguration, error) {
-	// ALWAYS validate the local configs. This makes incorrectly provisioned nodes an error.
-	// These must be valid because they are the default last-known-good configs.
-	utillog.Infof("validating combination of defaults and flags")
-	if err := validation.ValidateKubeletConfiguration(cc.defaultConfig); err != nil {
-		return nil, fmt.Errorf("combination of defaults and flags failed validation, error: %v", err)
-	}
-	// only attempt to load and validate the Kubelet config file if the user provided a path
-	if cc.fileLoader != nil {
-		utillog.Infof("loading Kubelet config file")
-		kc, err := cc.fileLoader.Load()
-		if err != nil {
-			return nil, err
-		}
-		// validate the Kubelet config file config
-		utillog.Infof("validating Kubelet config file")
-		if err := validation.ValidateKubeletConfiguration(kc); err != nil {
-			return nil, fmt.Errorf("failed to validate the Kubelet config file, error: %v", err)
-		}
-		return kc, nil
-	}
-	// if no Kubelet config file config, just return the default
-	return cc.defaultConfig, nil
 }
 
 // loadAssignedConfig loads the Kubelet's currently assigned config,
