@@ -50,8 +50,10 @@ func TestCreateBaseKubeletConfiguration(t *testing.T) {
 			},
 			Spec: v1.NodeSpec{
 				ConfigSource: &v1.NodeConfigSource{
-					ConfigMapRef: &v1.ObjectReference{
-						UID: "",
+					ConfigMap: &v1.ConfigMapNodeConfigSource{
+						ObjectReference: v1.ObjectReference{
+							UID: "",
+						},
 					},
 				},
 			},
@@ -94,8 +96,10 @@ func TestUpdateNodeWithConfigMap(t *testing.T) {
 			},
 			Spec: v1.NodeSpec{
 				ConfigSource: &v1.NodeConfigSource{
-					ConfigMapRef: &v1.ObjectReference{
-						UID: "",
+					ConfigMap: &v1.ConfigMapNodeConfigSource{
+						ObjectReference: v1.ObjectReference{
+							UID: "",
+						},
 					},
 				},
 			},

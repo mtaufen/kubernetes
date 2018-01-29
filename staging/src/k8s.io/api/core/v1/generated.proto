@@ -439,6 +439,14 @@ message ConfigMapList {
   repeated ConfigMap items = 2;
 }
 
+message ConfigMapNodeConfigSource {
+  // ObjectReference points to the ConfigMap. Name, Namespace, and UID must be specified.
+  optional ObjectReference objectReference = 2;
+
+  // KubeletConfigKey defines which key of the referenced ConfigMap corresponds to the KubeletConfiguration structure
+  optional string kubeletConfigKey = 1;
+}
+
 // Adapts a ConfigMap into a projected volume.
 // 
 // The contents of the target ConfigMap's Data field will be presented in a
@@ -1815,7 +1823,8 @@ message NodeCondition {
 
 // NodeConfigSource specifies a source of node configuration. Exactly one subfield (excluding metadata) must be non-nil.
 message NodeConfigSource {
-  optional ObjectReference configMapRef = 1;
+  // ConfigMap is a reference to a Node's ConfigMap
+  optional ConfigMapNodeConfigSource configMap = 2;
 }
 
 // NodeDaemonEndpoints lists ports opened by daemons running on the Node.

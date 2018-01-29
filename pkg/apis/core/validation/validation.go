@@ -4135,11 +4135,23 @@ func ValidateNodeUpdate(node, oldNode *core.Node) field.ErrorList {
 func validateNodeConfigSource(source *core.NodeConfigSource, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	count := int(0)
-	if ref := source.ConfigMapRef; ref != nil {
+	if ref := source.ConfigMap; ref != nil {
 		count++
 		// name, namespace, and UID must all be non-empty for ConfigMapRef
-		if ref.Name == "" || ref.Namespace == "" || string(ref.UID) == "" {
-			allErrs = append(allErrs, field.Invalid(fldPath.Child("configMapRef"), ref, "name, namespace, and UID must all be non-empty"))
+		if ref.Name == "" || ref.Namespace == "" || string(ref.UID) == "" || ref.KubeletConfigKey == "" {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("configMap"), ref, "name, namespace, UID, and KubeletConfigKey must all be non-empty"))
+		}
+		// validate target configmap name
+		for _, msg := range ValidateNameFunc(ValidateConfigMapName)(ref.Name, false) {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("configMap").Child("name"), ref.Name, msg))
+		}
+		// validate target configmap namespace
+		for _, msg := range ValidateNameFunc(ValidateNamespaceName)(ref.Namespace, false) {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("configMap").Child("namespace"), ref.Namespace, msg))
+		}
+		// validate KubeletConfigKey against rules for ConfigMap key names
+		for _, msg := range validation.IsConfigMapKey(ref.KubeletConfigKey) {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("configMap").Child("kubeletConfigKey"), ref.KubeletConfigKey, msg))
 		}
 	}
 	// add more subfields here in the future as they are added to NodeConfigSource
