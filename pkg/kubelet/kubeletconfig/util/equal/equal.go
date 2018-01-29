@@ -27,22 +27,26 @@ func ConfigSourceEq(a, b *apiv1.NodeConfigSource) bool {
 		return false
 	}
 	// check equality of config source subifelds
-	if a.ConfigMapRef != b.ConfigMapRef {
-		return ObjectRefEq(a.ConfigMapRef, b.ConfigMapRef)
+	if a.ConfigMap != b.ConfigMap {
+		return ConfigMapNodeConfigSourceEq(a.ConfigMap, b.ConfigMap)
 	}
 	// all internal subfields of the config source are equal
 	return true
 }
 
-// ObjectRefEq returns true if the two object references are semantically equivalent in the context of dynamic config
-func ObjectRefEq(a, b *apiv1.ObjectReference) bool {
+// ConfigMapNodeConfigSourceEq returns true if the two config map references are semantically equivalent in the context of dynamic config
+func ConfigMapNodeConfigSourceEq(a, b *apiv1.ConfigMapNodeConfigSource) bool {
 	if a == b {
 		return true
 	} else if a == nil || b == nil {
 		// not equal, and one is nil
 		return false
 	}
-	return a.UID == b.UID && a.Namespace == b.Namespace && a.Name == b.Name
+	// TODO(mtaufen): ensure changing the kubelet config key triggers a Kubelet restart
+	return a.UID == b.UID &&
+		a.Namespace == b.Namespace &&
+		a.Name == b.Name &&
+		a.KubeletConfigKey == b.KubeletConfigKey
 }
 
 // ConfigOKEq returns true if the two conditions are semantically equivalent in the context of dynamic config

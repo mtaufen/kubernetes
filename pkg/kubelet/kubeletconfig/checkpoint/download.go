@@ -64,19 +64,19 @@ type RemoteConfigSource interface {
 // a sanitized failure reason and an error if the `source` is blatantly invalid.
 // You should only call this with a non-nil config source.
 func NewRemoteConfigSource(source *apiv1.NodeConfigSource) (RemoteConfigSource, string, error) {
-	// exactly one subfield of the config source must be non-nil, toady ConfigMapRef is the only reference
-	if source.ConfigMapRef == nil {
+	// exactly one reference subfield of the config source must be non-nil, toady ConfigMap is the only reference subfield
+	if source.ConfigMap == nil {
 		return nil, status.FailSyncReasonAllNilSubfields, fmt.Errorf("%s, NodeConfigSource was: %#v", status.FailSyncReasonAllNilSubfields, source)
 	}
 
 	// validate the NodeConfigSource:
 
-	// at this point we know we're using the ConfigMapRef subfield
-	ref := source.ConfigMapRef
+	// at this point we know we're using the ConfigMap subfield
+	ref := source.ConfigMap
 
-	// name, namespace, and UID must all be non-empty for ConfigMapRef
-	if ref.Name == "" || ref.Namespace == "" || string(ref.UID) == "" {
-		return nil, status.FailSyncReasonPartialObjectReference, fmt.Errorf("%s, ObjectReference was: %#v", status.FailSyncReasonPartialObjectReference, ref)
+	// name, namespace, and UID must all be non-empty for ConfigMap
+	if ref.Name == "" || ref.Namespace == "" || string(ref.UID) == "" || ref.KubeletConfigKey == "" {
+		return nil, status.FailSyncReasonPartialConfigMapSource, fmt.Errorf("%s, ObjectReference was: %#v", status.FailSyncReasonPartialConfigMapSource, ref)
 	}
 
 	return &remoteConfigMap{source}, "", nil
@@ -121,32 +121,32 @@ type remoteConfigMap struct {
 var _ RemoteConfigSource = (*remoteConfigMap)(nil)
 
 func (r *remoteConfigMap) UID() string {
-	return string(r.source.ConfigMapRef.UID)
+	return string(r.source.ConfigMap.UID)
 }
 
 const configMapAPIPathFmt = "/api/v1/namespaces/%s/configmaps/%s"
 
 func (r *remoteConfigMap) APIPath() string {
-	ref := r.source.ConfigMapRef
+	ref := r.source.ConfigMap
 	return fmt.Sprintf(configMapAPIPathFmt, ref.Namespace, ref.Name)
 }
 
 func (r *remoteConfigMap) Download(client clientset.Interface) (Payload, string, error) {
 	var reason string
-	uid := string(r.source.ConfigMapRef.UID)
+	uid := string(r.source.ConfigMap.UID)
 
 	utillog.Infof("attempting to download ConfigMap with UID %q", uid)
 
 	// get the ConfigMap via namespace/name, there doesn't seem to be a way to get it by UID
-	cm, err := client.CoreV1().ConfigMaps(r.source.ConfigMapRef.Namespace).Get(r.source.ConfigMapRef.Name, metav1.GetOptions{})
+	cm, err := client.CoreV1().ConfigMaps(r.source.ConfigMap.Namespace).Get(r.source.ConfigMap.Name, metav1.GetOptions{})
 	if err != nil {
 		reason = fmt.Sprintf(status.FailSyncReasonDownloadFmt, r.APIPath())
 		return nil, reason, fmt.Errorf("%s, error: %v", reason, err)
 	}
 
 	// ensure that UID matches the UID on the reference, the ObjectReference must be unambiguous
-	if r.source.ConfigMapRef.UID != cm.UID {
-		reason = fmt.Sprintf(status.FailSyncReasonUIDMismatchFmt, r.source.ConfigMapRef.UID, r.APIPath(), cm.UID)
+	if r.source.ConfigMap.UID != cm.UID {
+		reason = fmt.Sprintf(status.FailSyncReasonUIDMismatchFmt, r.source.ConfigMap.UID, r.APIPath(), cm.UID)
 		return nil, reason, fmt.Errorf(reason)
 	}
 

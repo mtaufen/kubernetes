@@ -57,6 +57,8 @@ var startServices = flag.Bool("start-services", true, "If true, start local node
 var stopServices = flag.Bool("stop-services", true, "If true, stop local node services after running tests")
 var busyboxImage = "busybox"
 
+const kubeletConfigKey = "kubelet"
+
 func getNodeSummary() (*stats.Summary, error) {
 	req, err := http.NewRequest("GET", *kubeletAddress+"/stats/summary", nil)
 	if err != nil {
@@ -164,10 +166,13 @@ func setKubeletConfiguration(f *framework.Framework, kubeCfg *kubeletconfig.Kube
 
 	// create the reference and set Node.Spec.ConfigSource
 	src := &apiv1.NodeConfigSource{
-		ConfigMapRef: &apiv1.ObjectReference{
-			Namespace: "kube-system",
-			Name:      cm.Name,
-			UID:       cm.UID,
+		ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+			ObjectReference: apiv1.ObjectReference{
+				Namespace: "kube-system",
+				Name:      cm.Name,
+				UID:       cm.UID,
+			},
+			KubeletConfigKey: kubeletConfigKey,
 		},
 	}
 
@@ -311,7 +316,7 @@ func newKubeletConfigMap(name string, internalKC *kubeletconfig.KubeletConfigura
 	cmap := &apiv1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{GenerateName: name + "-"},
 		Data: map[string]string{
-			"kubelet": string(data),
+			kubeletConfigKey: string(data),
 		},
 	}
 	return cmap

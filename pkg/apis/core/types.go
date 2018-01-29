@@ -3367,7 +3367,14 @@ type NodeSpec struct {
 // NodeConfigSource specifies a source of node configuration. Exactly one subfield must be non-nil.
 type NodeConfigSource struct {
 	metav1.TypeMeta
-	ConfigMapRef *ObjectReference
+	ConfigMap *ConfigMapNodeConfigSource
+}
+
+type ConfigMapNodeConfigSource struct {
+	// ObjectReference points to the ConfigMap. Name, Namespace, and UID must be specified.
+	ObjectReference
+	// KubeletConfigKey defines which key of the referenced ConfigMap corresponds to the serialized KubeletConfiguration
+	KubeletConfigKey string
 }
 
 // DaemonEndpoint contains information about a single Daemon endpoint.

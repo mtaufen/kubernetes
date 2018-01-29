@@ -3785,7 +3785,18 @@ type NodeSpec struct {
 // NodeConfigSource specifies a source of node configuration. Exactly one subfield (excluding metadata) must be non-nil.
 type NodeConfigSource struct {
 	metav1.TypeMeta `json:",inline"`
-	ConfigMapRef    *ObjectReference `json:"configMapRef,omitempty" protobuf:"bytes,1,opt,name=configMapRef"`
+
+	// +k8s:deprecated=configMapRef,protobuf=1
+
+	// ConfigMap is a reference to a Node's ConfigMap
+	ConfigMap *ConfigMapNodeConfigSource `json:"configMap,omitempty" protobuf:"bytes,2,opt,name=configMap"`
+}
+
+type ConfigMapNodeConfigSource struct {
+	// ObjectReference points to the ConfigMap. Name, Namespace, and UID must be specified.
+	ObjectReference `json:",inline" protobuf:"bytes,2,opt,name=objectReference"`
+	// KubeletConfigKey defines which key of the referenced ConfigMap corresponds to the KubeletConfiguration structure
+	KubeletConfigKey string `json:"kubeletConfigKey,omitempty" protobuf:"bytes,1,opt,name=kubeletConfigKey"`
 }
 
 // DaemonEndpoint contains information about a single Daemon endpoint.

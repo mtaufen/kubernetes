@@ -125,7 +125,10 @@ func TestFsStoreExists(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.desc, func(t *testing.T) {
 			source, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{
-				ConfigMapRef: &apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: c.uid}})
+				ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+					ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: c.uid},
+					KubeletConfigKey: "kubelet",
+				}})
 			if err != nil {
 				t.Fatalf("error constructing remote config source: %v", err)
 			}
@@ -241,7 +244,10 @@ func TestFsStoreLoad(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.desc, func(t *testing.T) {
 			source, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{
-				ConfigMapRef: &apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: c.uid}})
+				ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+					ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: c.uid},
+					KubeletConfigKey: "kubelet",
+				}})
 			if err != nil {
 				t.Fatalf("error constructing remote config source: %v", err)
 			}
@@ -291,7 +297,10 @@ func TestFsStoreCurrent(t *testing.T) {
 	}
 
 	source, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{
-		ConfigMapRef: &apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: "uid"}})
+		ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+			ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: "uid"},
+			KubeletConfigKey: "kubelet",
+		}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -329,7 +338,10 @@ func TestFsStoreLastKnownGood(t *testing.T) {
 	}
 
 	source, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{
-		ConfigMapRef: &apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: "uid"}})
+		ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+			ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: "uid"},
+			KubeletConfigKey: "kubelet",
+		}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -367,9 +379,11 @@ func TestFsStoreSetCurrent(t *testing.T) {
 	}
 
 	const uid = "uid"
-	expect := fmt.Sprintf(`{"kind":"NodeConfigSource","apiVersion":"v1","configMapRef":{"namespace":"namespace","name":"name","uid":"%s"}}%s`, uid, "\n")
-	source, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMapRef: &apiv1.ObjectReference{
-		Name: "name", Namespace: "namespace", UID: types.UID(uid)}})
+	expect := fmt.Sprintf(`{"kind":"NodeConfigSource","apiVersion":"v1","configMap":{"namespace":"namespace","name":"name","uid":"%s","kubeletConfigKey":"kubelet"}}%s`, uid, "\n")
+	source, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+		ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: types.UID(uid)},
+		KubeletConfigKey: "kubelet",
+	}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -393,9 +407,11 @@ func TestFsStoreSetLastKnownGood(t *testing.T) {
 	}
 
 	const uid = "uid"
-	expect := fmt.Sprintf(`{"kind":"NodeConfigSource","apiVersion":"v1","configMapRef":{"namespace":"namespace","name":"name","uid":"%s"}}%s`, uid, "\n")
-	source, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMapRef: &apiv1.ObjectReference{
-		Name: "name", Namespace: "namespace", UID: types.UID(uid)}})
+	expect := fmt.Sprintf(`{"kind":"NodeConfigSource","apiVersion":"v1","configMap":{"namespace":"namespace","name":"name","uid":"%s","kubeletConfigKey":"kubelet"}}%s`, uid, "\n")
+	source, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+		ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: types.UID(uid)},
+		KubeletConfigKey: "kubelet",
+	}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -418,11 +434,17 @@ func TestFsStoreReset(t *testing.T) {
 		t.Fatalf("error constructing store: %v", err)
 	}
 
-	source, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMapRef: &apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: "uid"}})
+	source, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+		ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: "uid"},
+		KubeletConfigKey: "kubelet",
+	}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	otherSource, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMapRef: &apiv1.ObjectReference{Name: "other-name", Namespace: "namespace", UID: "other-uid"}})
+	otherSource, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+		ObjectReference:  apiv1.ObjectReference{Name: "other-name", Namespace: "namespace", UID: "other-uid"},
+		KubeletConfigKey: "kubelet",
+	}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -486,7 +508,10 @@ func TestFsStoreReadRemoteConfigSource(t *testing.T) {
 	}
 
 	source, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{
-		ConfigMapRef: &apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: "uid"}})
+		ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+			ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: "uid"},
+			KubeletConfigKey: "kubelet",
+		}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -522,7 +547,10 @@ func TestFsStoreWriteRemoteConfigSource(t *testing.T) {
 		t.Fatalf("error constructing store: %v", err)
 	}
 
-	source, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMapRef: &apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: "uid"}})
+	source, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+		ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: "uid"},
+		KubeletConfigKey: "kubelet",
+	}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -81,10 +81,13 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 			// were initially set via the locally provisioned configuration.
 			// This is the same strategy several other e2e node tests use.
 			setAndTestKubeletConfigState(f, &configState{desc: "reset to original values",
-				configSource: &apiv1.NodeConfigSource{ConfigMapRef: &apiv1.ObjectReference{
-					UID:       originalConfigMap.UID,
-					Namespace: originalConfigMap.Namespace,
-					Name:      originalConfigMap.Name}},
+				configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+					ObjectReference: apiv1.ObjectReference{
+						UID:       originalConfigMap.UID,
+						Namespace: originalConfigMap.Namespace,
+						Name:      originalConfigMap.Name},
+					KubeletConfigKey: kubeletConfigKey,
+				}},
 				expectConfigOK: &apiv1.NodeCondition{Type: apiv1.NodeConfigOK, Status: apiv1.ConditionTrue,
 					Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(originalConfigMap)),
 					Reason:  status.CurRemoteOkayReason},
@@ -105,7 +108,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 				failParseConfigMap := &apiv1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{Name: "dynamic-kubelet-config-test-fail-parse"},
 					Data: map[string]string{
-						"kubelet": "{0xdeadbeef}",
+						kubeletConfigKey: "{0xdeadbeef}",
 					},
 				}
 				failParseConfigMap, err = f.ClientSet.CoreV1().ConfigMaps("kube-system").Create(failParseConfigMap)
@@ -120,8 +123,8 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 				framework.ExpectNoError(err)
 
 				states := []configState{
-					// Node.Spec.ConfigSource is nil
-					{desc: "Node.Spec.ConfigSource is nil",
+					{
+						desc:         "Node.Spec.ConfigSource is nil",
 						configSource: nil,
 						expectConfigOK: &apiv1.NodeCondition{Type: apiv1.NodeConfigOK, Status: apiv1.ConditionTrue,
 							Message: status.CurLocalMessage,
@@ -129,74 +132,83 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 						expectConfig: nil,
 						event:        true,
 					},
-
-					// Node.Spec.ConfigSource has all nil subfields
-					{desc: "Node.Spec.ConfigSource has all nil subfields",
-						configSource: &apiv1.NodeConfigSource{ConfigMapRef: nil},
+					{
+						desc:         "Node.Spec.ConfigSource has all nil subfields",
+						configSource: &apiv1.NodeConfigSource{ConfigMap: nil},
 						expectConfigOK: &apiv1.NodeCondition{Type: apiv1.NodeConfigOK, Status: apiv1.ConditionFalse,
 							Message: "",
 							Reason:  fmt.Sprintf(status.FailSyncReasonFmt, status.FailSyncReasonAllNilSubfields)},
 						expectConfig: nil,
 						event:        false,
 					},
-
-					// Node.Spec.ConfigSource.ConfigMapRef is partial
-					{desc: "Node.Spec.ConfigSource.ConfigMapRef is partial",
+					{
+						desc: "Node.Spec.ConfigSource.ConfigMap is partial",
 						// TODO(mtaufen): check the other 7 partials in a unit test
-						configSource: &apiv1.NodeConfigSource{ConfigMapRef: &apiv1.ObjectReference{
-							UID:  "foo",
-							Name: "bar"}}, // missing Namespace
+						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+							ObjectReference: apiv1.ObjectReference{
+								UID:  "foo",
+								Name: "bar"},
+							KubeletConfigKey: kubeletConfigKey,
+						}}, // missing Namespace
 						expectConfigOK: &apiv1.NodeCondition{Type: apiv1.NodeConfigOK, Status: apiv1.ConditionFalse,
 							Message: "",
-							Reason:  fmt.Sprintf(status.FailSyncReasonFmt, status.FailSyncReasonPartialObjectReference)},
+							Reason:  fmt.Sprintf(status.FailSyncReasonFmt, status.FailSyncReasonPartialConfigMapSource)},
 						expectConfig: nil,
 						event:        false,
 					},
-
-					// Node.Spec.ConfigSource's UID does not align with namespace/name
-					{desc: "Node.Spec.ConfigSource.ConfigMapRef.UID does not align with Namespace/Name",
-						configSource: &apiv1.NodeConfigSource{ConfigMapRef: &apiv1.ObjectReference{UID: "foo",
-							Namespace: correctConfigMap.Namespace,
-							Name:      correctConfigMap.Name}},
+					{
+						desc: "Node.Spec.ConfigSource.ConfigMap.UID does not align with Namespace/Name",
+						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{UID: "foo",
+							ObjectReference: apiv1.ObjectReference{
+								Namespace: correctConfigMap.Namespace,
+								Name:      correctConfigMap.Name},
+							KubeletConfigKey: kubeletConfigKey,
+						}},
 						expectConfigOK: &apiv1.NodeCondition{Type: apiv1.NodeConfigOK, Status: apiv1.ConditionFalse,
 							Message: "",
 							Reason:  fmt.Sprintf(status.FailSyncReasonFmt, fmt.Sprintf(status.FailSyncReasonUIDMismatchFmt, "foo", configMapAPIPath(correctConfigMap), correctConfigMap.UID))},
 						expectConfig: nil,
 						event:        false,
 					},
-
-					// correct
-					{desc: "correct",
-						configSource: &apiv1.NodeConfigSource{ConfigMapRef: &apiv1.ObjectReference{
-							UID:       correctConfigMap.UID,
-							Namespace: correctConfigMap.Namespace,
-							Name:      correctConfigMap.Name}},
+					{
+						desc: "correct",
+						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+							ObjectReference: apiv1.ObjectReference{
+								UID:       correctConfigMap.UID,
+								Namespace: correctConfigMap.Namespace,
+								Name:      correctConfigMap.Name},
+							KubeletConfigKey: kubeletConfigKey,
+						}},
 						expectConfigOK: &apiv1.NodeCondition{Type: apiv1.NodeConfigOK, Status: apiv1.ConditionTrue,
 							Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(correctConfigMap)),
 							Reason:  status.CurRemoteOkayReason},
 						expectConfig: correctKC,
 						event:        true,
 					},
-
-					// fail-parse
-					{desc: "fail-parse",
-						configSource: &apiv1.NodeConfigSource{ConfigMapRef: &apiv1.ObjectReference{
-							UID:       failParseConfigMap.UID,
-							Namespace: failParseConfigMap.Namespace,
-							Name:      failParseConfigMap.Name}},
+					{
+						desc: "fail-parse",
+						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+							ObjectReference: apiv1.ObjectReference{
+								UID:       failParseConfigMap.UID,
+								Namespace: failParseConfigMap.Namespace,
+								Name:      failParseConfigMap.Name},
+							KubeletConfigKey: kubeletConfigKey,
+						}},
 						expectConfigOK: &apiv1.NodeCondition{Type: apiv1.NodeConfigOK, Status: apiv1.ConditionFalse,
 							Message: status.LkgLocalMessage,
 							Reason:  fmt.Sprintf(status.CurFailLoadReasonFmt, configMapAPIPath(failParseConfigMap))},
 						expectConfig: nil,
 						event:        true,
 					},
-
-					// fail-validate
-					{desc: "fail-validate",
-						configSource: &apiv1.NodeConfigSource{ConfigMapRef: &apiv1.ObjectReference{
-							UID:       failValidateConfigMap.UID,
-							Namespace: failValidateConfigMap.Namespace,
-							Name:      failValidateConfigMap.Name}},
+					{
+						desc: "fail-validate",
+						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+							ObjectReference: apiv1.ObjectReference{
+								UID:       failValidateConfigMap.UID,
+								Namespace: failValidateConfigMap.Namespace,
+								Name:      failValidateConfigMap.Name},
+							KubeletConfigKey: kubeletConfigKey,
+						}},
 						expectConfigOK: &apiv1.NodeCondition{Type: apiv1.NodeConfigOK, Status: apiv1.ConditionFalse,
 							Message: status.LkgLocalMessage,
 							Reason:  fmt.Sprintf(status.CurFailValidateReasonFmt, configMapAPIPath(failValidateConfigMap))},
@@ -226,7 +238,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 				badConfigMap := &apiv1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{Name: "dynamic-kubelet-config-test-bad"},
 					Data: map[string]string{
-						"kubelet": "{0xdeadbeef}",
+						kubeletConfigKey: "{0xdeadbeef}",
 					},
 				}
 				badConfigMap, err = f.ClientSet.CoreV1().ConfigMaps("kube-system").Create(badConfigMap)
@@ -235,10 +247,13 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 				states := []configState{
 					// intended lkg
 					{desc: "intended last-known-good",
-						configSource: &apiv1.NodeConfigSource{ConfigMapRef: &apiv1.ObjectReference{
-							UID:       lkgConfigMap.UID,
-							Namespace: lkgConfigMap.Namespace,
-							Name:      lkgConfigMap.Name}},
+						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+							ObjectReference: apiv1.ObjectReference{
+								UID:       lkgConfigMap.UID,
+								Namespace: lkgConfigMap.Namespace,
+								Name:      lkgConfigMap.Name},
+							KubeletConfigKey: kubeletConfigKey,
+						}},
 						expectConfigOK: &apiv1.NodeCondition{Type: apiv1.NodeConfigOK, Status: apiv1.ConditionTrue,
 							Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(lkgConfigMap)),
 							Reason:  status.CurRemoteOkayReason},
@@ -248,10 +263,13 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 
 					// bad config
 					{desc: "bad config",
-						configSource: &apiv1.NodeConfigSource{ConfigMapRef: &apiv1.ObjectReference{
-							UID:       badConfigMap.UID,
-							Namespace: badConfigMap.Namespace,
-							Name:      badConfigMap.Name}},
+						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+							ObjectReference: apiv1.ObjectReference{
+								UID:       badConfigMap.UID,
+								Namespace: badConfigMap.Namespace,
+								Name:      badConfigMap.Name},
+							KubeletConfigKey: kubeletConfigKey,
+						}},
 						expectConfigOK: &apiv1.NodeCondition{Type: apiv1.NodeConfigOK, Status: apiv1.ConditionFalse,
 							Message: fmt.Sprintf(status.LkgRemoteMessageFmt, configMapAPIPath(lkgConfigMap)),
 							Reason:  fmt.Sprintf(status.CurFailLoadReasonFmt, configMapAPIPath(badConfigMap))},
@@ -286,10 +304,13 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 
 				states := []configState{
 					{desc: "cm1",
-						configSource: &apiv1.NodeConfigSource{ConfigMapRef: &apiv1.ObjectReference{
-							UID:       cm1.UID,
-							Namespace: cm1.Namespace,
-							Name:      cm1.Name}},
+						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+							ObjectReference: apiv1.ObjectReference{
+								UID:       cm1.UID,
+								Namespace: cm1.Namespace,
+								Name:      cm1.Name},
+							KubeletConfigKey: kubeletConfigKey,
+						}},
 						expectConfigOK: &apiv1.NodeCondition{Type: apiv1.NodeConfigOK, Status: apiv1.ConditionTrue,
 							Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(cm1)),
 							Reason:  status.CurRemoteOkayReason},
@@ -298,10 +319,14 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 					},
 
 					{desc: "cm2",
-						configSource: &apiv1.NodeConfigSource{ConfigMapRef: &apiv1.ObjectReference{
-							UID:       cm2.UID,
-							Namespace: cm2.Namespace,
-							Name:      cm2.Name}},
+						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+							ObjectReference: apiv1.ObjectReference{
+								UID:       cm2.UID,
+								Namespace: cm2.Namespace,
+								Name:      cm2.Name,
+							},
+							KubeletConfigKey: kubeletConfigKey,
+						}},
 						expectConfigOK: &apiv1.NodeCondition{Type: apiv1.NodeConfigOK, Status: apiv1.ConditionTrue,
 							Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(cm2)),
 							Reason:  status.CurRemoteOkayReason},
@@ -476,8 +501,8 @@ func checkEvent(f *framework.Framework, desc string, expect *apiv1.NodeConfigSou
 		// ensure the message is what we expect (including the resource path)
 		expectMessage := fmt.Sprintf(controller.EventMessageFmt, controller.LocalConfigMessage)
 		if expect != nil {
-			if expect.ConfigMapRef != nil {
-				expectMessage = fmt.Sprintf(controller.EventMessageFmt, fmt.Sprintf("/api/v1/namespaces/%s/configmaps/%s", expect.ConfigMapRef.Namespace, expect.ConfigMapRef.Name))
+			if expect.ConfigMap != nil {
+				expectMessage = fmt.Sprintf(controller.EventMessageFmt, fmt.Sprintf("/api/v1/namespaces/%s/configmaps/%s", expect.ConfigMap.Namespace, expect.ConfigMap.Name))
 			}
 		}
 		if expectMessage != recent.Message {
