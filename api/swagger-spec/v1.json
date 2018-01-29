@@ -18718,16 +18718,34 @@
     "id": "v1.NodeConfigSource",
     "description": "NodeConfigSource specifies a source of node configuration. Exactly one subfield (excluding metadata) must be non-nil.",
     "properties": {
-     "kind": {
+     "configMap": {
+      "$ref": "v1.ConfigMapNodeConfigSource",
+      "description": "ConfigMap is a reference to a Node's ConfigMap"
+     }
+    }
+   },
+   "v1.ConfigMapNodeConfigSource": {
+    "id": "v1.ConfigMapNodeConfigSource",
+    "properties": {
+     "namespace": {
       "type": "string",
-      "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds"
+      "description": "Namespace is the metadata.namespace of the referenced ConfigMap."
      },
-     "apiVersion": {
+     "name": {
       "type": "string",
-      "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources"
+      "description": "Name is the metadata.name of the referenced ConfigMap."
      },
-     "configMapRef": {
-      "$ref": "v1.ObjectReference"
+     "uid": {
+      "type": "string",
+      "description": "UID is the metadata.UID of the referenced ConfigMap. and only be set in Node.Status, when #61643 and #56896 are resolved, respectively."
+     },
+     "resourceVersion": {
+      "type": "string",
+      "description": "ResourceVersion is the metadata.ResourceVersion of the referenced ConfigMap. This field is disallowed by validation in Node.Spec, but will be set in Node.Status when #56896 is resolved."
+     },
+     "kubeletConfigKey": {
+      "type": "string",
+      "description": "KubeletConfigKey declares which key of the referenced ConfigMap corresponds to the KubeletConfiguration structure"
      }
     }
    },

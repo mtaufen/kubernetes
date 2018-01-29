@@ -3640,12 +3640,44 @@ type NodeSpec struct {
 	DoNotUse_ExternalID string `json:"externalID,omitempty" protobuf:"bytes,2,opt,name=externalID"`
 }
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
 // NodeConfigSource specifies a source of node configuration. Exactly one subfield (excluding metadata) must be non-nil.
 type NodeConfigSource struct {
+	// +k8s:deprecated=kind
+	// +k8s:deprecated=apiVersion
+	// +k8s:deprecated=configMapRef,protobuf=1
+
+	// ConfigMap is a reference to a Node's ConfigMap
+	ConfigMap *ConfigMapNodeConfigSource `json:"configMap,omitempty" protobuf:"bytes,2,opt,name=configMap"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// SerializedNodeConfigSource allows us to serialize NodeConfigSource
+type SerializedNodeConfigSource struct {
 	metav1.TypeMeta `json:",inline"`
-	ConfigMapRef    *ObjectReference `json:"configMapRef,omitempty" protobuf:"bytes,1,opt,name=configMapRef"`
+	// Source is the source that we are serializing
+	// +optional
+	Source NodeConfigSource `json:"source,omitempty" protobuf:"bytes,1,opt,name=source"`
+}
+
+type ConfigMapNodeConfigSource struct {
+	// Namespace is the metadata.namespace of the referenced ConfigMap.
+	Namespace string `json:"namespace,omitempty" protobuf:"bytes,1,opt,name=namespace"`
+
+	// Name is the metadata.name of the referenced ConfigMap.
+	Name string `json:"name,omitempty" protobuf:"bytes,2,opt,name=name"`
+
+	// UID is the metadata.UID of the referenced ConfigMap.
+	// TODO(#61643,#56896): This will be disallowed by validation in Node.Spec,
+	// and only be set in Node.Status, when #61643 and #56896 are resolved, respectively.
+	UID types.UID `json:"uid,omitempty" protobuf:"bytes,3,opt,name=uid"`
+
+	// ResourceVersion is the metadata.ResourceVersion of the referenced ConfigMap.
+	// This field is disallowed by validation in Node.Spec, but will be set in Node.Status when #56896 is resolved.
+	ResourceVersion string `json:"resourceVersion,omitempty" protobuf:"bytes,4,opt,name=resourceVersion"`
+
+	// KubeletConfigKey declares which key of the referenced ConfigMap corresponds to the KubeletConfiguration structure
+	KubeletConfigKey string `json:"kubeletConfigKey,omitempty" protobuf:"bytes,5,opt,name=kubeletConfigKey"`
 }
 
 // DaemonEndpoint contains information about a single Daemon endpoint.

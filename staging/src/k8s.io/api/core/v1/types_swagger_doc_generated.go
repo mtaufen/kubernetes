@@ -262,6 +262,18 @@ func (ConfigMapList) SwaggerDoc() map[string]string {
 	return map_ConfigMapList
 }
 
+var map_ConfigMapNodeConfigSource = map[string]string{
+	"namespace":        "Namespace is the metadata.namespace of the referenced ConfigMap.",
+	"name":             "Name is the metadata.name of the referenced ConfigMap.",
+	"uid":              "UID is the metadata.UID of the referenced ConfigMap. and only be set in Node.Status, when #61643 and #56896 are resolved, respectively.",
+	"resourceVersion":  "ResourceVersion is the metadata.ResourceVersion of the referenced ConfigMap. This field is disallowed by validation in Node.Spec, but will be set in Node.Status when #56896 is resolved.",
+	"kubeletConfigKey": "KubeletConfigKey declares which key of the referenced ConfigMap corresponds to the KubeletConfiguration structure",
+}
+
+func (ConfigMapNodeConfigSource) SwaggerDoc() map[string]string {
+	return map_ConfigMapNodeConfigSource
+}
+
 var map_ConfigMapProjection = map[string]string{
 	"":         "Adapts a ConfigMap into a projected volume.\n\nThe contents of the target ConfigMap's Data field will be presented in a projected volume as files using the keys in the Data field as the file names, unless the items element is populated with specific mappings of keys to paths. Note that this is identical to a configmap volume source without the default mode.",
 	"items":    "If unspecified, each key-value pair in the Data field of the referenced ConfigMap will be projected into the volume as a file whose name is the key and content is the value. If specified, the listed keys will be projected into the specified paths, and unlisted keys will not be present. If a key is specified which is not present in the ConfigMap, the volume setup will error unless it is marked optional. Paths must be relative and may not contain the '..' path or start with '..'.",
@@ -969,7 +981,8 @@ func (NodeCondition) SwaggerDoc() map[string]string {
 }
 
 var map_NodeConfigSource = map[string]string{
-	"": "NodeConfigSource specifies a source of node configuration. Exactly one subfield (excluding metadata) must be non-nil.",
+	"":          "NodeConfigSource specifies a source of node configuration. Exactly one subfield (excluding metadata) must be non-nil.",
+	"configMap": "ConfigMap is a reference to a Node's ConfigMap",
 }
 
 func (NodeConfigSource) SwaggerDoc() map[string]string {
@@ -1917,6 +1930,15 @@ var map_SecurityContext = map[string]string{
 
 func (SecurityContext) SwaggerDoc() map[string]string {
 	return map_SecurityContext
+}
+
+var map_SerializedNodeConfigSource = map[string]string{
+	"":       "SerializedNodeConfigSource allows us to serialize NodeConfigSource",
+	"source": "Source is the source that we are serializing",
+}
+
+func (SerializedNodeConfigSource) SwaggerDoc() map[string]string {
+	return map_SerializedNodeConfigSource
 }
 
 var map_SerializedReference = map[string]string{

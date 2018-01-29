@@ -439,6 +439,26 @@ message ConfigMapList {
   repeated ConfigMap items = 2;
 }
 
+message ConfigMapNodeConfigSource {
+  // Namespace is the metadata.namespace of the referenced ConfigMap.
+  optional string namespace = 1;
+
+  // Name is the metadata.name of the referenced ConfigMap.
+  optional string name = 2;
+
+  // UID is the metadata.UID of the referenced ConfigMap.
+  // TODO(#61643,#56896): This will be disallowed by validation in Node.Spec,
+  // and only be set in Node.Status, when #61643 and #56896 are resolved, respectively.
+  optional string uid = 3;
+
+  // ResourceVersion is the metadata.ResourceVersion of the referenced ConfigMap.
+  // This field is disallowed by validation in Node.Spec, but will be set in Node.Status when #56896 is resolved.
+  optional string resourceVersion = 4;
+
+  // KubeletConfigKey declares which key of the referenced ConfigMap corresponds to the KubeletConfiguration structure
+  optional string kubeletConfigKey = 5;
+}
+
 // Adapts a ConfigMap into a projected volume.
 // 
 // The contents of the target ConfigMap's Data field will be presented in a
@@ -1815,7 +1835,8 @@ message NodeCondition {
 
 // NodeConfigSource specifies a source of node configuration. Exactly one subfield (excluding metadata) must be non-nil.
 message NodeConfigSource {
-  optional ObjectReference configMapRef = 1;
+  // ConfigMap is a reference to a Node's ConfigMap
+  optional ConfigMapNodeConfigSource configMap = 2;
 }
 
 // NodeDaemonEndpoints lists ports opened by daemons running on the Node.
@@ -3833,6 +3854,13 @@ message SecurityContext {
   // 2) has CAP_SYS_ADMIN
   // +optional
   optional bool allowPrivilegeEscalation = 7;
+}
+
+// SerializedNodeConfigSource allows us to serialize NodeConfigSource
+message SerializedNodeConfigSource {
+  // Source is the source that we are serializing
+  // +optional
+  optional NodeConfigSource source = 1;
 }
 
 // SerializedReference is a reference to serialized object.

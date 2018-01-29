@@ -3257,12 +3257,39 @@ type NodeSpec struct {
 	DoNotUse_ExternalID string
 }
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
 // NodeConfigSource specifies a source of node configuration. Exactly one subfield must be non-nil.
 type NodeConfigSource struct {
+	ConfigMap *ConfigMapNodeConfigSource
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// SerializedNodeConfigSource allows us to serialize NodeConfigSource
+type SerializedNodeConfigSource struct {
 	metav1.TypeMeta
-	ConfigMapRef *ObjectReference
+	// Source is the source that we are serializing
+	// +optional
+	Source NodeConfigSource
+}
+
+type ConfigMapNodeConfigSource struct {
+	// Namespace is the metadata.namespace of the ConfigMap.
+	Namespace string
+
+	// Name is the metadata.name of the referenced ConfigMap.
+	Name string
+
+	// UID is the metadata.UID of the referenced ConfigMap.
+	// TODO(#61643,#56896): This will be disallowed by validation in Node.Spec,
+	// and only be set in Node.Status, when #61643 and #56896 are resolved, respectively.
+	UID types.UID
+
+	// ResourceVersion is the metadata.ResourceVersion of the referenced ConfigMap.
+	// This field is disallowed by validation in Node.Spec, but will be set in Node.Status when #56896 is resolved.
+	ResourceVersion string
+
+	// KubeletConfigKey declares which key of the referenced ConfigMap corresponds to the KubeletConfiguration structure
+	KubeletConfigKey string
 }
 
 // DaemonEndpoint contains information about a single Daemon endpoint.

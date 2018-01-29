@@ -433,12 +433,12 @@ var etcdStorageData = map[schema.GroupVersionResource]struct {
 var ephemeralWhiteList = createEphemeralWhiteList(
 
 	// k8s.io/kubernetes/pkg/api/v1
-	gvk("", "v1", "Binding"),             // annotation on pod, not stored in etcd
-	gvk("", "v1", "RangeAllocation"),     // stored in various places in etcd but cannot be directly created
-	gvk("", "v1", "ComponentStatus"),     // status info not stored in etcd
-	gvk("", "v1", "SerializedReference"), // used for serilization, not stored in etcd
-	gvk("", "v1", "NodeConfigSource"),    // subfield of node.spec, but shouldn't be directly created
-	gvk("", "v1", "PodStatusResult"),     // wrapper object not stored in etcd
+	gvk("", "v1", "Binding"),                    // annotation on pod, not stored in etcd
+	gvk("", "v1", "RangeAllocation"),            // stored in various places in etcd but cannot be directly created
+	gvk("", "v1", "ComponentStatus"),            // status info not stored in etcd
+	gvk("", "v1", "SerializedReference"),        // used for serilization, not stored in etcd
+	gvk("", "v1", "SerializedNodeConfigSource"), // used for serialization, not stored in etcd
+	gvk("", "v1", "PodStatusResult"),            // wrapper object not stored in etcd
 	// --
 
 	// k8s.io/kubernetes/pkg/apis/authentication/v1beta1
