@@ -26,9 +26,37 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	"k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig"
+	"k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/scheme"
+	"k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/v1alpha1"
 )
 
-// TODO(mtaufen): allow an encoder to be injected into checkpoint objects at creation time? (then we could ultimately instantiate only one encoder)
+// EncodeKubeletConfig encodes an internal KubeletConfiguration to an external JSON representation
+func EncodeKubeletConfig(internal *kubeletconfig.KubeletConfiguration) ([]byte, error) {
+	encoder, err := NewKubeletConfigJSONEncoder()
+	if err != nil {
+		return nil, err
+	}
+	// encoder will convert to external version
+	data, err := runtime.Encode(encoder, internal)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// NewKubeletConfigJSONEncoder returns an encoder that can write a KubeletConfig to JSON
+func NewKubeletConfigJSONEncoder() (runtime.Encoder, error) {
+	_, codecs, err := scheme.NewSchemeAndCodecs()
+	if err != nil {
+		return nil, err
+	}
+	mediaType := "application/json"
+	info, ok := runtime.SerializerInfoForMediaType(codecs.SupportedMediaTypes(), mediaType)
+	if !ok {
+		return nil, fmt.Errorf("unsupported media type %q", mediaType)
+	}
+	return codecs.EncoderForVersion(info.Serializer, v1alpha1.SchemeGroupVersion), nil
+}
 
 // NewJSONEncoder generates a new runtime.Encoder that encodes objects to JSON
 func NewJSONEncoder(groupName string) (runtime.Encoder, error) {
