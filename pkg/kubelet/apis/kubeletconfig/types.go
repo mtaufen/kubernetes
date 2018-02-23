@@ -44,9 +44,9 @@ const (
 type KubeletConfiguration struct {
 	metav1.TypeMeta
 
-	// podManifestPath is the path to the directory containing pod manifests to
-	// run, or the path to a single manifest file
-	PodManifestPath string
+	// podPath is the path to the directory containing pods to
+	// run, or the path to a single pod file.
+	PodPath string
 	// syncFrequency is the max period between synchronizing running
 	// containers and config
 	SyncFrequency metav1.Duration
@@ -55,10 +55,10 @@ type KubeletConfiguration struct {
 	FileCheckFrequency metav1.Duration
 	// httpCheckFrequency is the duration between checking http for new data
 	HTTPCheckFrequency metav1.Duration
-	// manifestURL is the URL for accessing the container manifest
-	ManifestURL string
-	// manifestURLHeader is a map of slices with HTTP headers to use when accessing the manifestURL
-	ManifestURLHeader map[string][]string
+	// podURL is the URL for accessing (static) pods to run
+	PodURL string
+	// podURLHeader is a map of slices with HTTP headers to use when accessing the podURL
+	PodURLHeader map[string][]string
 	// address is the IP address for the Kubelet to serve on (set to 0.0.0.0
 	// for all interfaces)
 	Address string

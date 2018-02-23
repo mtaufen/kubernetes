@@ -89,7 +89,7 @@ func Funcs(codecs runtimeserializer.CodecFactory) []interface{} {
 			obj.CgroupsPerQOS = true
 			obj.CgroupDriver = "cgroupfs"
 			obj.EnforceNodeAllocatable = v1beta1.DefaultNodeAllocatableEnforcement
-			obj.ManifestURLHeader = make(map[string][]string)
+			obj.PodURLHeader = make(map[string][]string)
 		},
 	}
 }

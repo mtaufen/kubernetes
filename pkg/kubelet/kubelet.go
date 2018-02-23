@@ -254,8 +254,8 @@ type Dependencies struct {
 // KubeletConfiguration or returns an error.
 func makePodSourceConfig(kubeCfg *kubeletconfiginternal.KubeletConfiguration, kubeDeps *Dependencies, nodeName types.NodeName, bootstrapCheckpointPath string) (*config.PodConfig, error) {
 	manifestURLHeader := make(http.Header)
-	if len(kubeCfg.ManifestURLHeader) > 0 {
-		for k, v := range kubeCfg.ManifestURLHeader {
+	if len(kubeCfg.PodURLHeader) > 0 {
+		for k, v := range kubeCfg.PodURLHeader {
 			for i := range v {
 				manifestURLHeader.Add(k, v[i])
 			}
@@ -266,15 +266,15 @@ func makePodSourceConfig(kubeCfg *kubeletconfiginternal.KubeletConfiguration, ku
 	cfg := config.NewPodConfig(config.PodConfigNotificationIncremental, kubeDeps.Recorder)
 
 	// define file config source
-	if kubeCfg.PodManifestPath != "" {
-		glog.Infof("Adding manifest path: %v", kubeCfg.PodManifestPath)
-		config.NewSourceFile(kubeCfg.PodManifestPath, nodeName, kubeCfg.FileCheckFrequency.Duration, cfg.Channel(kubetypes.FileSource))
+	if kubeCfg.PodPath != "" {
+		glog.Infof("Adding pod path: %v", kubeCfg.PodPath)
+		config.NewSourceFile(kubeCfg.PodPath, nodeName, kubeCfg.FileCheckFrequency.Duration, cfg.Channel(kubetypes.FileSource))
 	}
 
 	// define url config source
-	if kubeCfg.ManifestURL != "" {
-		glog.Infof("Adding manifest url %q with HTTP header %v", kubeCfg.ManifestURL, manifestURLHeader)
-		config.NewSourceURL(kubeCfg.ManifestURL, manifestURLHeader, nodeName, kubeCfg.HTTPCheckFrequency.Duration, cfg.Channel(kubetypes.HTTPSource))
+	if kubeCfg.PodURL != "" {
+		glog.Infof("Adding pod url %q with HTTP header %v", kubeCfg.PodURL, manifestURLHeader)
+		config.NewSourceURL(kubeCfg.PodURL, manifestURLHeader, nodeName, kubeCfg.HTTPCheckFrequency.Duration, cfg.Channel(kubetypes.HTTPSource))
 	}
 
 	// Restore from the checkpoint path

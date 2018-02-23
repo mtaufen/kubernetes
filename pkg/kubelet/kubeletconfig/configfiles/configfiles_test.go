@@ -117,7 +117,7 @@ apiVersion: kubelet.config.k8s.io/v1beta1
 podManifestPath: %s`, relativePath)),
 			func() *kubeletconfig.KubeletConfiguration {
 				kc := newConfig(t)
-				kc.PodManifestPath = filepath.Join(configDir, relativePath)
+				kc.PodPath = filepath.Join(configDir, relativePath)
 				return kc
 			}(),
 			"",
@@ -127,7 +127,7 @@ podManifestPath: %s`, relativePath)),
 			newString(fmt.Sprintf(`{"kind":"KubeletConfiguration","apiVersion":"kubelet.config.k8s.io/v1beta1","podManifestPath":"%s"}`, relativePath)),
 			func() *kubeletconfig.KubeletConfiguration {
 				kc := newConfig(t)
-				kc.PodManifestPath = filepath.Join(configDir, relativePath)
+				kc.PodPath = filepath.Join(configDir, relativePath)
 				return kc
 			}(),
 			"",
