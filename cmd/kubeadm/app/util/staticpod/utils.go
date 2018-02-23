@@ -157,30 +157,30 @@ func GetExtraParameters(overrides map[string]string, defaults map[string]string)
 }
 
 // WriteStaticPodToDisk writes a static pod file to disk
-func WriteStaticPodToDisk(componentName, manifestDir string, pod v1.Pod) error {
+func WriteStaticPodToDisk(componentName, podDir string, pod v1.Pod) error {
 
 	// creates target folder if not already exists
-	if err := os.MkdirAll(manifestDir, 0700); err != nil {
-		return fmt.Errorf("failed to create directory %q: %v", manifestDir, err)
+	if err := os.MkdirAll(podDir, 0700); err != nil {
+		return fmt.Errorf("failed to create directory %q: %v", podDir, err)
 	}
 
 	// writes the pod to disk
 	serialized, err := util.MarshalToYaml(&pod, v1.SchemeGroupVersion)
 	if err != nil {
-		return fmt.Errorf("failed to marshal manifest for %q to YAML: %v", componentName, err)
+		return fmt.Errorf("failed to marshal static pod file for %q to YAML: %v", componentName, err)
 	}
 
-	filename := kubeadmconstants.GetStaticPodFilepath(componentName, manifestDir)
+	filename := kubeadmconstants.GetStaticPodFilepath(componentName, podDir)
 
 	if err := ioutil.WriteFile(filename, serialized, 0600); err != nil {
-		return fmt.Errorf("failed to write static pod manifest file for %q (%q): %v", componentName, filename, err)
+		return fmt.Errorf("failed to write static pod file for %q (%q): %v", componentName, filename, err)
 	}
 
 	return nil
 }
 
 // GetProbeAddress returns an IP address or 127.0.0.1 to use for liveness probes
-// in static pod manifests.
+// in static pod files.
 func GetProbeAddress(cfg *kubeadmapi.MasterConfiguration, componentName string) string {
 	switch {
 	case componentName == kubeadmconstants.KubeAPIServer:

@@ -160,7 +160,7 @@ run_test() {
     env="$env -e TEST_ARGS=\"$TEST_ARGS\""
   fi
   # The test assumes that inside the container:
-  # * kubelet manifest path is mounted to the same path;
+  # * kubelet --pod-manifest-path is mounted to the same path;
   # * log collect directory is mounted to /var/result;
   # * root file system is mounted to /rootfs.
   sudo sh -c "docker run -it --rm --privileged=true --net=host -v /:/rootfs \

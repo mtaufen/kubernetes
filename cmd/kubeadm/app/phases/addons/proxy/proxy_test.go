@@ -90,14 +90,14 @@ func TestCreateServiceAccount(t *testing.T) {
 	}
 }
 
-func TestCompileManifests(t *testing.T) {
+func TestCompileFiles(t *testing.T) {
 	var tests = []struct {
-		manifest string
+		file     string
 		data     interface{}
 		expected bool
 	}{
 		{
-			manifest: KubeProxyConfigMap19,
+			file: KubeProxyConfigMap19,
 			data: struct {
 				MasterEndpoint, ProxyConfig string
 			}{
@@ -107,7 +107,7 @@ func TestCompileManifests(t *testing.T) {
 			expected: true,
 		},
 		{
-			manifest: KubeProxyDaemonSet19,
+			file: KubeProxyDaemonSet19,
 			data: struct{ ImageRepository, Arch, Version, ImageOverride, MasterTaintKey, CloudTaintKey string }{
 				ImageRepository: "foo",
 				Arch:            "foo",
@@ -120,11 +120,11 @@ func TestCompileManifests(t *testing.T) {
 		},
 	}
 	for _, rt := range tests {
-		_, actual := kubeadmutil.ParseTemplate(rt.manifest, rt.data)
+		_, actual := kubeadmutil.ParseTemplate(rt.file, rt.data)
 		if (actual == nil) != rt.expected {
 			t.Errorf(
-				"failed to compile %s manifest:\n\texpected: %t\n\t  actual: %t",
-				rt.manifest,
+				"failed to compile %s file:\n\texpected: %t\n\t  actual: %t",
+				rt.file,
 				rt.expected,
 				(actual == nil),
 			)

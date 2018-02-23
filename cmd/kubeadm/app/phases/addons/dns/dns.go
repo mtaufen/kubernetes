@@ -72,8 +72,8 @@ func kubeDNSAddon(cfg *kubeadmapi.MasterConfiguration, client clientset.Interfac
 		dnsProbeAddr = dnsBindAddr
 	}
 
-	// Get the YAML manifest conditionally based on the k8s version
-	kubeDNSDeploymentBytes := GetKubeDNSManifest(k8sVersion)
+	// Get the YAML Deployment conditionally based on the k8s version
+	kubeDNSDeploymentBytes := GetKubeDNSDeployment(k8sVersion)
 	dnsDeploymentBytes, err := kubeadmutil.ParseTemplate(kubeDNSDeploymentBytes,
 		struct{ ImageRepository, Arch, Version, DNSBindAddr, DNSProbeAddr, DNSDomain, MasterTaintKey string }{
 			ImageRepository: cfg.ImageRepository,
@@ -130,8 +130,8 @@ func createKubeDNSAddon(deploymentBytes, serviceBytes []byte, client clientset.I
 }
 
 func coreDNSAddon(cfg *kubeadmapi.MasterConfiguration, client clientset.Interface, k8sVersion *version.Version) error {
-	// Get the YAML manifest conditionally based on the k8s version
-	dnsDeploymentBytes := GetCoreDNSManifest(k8sVersion)
+	// Get the core DNS Deployment file based on the k8s version
+	dnsDeploymentBytes := GetCoreDNSDeployment(k8sVersion)
 	coreDNSDeploymentBytes, err := kubeadmutil.ParseTemplate(dnsDeploymentBytes, struct{ MasterTaintKey, Version string }{
 		MasterTaintKey: kubeadmconstants.LabelNodeRoleMaster,
 		Version:        GetDNSVersion(k8sVersion, kubeadmconstants.CoreDNS),

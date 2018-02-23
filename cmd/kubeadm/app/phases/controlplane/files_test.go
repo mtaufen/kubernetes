@@ -90,20 +90,20 @@ func TestCreateStaticPodFilesAndWrappers(t *testing.T) {
 		createStaticPodFunction func(outDir string, cfg *kubeadmapi.MasterConfiguration) error
 		expectedFiles           []string
 	}{
-		{ // CreateInitStaticPodManifestFiles
-			createStaticPodFunction: CreateInitStaticPodManifestFiles,
+		{ // CreateInitStaticPodFiles
+			createStaticPodFunction: CreateInitStaticPodFiles,
 			expectedFiles:           []string{kubeadmconstants.KubeAPIServer, kubeadmconstants.KubeControllerManager, kubeadmconstants.KubeScheduler},
 		},
-		{ // CreateAPIServerStaticPodManifestFile
-			createStaticPodFunction: CreateAPIServerStaticPodManifestFile,
+		{ // CreateAPIServerStaticPodFile
+			createStaticPodFunction: CreateAPIServerStaticPodFile,
 			expectedFiles:           []string{kubeadmconstants.KubeAPIServer},
 		},
-		{ // CreateControllerManagerStaticPodManifestFile
-			createStaticPodFunction: CreateControllerManagerStaticPodManifestFile,
+		{ // CreateControllerManagerStaticPodFile
+			createStaticPodFunction: CreateControllerManagerStaticPodFile,
 			expectedFiles:           []string{kubeadmconstants.KubeControllerManager},
 		},
-		{ // CreateSchedulerStaticPodManifestFile
-			createStaticPodFunction: CreateSchedulerStaticPodManifestFile,
+		{ // CreateSchedulerStaticPodFile
+			createStaticPodFunction: CreateSchedulerStaticPodFile,
 			expectedFiles:           []string{kubeadmconstants.KubeScheduler},
 		},
 	}
@@ -120,18 +120,18 @@ func TestCreateStaticPodFilesAndWrappers(t *testing.T) {
 		}
 
 		// Execute createStaticPodFunction
-		manifestPath := filepath.Join(tmpdir, kubeadmconstants.ManifestsSubDirName)
-		err := test.createStaticPodFunction(manifestPath, cfg)
+		podPath := filepath.Join(tmpdir, kubeadmconstants.StaticPodSubDirName)
+		err := test.createStaticPodFunction(podPath, cfg)
 		if err != nil {
 			t.Errorf("Error executing createStaticPodFunction: %v", err)
 			continue
 		}
 
 		// Assert expected files are there
-		testutil.AssertFilesCount(t, manifestPath, len(test.expectedFiles))
+		testutil.AssertFilesCount(t, podPath, len(test.expectedFiles))
 
 		for _, fileName := range test.expectedFiles {
-			testutil.AssertFileExists(t, manifestPath, fileName+".yaml")
+			testutil.AssertFileExists(t, podPath, fileName+".yaml")
 		}
 	}
 }

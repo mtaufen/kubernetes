@@ -47,8 +47,9 @@ const (
 	DefaultCertificatesDir = "/etc/kubernetes/pki"
 	// DefaultImageRepository defines default image registry
 	DefaultImageRepository = "k8s.gcr.io"
-	// DefaultManifestsDir defines default manifests directory
-	DefaultManifestsDir = "/etc/kubernetes/manifests"
+	// TODO(#10091): Stop using /etc/kubernetes/manifests in favor of /etc/kuberenetes/pods
+	// DefaultPodDir defines default pod directory
+	DefaultPodDir = "/etc/kubernetes/manifests"
 	// DefaultCRISocket defines the default cri socket
 	DefaultCRISocket = "/var/run/dockershim.sock"
 
@@ -198,7 +199,7 @@ func SetDefaults_KubeletConfiguration(obj *MasterConfiguration) {
 		obj.KubeletConfiguration.BaseConfig = &kubeletconfigv1beta1.KubeletConfiguration{}
 	}
 	if obj.KubeletConfiguration.BaseConfig.PodPath == "" {
-		obj.KubeletConfiguration.BaseConfig.PodPath = DefaultManifestsDir
+		obj.KubeletConfiguration.BaseConfig.PodPath = DefaultPodDir
 	}
 	if obj.KubeletConfiguration.BaseConfig.ClusterDNS == nil {
 		dnsIP, err := constants.GetDNSIP(obj.Networking.ServiceSubnet)

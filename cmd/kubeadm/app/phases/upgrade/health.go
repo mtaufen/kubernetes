@@ -56,7 +56,7 @@ func (c *healthCheck) Name() string {
 // - the API /healthz endpoint is healthy
 // - all master Nodes are Ready
 // - (if self-hosted) that there are DaemonSets with at least one Pod for all control plane components
-// - (if static pod-hosted) that all required Static Pod manifests exist on disk
+// - (if static pod-hosted) that all required Static Pod files exist on disk
 func CheckClusterHealth(client clientset.Interface, ignoreChecksErrors sets.String) error {
 	fmt.Println("[upgrade] Making sure the cluster is healthy:")
 
@@ -83,9 +83,9 @@ func CheckClusterHealth(client clientset.Interface, ignoreChecksErrors sets.Stri
 		})
 	} else {
 		healthChecks = append(healthChecks, &healthCheck{
-			name:   "StaticPodManifest",
+			name:   "StaticPodFile",
 			client: client,
-			f:      staticPodManifestHealth,
+			f:      staticPodFileHealth,
 		})
 	}
 
@@ -143,19 +143,19 @@ func controlPlaneHealth(client clientset.Interface) error {
 	return nil
 }
 
-// staticPodManifestHealth makes sure the required static pods are presents
-func staticPodManifestHealth(_ clientset.Interface) error {
-	nonExistentManifests := []string{}
+// staticPodFileHealth makes sure the required static pods are presents
+func staticPodFileHealth(_ clientset.Interface) error {
+	nonExistentFiles := []string{}
 	for _, component := range constants.MasterComponents {
-		manifestFile := constants.GetStaticPodFilepath(component, constants.GetStaticPodDirectory())
-		if _, err := os.Stat(manifestFile); os.IsNotExist(err) {
-			nonExistentManifests = append(nonExistentManifests, manifestFile)
+		podFile := constants.GetStaticPodFilepath(component, constants.GetStaticPodDirectory())
+		if _, err := os.Stat(podFile); os.IsNotExist(err) {
+			nonExistentFiles = append(nonExistentFiles, podFile)
 		}
 	}
-	if len(nonExistentManifests) == 0 {
+	if len(nonExistentFiles) == 0 {
 		return nil
 	}
-	return fmt.Errorf("The control plane seems to be Static Pod-hosted, but some of the manifests don't seem to exist on disk. This probably means you're running 'kubeadm upgrade' on a remote machine, which is not supported for a Static Pod-hosted cluster. Manifest files not found: %v", nonExistentManifests)
+	return fmt.Errorf("The control plane seems to be Static Pod-hosted, but some of the static pod files don't seem to exist on disk. This probably means you're running 'kubeadm upgrade' on a remote machine, which is not supported for a Static Pod-hosted cluster. Files not found: %v", nonExistentFiles)
 }
 
 // IsControlPlaneSelfHosted returns whether the control plane is self hosted or not

@@ -42,16 +42,16 @@ func GetDNSVersion(kubeVersion *version.Version, dns string) string {
 	}
 }
 
-// GetKubeDNSManifest returns the right kube-dns YAML manifest for a specific k8s version
-func GetKubeDNSManifest(kubeVersion *version.Version) string {
-	// v1.8.0+ has only one known YAML manifest spec, just return that here
-	// In the future when the kube-dns version is bumped at HEAD; add conditional logic to return the right manifest
+// GetKubeDNSDeployment returns the right kube-dns YAML Deployment for a specific k8s version
+func GetKubeDNSDeployment(kubeVersion *version.Version) string {
+	// v1.8.0+ has only one known YAML spec, just return that here
+	// TODO(luxas): In the future when the kube-dns version is bumped at HEAD; add conditional logic to return the right Deployment
 	return v180AndAboveKubeDNSDeployment
 }
 
-// GetCoreDNSManifest returns the right CoreDNS YAML manifest for a specific k8s version
-func GetCoreDNSManifest(kubeVersion *version.Version) string {
-	// v1.9.0+ has only one known YAML manifest spec, just return that here
-	// In the future when the CoreDNS version is bumped at HEAD; add conditional logic to return the right manifest
+// GetCoreDNSDeployment returns the right CoreDNS YAML Deployment for a specific k8s version
+func GetCoreDNSDeployment(kubeVersion *version.Version) string {
+	// v1.9.0+ has only one known YAML spec, just return that here
+	// TODO(luxas): In the future when the CoreDNS version is bumped at HEAD; add conditional logic to return the right Deployment
 	return CoreDNSDeployment
 }

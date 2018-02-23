@@ -118,8 +118,8 @@ various mechanisms (primarily through the apiserver) and ensures that the contai
 described in those PodSpecs are running and healthy. The kubelet doesn't manage
 containers which were not created by Kubernetes.
 
-Other than from an PodSpec from the apiserver, there are three ways that a container
-manifest can be provided to the Kubelet.
+Other than from an Pod object from the apiserver, there are three ways that a Pod
+specification can be provided to the Kubelet.
 
 File: Path passed as a flag on the command line. Files under this path will be monitored
 periodically for updates. The monitoring period is 20s by default and is configurable
@@ -129,7 +129,7 @@ HTTP endpoint: HTTP endpoint passed as a parameter on the command line. This end
 is checked every 20 seconds (also configurable with a flag).
 
 HTTP server: The kubelet can also listen for HTTP and respond to a simple API
-(underspec'd currently) to submit a new manifest.`,
+(underspec'd currently) to submit a new Pod.`,
 		// The Kubelet has special flag parsing requirements to enforce flag precedence rules,
 		// so we do all our parsing manually in Run, below.
 		// DisableFlagParsing=true provides the full set of flags passed to the kubelet in the

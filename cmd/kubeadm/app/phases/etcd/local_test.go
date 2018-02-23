@@ -45,7 +45,7 @@ func TestGetEtcdPodSpec(t *testing.T) {
 	}
 }
 
-func TestCreateLocalEtcdStaticPodManifestFile(t *testing.T) {
+func TestCreateLocalEtcdStaticPodFile(t *testing.T) {
 
 	// Create temp folder for the test case
 	tmpdir := testutil.SetupTempDir(t)
@@ -57,15 +57,15 @@ func TestCreateLocalEtcdStaticPodManifestFile(t *testing.T) {
 	}
 
 	// Execute createStaticPodFunction
-	manifestPath := filepath.Join(tmpdir, kubeadmconstants.ManifestsSubDirName)
-	err := CreateLocalEtcdStaticPodManifestFile(manifestPath, cfg)
+	podPath := filepath.Join(tmpdir, kubeadmconstants.StaticPodSubDirName)
+	err := CreateLocalEtcdStaticPodFile(podPath, cfg)
 	if err != nil {
-		t.Errorf("Error executing CreateEtcdStaticPodManifestFile: %v", err)
+		t.Errorf("Error executing CreateEtcdStaticPodpodFile: %v", err)
 	}
 
 	// Assert expected files are there
-	testutil.AssertFilesCount(t, manifestPath, 1)
-	testutil.AssertFileExists(t, manifestPath, kubeadmconstants.Etcd+".yaml")
+	testutil.AssertFilesCount(t, podPath, 1)
+	testutil.AssertFileExists(t, podPath, kubeadmconstants.Etcd+".yaml")
 }
 
 func TestGetEtcdCommand(t *testing.T) {

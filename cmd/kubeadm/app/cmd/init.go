@@ -292,11 +292,11 @@ func (i *Init) Validate(cmd *cobra.Command) error {
 	return validation.ValidateMasterConfiguration(i.cfg).ToAggregate()
 }
 
-// Run executes master node provisioning, including certificates, needed static pod manifests, etc.
+// Run executes master node provisioning, including certificates, needed static pods, etc.
 func (i *Init) Run(out io.Writer) error {
 	// Get directories to write files to; can be faked if we're dry-running
 	realCertsDir := i.cfg.CertificatesDir
-	certsDirToWriteTo, kubeConfigDir, manifestDir, err := getDirectoriesToUse(i.dryRun, i.cfg.CertificatesDir)
+	certsDirToWriteTo, kubeConfigDir, podDir, err := getDirectoriesToUse(i.dryRun, i.cfg.CertificatesDir)
 	if err != nil {
 		return fmt.Errorf("error getting directories to use: %v", err)
 	}
@@ -336,26 +336,26 @@ func (i *Init) Run(out io.Writer) error {
 		}
 	}
 
-	// Temporarily set cfg.CertificatesDir to the "real value" when writing controlplane manifests
-	// This is needed for writing the right kind of manifests
+	// Temporarily set cfg.CertificatesDir to the "real value" when writing controlplane pods
+	// This is needed for writing the right kind of pods
 	i.cfg.CertificatesDir = realCertsDir
 
 	// PHASE 3: Bootstrap the control plane
-	if err := controlplanephase.CreateInitStaticPodManifestFiles(manifestDir, i.cfg); err != nil {
-		return fmt.Errorf("error creating init static pod manifest files: %v", err)
+	if err := controlplanephase.CreateInitStaticPodFiles(podDir, i.cfg); err != nil {
+		return fmt.Errorf("error creating init static pod files: %v", err)
 	}
 	// Add etcd static pod spec only if external etcd is not configured
 	if len(i.cfg.Etcd.Endpoints) == 0 {
-		if err := etcdphase.CreateLocalEtcdStaticPodManifestFile(manifestDir, i.cfg); err != nil {
-			return fmt.Errorf("error creating local etcd static pod manifest file: %v", err)
+		if err := etcdphase.CreateLocalEtcdStaticPodFile(podDir, i.cfg); err != nil {
+			return fmt.Errorf("error creating local etcd static pod file: %v", err)
 		}
 	}
 
 	// Revert the earlier CertificatesDir assignment to the directory that can be written to
 	i.cfg.CertificatesDir = certsDirToWriteTo
 
-	// If we're dry-running, print the generated manifests
-	if err := printFilesIfDryRunning(i.dryRun, manifestDir); err != nil {
+	// If we're dry-running, print the generated pods
+	if err := printFilesIfDryRunning(i.dryRun, podDir); err != nil {
 		return fmt.Errorf("error printing files on dryrun: %v", err)
 	}
 
@@ -453,9 +453,9 @@ func (i *Init) Run(out io.Writer) error {
 	// PHASE 7: Make the control plane self-hosted if feature gate is enabled
 	if features.Enabled(i.cfg.FeatureGates, features.SelfHosting) {
 		// Temporary control plane is up, now we create our self hosted control
-		// plane components and remove the static manifests:
+		// plane components and remove the static pod files:
 		fmt.Println("[self-hosted] Creating self-hosted control plane.")
-		if err := selfhostingphase.CreateSelfHostedControlPlane(manifestDir, kubeConfigDir, i.cfg, client, waiter, i.dryRun); err != nil {
+		if err := selfhostingphase.CreateSelfHostedControlPlane(podDir, kubeConfigDir, i.cfg, client, waiter, i.dryRun); err != nil {
 			return fmt.Errorf("error creating self hosted control plane: %v", err)
 		}
 	}
@@ -492,7 +492,7 @@ func createClient(cfg *kubeadmapi.MasterConfiguration, dryRun bool) (clientset.I
 	return kubeconfigutil.ClientSetFromFile(kubeadmconstants.GetAdminKubeConfigPath())
 }
 
-// getDirectoriesToUse returns the (in order) certificates, kubeconfig and Static Pod manifest directories, followed by a possible error
+// getDirectoriesToUse returns the (in order) certificates, kubeconfig and Static Pod directories, followed by a possible error
 // This behaves differently when dry-running vs the normal flow
 func getDirectoriesToUse(dryRun bool, defaultPkiDir string) (string, string, string, error) {
 	if dryRun {
@@ -507,20 +507,20 @@ func getDirectoriesToUse(dryRun bool, defaultPkiDir string) (string, string, str
 	return defaultPkiDir, kubeadmconstants.KubernetesDir, kubeadmconstants.GetStaticPodDirectory(), nil
 }
 
-// printFilesIfDryRunning prints the Static Pod manifests to stdout and informs about the temporary directory to go and lookup
-func printFilesIfDryRunning(dryRun bool, manifestDir string) error {
+// printFilesIfDryRunning prints the Static Pods to stdout and informs about the temporary directory to go and lookup
+func printFilesIfDryRunning(dryRun bool, podDir string) error {
 	if !dryRun {
 		return nil
 	}
 
-	fmt.Printf("[dryrun] Wrote certificates, kubeconfig files and control plane manifests to the %q directory.\n", manifestDir)
+	fmt.Printf("[dryrun] Wrote certificates, kubeconfig files and control plane pods to the %q directory.\n", podDir)
 	fmt.Println("[dryrun] The certificates or kubeconfig files would not be printed due to their sensitive nature.")
-	fmt.Printf("[dryrun] Please examine the %q directory for details about what would be written.\n", manifestDir)
+	fmt.Printf("[dryrun] Please examine the %q directory for details about what would be written.\n", podDir)
 
-	// Print the contents of the upgraded manifests and pretend like they were in /etc/kubernetes/manifests
+	// Print the contents of the upgraded pods and pretend like they were in /etc/kubernetes/manifests
 	files := []dryrunutil.FileToPrint{}
 	for _, component := range kubeadmconstants.MasterComponents {
-		realPath := kubeadmconstants.GetStaticPodFilepath(component, manifestDir)
+		realPath := kubeadmconstants.GetStaticPodFilepath(component, podDir)
 		outputPath := kubeadmconstants.GetStaticPodFilepath(component, kubeadmconstants.GetStaticPodDirectory())
 		files = append(files, dryrunutil.NewFileToPrint(realPath, outputPath))
 	}

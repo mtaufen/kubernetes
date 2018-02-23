@@ -45,7 +45,7 @@ func FindPort(pod *v1.Pod, svcPort *v1.ServicePort) (int, error) {
 		return portName.IntValue(), nil
 	}
 
-	return 0, fmt.Errorf("no suitable port for manifest: %s", pod.UID)
+	return 0, fmt.Errorf("no suitable port for Pod: %s", pod.UID)
 }
 
 // Visitor is called with each object name, and returns true if visiting should continue

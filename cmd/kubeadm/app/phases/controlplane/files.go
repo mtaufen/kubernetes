@@ -48,28 +48,28 @@ const (
 	defaultV19AdmissionControl    = "NamespaceLifecycle,LimitRanger,ServiceAccount,DefaultStorageClass,DefaultTolerationSeconds,NodeRestriction,MutatingAdmissionWebhook,ValidatingAdmissionWebhook,ResourceQuota"
 )
 
-// CreateInitStaticPodManifestFiles will write all static pod manifest files needed to bring up the control plane.
-func CreateInitStaticPodManifestFiles(manifestDir string, cfg *kubeadmapi.MasterConfiguration) error {
-	return createStaticPodFiles(manifestDir, cfg, kubeadmconstants.KubeAPIServer, kubeadmconstants.KubeControllerManager, kubeadmconstants.KubeScheduler)
+// CreateInitStaticPodFiles will write all static pod files needed to bring up the control plane.
+func CreateInitStaticPodFiles(podDir string, cfg *kubeadmapi.MasterConfiguration) error {
+	return createStaticPodFiles(podDir, cfg, kubeadmconstants.KubeAPIServer, kubeadmconstants.KubeControllerManager, kubeadmconstants.KubeScheduler)
 }
 
-// CreateAPIServerStaticPodManifestFile will write APIserver static pod manifest file.
-func CreateAPIServerStaticPodManifestFile(manifestDir string, cfg *kubeadmapi.MasterConfiguration) error {
-	return createStaticPodFiles(manifestDir, cfg, kubeadmconstants.KubeAPIServer)
+// CreateAPIServerStaticPodFile will write APIserver static pod file.
+func CreateAPIServerStaticPodFile(podDir string, cfg *kubeadmapi.MasterConfiguration) error {
+	return createStaticPodFiles(podDir, cfg, kubeadmconstants.KubeAPIServer)
 }
 
-// CreateControllerManagerStaticPodManifestFile will write  controller manager static pod manifest file.
-func CreateControllerManagerStaticPodManifestFile(manifestDir string, cfg *kubeadmapi.MasterConfiguration) error {
-	return createStaticPodFiles(manifestDir, cfg, kubeadmconstants.KubeControllerManager)
+// CreateControllerManagerStaticPodFile will write  controller manager static pod file.
+func CreateControllerManagerStaticPodFile(podDir string, cfg *kubeadmapi.MasterConfiguration) error {
+	return createStaticPodFiles(podDir, cfg, kubeadmconstants.KubeControllerManager)
 }
 
-// CreateSchedulerStaticPodManifestFile will write scheduler static pod manifest file.
-func CreateSchedulerStaticPodManifestFile(manifestDir string, cfg *kubeadmapi.MasterConfiguration) error {
-	return createStaticPodFiles(manifestDir, cfg, kubeadmconstants.KubeScheduler)
+// CreateSchedulerStaticPodFile will write scheduler static pod file.
+func CreateSchedulerStaticPodFile(podDir string, cfg *kubeadmapi.MasterConfiguration) error {
+	return createStaticPodFiles(podDir, cfg, kubeadmconstants.KubeScheduler)
 }
 
 // GetStaticPodSpecs returns all staticPodSpecs actualized to the context of the current MasterConfiguration
-// NB. this methods holds the information about how kubeadm creates static pod manifests.
+// NB. this methods holds the information about how kubeadm creates static pods.
 func GetStaticPodSpecs(cfg *kubeadmapi.MasterConfiguration, k8sVersion *version.Version) map[string]v1.Pod {
 	// Get the required hostpath mounts
 	mounts := getHostPathVolumesForTheControlPlane(cfg)
@@ -124,7 +124,7 @@ func GetStaticPodSpecs(cfg *kubeadmapi.MasterConfiguration, k8sVersion *version.
 }
 
 // createStaticPodFiles creates all the requested static pod files.
-func createStaticPodFiles(manifestDir string, cfg *kubeadmapi.MasterConfiguration, componentNames ...string) error {
+func createStaticPodFiles(podDir string, cfg *kubeadmapi.MasterConfiguration, componentNames ...string) error {
 	// TODO: Move the "pkg/util/version".Version object into the internal API instead of always parsing the string
 	k8sVersion, err := version.ParseSemantic(cfg.KubernetesVersion)
 	if err != nil {
@@ -143,11 +143,11 @@ func createStaticPodFiles(manifestDir string, cfg *kubeadmapi.MasterConfiguratio
 		}
 
 		// writes the StaticPodSpec to disk
-		if err := staticpodutil.WriteStaticPodToDisk(componentName, manifestDir, spec); err != nil {
-			return fmt.Errorf("failed to create static pod manifest file for %q: %v", componentName, err)
+		if err := staticpodutil.WriteStaticPodToDisk(componentName, podDir, spec); err != nil {
+			return fmt.Errorf("failed to create static pod file for %q: %v", componentName, err)
 		}
 
-		fmt.Printf("[controlplane] Wrote Static Pod manifest for component %s to %q\n", componentName, kubeadmconstants.GetStaticPodFilepath(componentName, manifestDir))
+		fmt.Printf("[controlplane] Wrote Static Pod file for component %s to %q\n", componentName, kubeadmconstants.GetStaticPodFilepath(componentName, podDir))
 	}
 
 	return nil

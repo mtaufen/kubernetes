@@ -865,7 +865,7 @@ func RunInitMasterChecks(execer utilsexec.Interface, cfg *kubeadmapi.MasterConfi
 		suggestion: fmt.Sprintf("go get %v", kubeadmconstants.CRICtlPackage),
 	}
 
-	manifestsDir := filepath.Join(kubeadmconstants.KubernetesDir, kubeadmconstants.ManifestsSubDirName)
+	podDir := filepath.Join(kubeadmconstants.KubernetesDir, kubeadmconstants.StaticPodSubDirName)
 
 	checks := []Checker{
 		KubernetesVersionCheck{KubernetesVersion: cfg.KubernetesVersion, KubeadmVersion: kubeadmversion.Get().GitVersion},
@@ -880,10 +880,10 @@ func RunInitMasterChecks(execer utilsexec.Interface, cfg *kubeadmapi.MasterConfi
 		PortOpenCheck{port: 10250},
 		PortOpenCheck{port: 10251},
 		PortOpenCheck{port: 10252},
-		FileAvailableCheck{Path: kubeadmconstants.GetStaticPodFilepath(kubeadmconstants.KubeAPIServer, manifestsDir)},
-		FileAvailableCheck{Path: kubeadmconstants.GetStaticPodFilepath(kubeadmconstants.KubeControllerManager, manifestsDir)},
-		FileAvailableCheck{Path: kubeadmconstants.GetStaticPodFilepath(kubeadmconstants.KubeScheduler, manifestsDir)},
-		FileAvailableCheck{Path: kubeadmconstants.GetStaticPodFilepath(kubeadmconstants.Etcd, manifestsDir)},
+		FileAvailableCheck{Path: kubeadmconstants.GetStaticPodFilepath(kubeadmconstants.KubeAPIServer, podDir)},
+		FileAvailableCheck{Path: kubeadmconstants.GetStaticPodFilepath(kubeadmconstants.KubeControllerManager, podDir)},
+		FileAvailableCheck{Path: kubeadmconstants.GetStaticPodFilepath(kubeadmconstants.KubeScheduler, podDir)},
+		FileAvailableCheck{Path: kubeadmconstants.GetStaticPodFilepath(kubeadmconstants.Etcd, podDir)},
 		FileContentCheck{Path: bridgenf, Content: []byte{'1'}},
 		SwapCheck{},
 		InPathCheck{executable: "ip", mandatory: true, exec: execer},
@@ -972,7 +972,7 @@ func RunJoinNodeChecks(execer utilsexec.Interface, cfg *kubeadmapi.NodeConfigura
 		KubeletVersionCheck{exec: execer},
 		ServiceCheck{Service: "kubelet", CheckIfActive: false},
 		PortOpenCheck{port: 10250},
-		DirAvailableCheck{Path: filepath.Join(kubeadmconstants.KubernetesDir, kubeadmconstants.ManifestsSubDirName)},
+		DirAvailableCheck{Path: filepath.Join(kubeadmconstants.KubernetesDir, kubeadmconstants.StaticPodSubDirName)},
 		FileAvailableCheck{Path: cfg.CACertPath},
 		FileAvailableCheck{Path: filepath.Join(kubeadmconstants.KubernetesDir, kubeadmconstants.KubeletKubeConfigFileName)},
 		FileAvailableCheck{Path: filepath.Join(kubeadmconstants.KubernetesDir, kubeadmconstants.KubeletBootstrapKubeConfigFileName)},

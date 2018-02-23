@@ -84,14 +84,14 @@ func TestCreateServiceAccount(t *testing.T) {
 	}
 }
 
-func TestCompileManifests(t *testing.T) {
+func TestCompileFiles(t *testing.T) {
 	var tests = []struct {
-		manifest string
+		file     string
 		data     interface{}
 		expected bool
 	}{
 		{
-			manifest: v180AndAboveKubeDNSDeployment,
+			file: v180AndAboveKubeDNSDeployment,
 			data: struct{ ImageRepository, Arch, Version, DNSBindAddr, DNSProbeAddr, DNSDomain, MasterTaintKey string }{
 				ImageRepository: "foo",
 				Arch:            "foo",
@@ -104,14 +104,14 @@ func TestCompileManifests(t *testing.T) {
 			expected: true,
 		},
 		{
-			manifest: KubeDNSService,
+			file: KubeDNSService,
 			data: struct{ DNSIP string }{
 				DNSIP: "foo",
 			},
 			expected: true,
 		},
 		{
-			manifest: CoreDNSDeployment,
+			file: CoreDNSDeployment,
 			data: struct{ MasterTaintKey, Version string }{
 				MasterTaintKey: "foo",
 				Version:        "foo",
@@ -119,14 +119,14 @@ func TestCompileManifests(t *testing.T) {
 			expected: true,
 		},
 		{
-			manifest: KubeDNSService,
+			file: KubeDNSService,
 			data: struct{ DNSIP string }{
 				DNSIP: "foo",
 			},
 			expected: true,
 		},
 		{
-			manifest: CoreDNSConfigMap,
+			file: CoreDNSConfigMap,
 			data: struct{ DNSDomain, ServiceCIDR string }{
 				DNSDomain:   "foo",
 				ServiceCIDR: "foo",
@@ -135,10 +135,10 @@ func TestCompileManifests(t *testing.T) {
 		},
 	}
 	for _, rt := range tests {
-		_, actual := kubeadmutil.ParseTemplate(rt.manifest, rt.data)
+		_, actual := kubeadmutil.ParseTemplate(rt.file, rt.data)
 		if (actual == nil) != rt.expected {
 			t.Errorf(
-				"failed CompileManifests:\n\texpected: %t\n\t  actual: %t",
+				"failed CompileFiles:\n\texpected: %t\n\t  actual: %t",
 				rt.expected,
 				(actual == nil),
 			)

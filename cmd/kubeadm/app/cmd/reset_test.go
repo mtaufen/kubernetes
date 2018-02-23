@@ -61,18 +61,18 @@ func TestConfigDirCleaner(t *testing.T) {
 	}{
 		"simple reset": {
 			setupDirs: []string{
-				"manifests",
+				"static-pods",
 				"pki",
 			},
 			setupFiles: []string{
-				"manifests/etcd.yaml",
-				"manifests/kube-apiserver.yaml",
+				"static-pods/etcd.yaml",
+				"static-pods/kube-apiserver.yaml",
 				"pki/ca.pem",
 				kubeadmconstants.AdminKubeConfigFileName,
 				kubeadmconstants.KubeletKubeConfigFileName,
 			},
 			verifyExists: []string{
-				"manifests",
+				"static-pods",
 				"pki",
 			},
 		},
@@ -88,37 +88,37 @@ func TestConfigDirCleaner(t *testing.T) {
 				"pki",
 			},
 			verifyNotExists: []string{
-				"manifests",
+				"static-pods",
 			},
 		},
 		"preserve cloud-config": {
 			setupDirs: []string{
-				"manifests",
+				"static-pods",
 				"pki",
 			},
 			setupFiles: []string{
-				"manifests/etcd.yaml",
-				"manifests/kube-apiserver.yaml",
+				"static-pods/etcd.yaml",
+				"static-pods/kube-apiserver.yaml",
 				"pki/ca.pem",
 				kubeadmconstants.AdminKubeConfigFileName,
 				kubeadmconstants.KubeletKubeConfigFileName,
 				"cloud-config",
 			},
 			verifyExists: []string{
-				"manifests",
+				"static-pods",
 				"pki",
 				"cloud-config",
 			},
 		},
 		"preserve hidden files and directories": {
 			setupDirs: []string{
-				"manifests",
+				"static-pods",
 				"pki",
 				".mydir",
 			},
 			setupFiles: []string{
-				"manifests/etcd.yaml",
-				"manifests/kube-apiserver.yaml",
+				"static-pods/etcd.yaml",
+				"static-pods/kube-apiserver.yaml",
 				"pki/ca.pem",
 				kubeadmconstants.AdminKubeConfigFileName,
 				kubeadmconstants.KubeletKubeConfigFileName,
@@ -126,7 +126,7 @@ func TestConfigDirCleaner(t *testing.T) {
 				".mydir/.myfile",
 			},
 			verifyExists: []string{
-				"manifests",
+				"static-pods",
 				"pki",
 				".cloud-config",
 				".mydir",
@@ -136,7 +136,7 @@ func TestConfigDirCleaner(t *testing.T) {
 		"no-op reset": {
 			verifyNotExists: []string{
 				"pki",
-				"manifests",
+				"static-pods",
 			},
 		},
 	}
@@ -173,7 +173,7 @@ func TestConfigDirCleaner(t *testing.T) {
 		assertExists(t, tmpDir)
 		assertNotExists(t, filepath.Join(tmpDir, kubeadmconstants.AdminKubeConfigFileName))
 		assertNotExists(t, filepath.Join(tmpDir, kubeadmconstants.KubeletKubeConfigFileName))
-		assertDirEmpty(t, filepath.Join(tmpDir, "manifests"))
+		assertDirEmpty(t, filepath.Join(tmpDir, "static-pods"))
 		assertDirEmpty(t, filepath.Join(tmpDir, "pki"))
 
 		// Verify the files as requested by the test:

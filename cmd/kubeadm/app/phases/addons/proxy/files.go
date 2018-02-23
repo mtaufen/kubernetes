@@ -17,7 +17,7 @@ limitations under the License.
 package proxy
 
 const (
-	// KubeProxyConfigMap19 is the proxy ConfigMap manifest for Kubernetes 1.9 and above
+	// KubeProxyConfigMap19 is the proxy ConfigMap for Kubernetes 1.9 and above
 	KubeProxyConfigMap19 = `
 kind: ConfigMap
 apiVersion: v1
@@ -50,7 +50,7 @@ data:
 {{ .ProxyConfig}}
 `
 
-	// KubeProxyDaemonSet19 is the proxy DaemonSet manifest for Kubernetes 1.9 and above
+	// KubeProxyDaemonSet19 is the proxy DaemonSet for Kubernetes 1.9 and above
 	KubeProxyDaemonSet19 = `
 apiVersion: apps/v1
 kind: DaemonSet

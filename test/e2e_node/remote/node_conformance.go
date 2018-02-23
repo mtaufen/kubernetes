@@ -146,13 +146,13 @@ func loadConformanceImage(host, workspace string) error {
 // kubeletLauncherLog is the log of kubelet launcher.
 const kubeletLauncherLog = "kubelet-launcher.log"
 
-// kubeletPodPath is a fixed known pod specification path. We can not use the random pod
-// manifest directory generated in e2e_node.test because we need to mount the directory into
+// kubeletPodPath is a fixed known pod specification path. We can not use the random static pod
+// directory generated in e2e_node.test because we need to mount the directory into
 // the conformance test container, it's easier if it's a known directory.
 // TODO(random-liu): Get rid of this once we switch to cluster e2e node bootstrap script.
-var kubeletPodPath = "conformance-pod-manifest-" + timestamp
+var kubeletPodPath = "conformance-pod-" + timestamp
 
-// getPodPath returns pod manifest full path.
+// getPodPath returns static pod file full path.
 func getPodPath(workspace string) string {
 	return filepath.Join(workspace, kubeletPodPath)
 }
@@ -173,14 +173,14 @@ func isSystemd(host string) (bool, error) {
 // node conformance test.
 // TODO(random-liu): Switch to use standard node bootstrap script.
 func launchKubelet(host, workspace, results, testArgs string) error {
-	podManifestPath := getPodPath(workspace)
-	if output, err := SSH(host, "mkdir", podManifestPath); err != nil {
-		return fmt.Errorf("failed to create kubelet pod manifest path %q: error - %v output - %q",
-			podManifestPath, err, output)
+	podPath := getPodPath(workspace)
+	if output, err := SSH(host, "mkdir", podPath); err != nil {
+		return fmt.Errorf("failed to create kubelet static pod path %q: error - %v output - %q",
+			podPath, err, output)
 	}
 	startKubeletCmd := fmt.Sprintf("./%s --run-kubelet-mode --logtostderr --node-name=%s"+
 		" --report-dir=%s %s --kubelet-flags=--pod-manifest-path=%s > %s 2>&1",
-		conformanceTestBinary, host, results, testArgs, podManifestPath, filepath.Join(results, kubeletLauncherLog))
+		conformanceTestBinary, host, results, testArgs, podPath, filepath.Join(results, kubeletLauncherLog))
 	var cmd []string
 	systemd, err := isSystemd(host)
 	if err != nil {
@@ -248,11 +248,11 @@ func stopKubelet(host, workspace string) error {
 		}
 	}
 	glog.Info("Successfully stop kubelet")
-	// Clean up the pod manifest path
-	podManifestPath := getPodPath(workspace)
-	if output, err := SSH(host, "rm", "-f", filepath.Join(workspace, podManifestPath)); err != nil {
-		return fmt.Errorf("failed to cleanup pod manifest directory %q: error - %v, output - %q",
-			podManifestPath, err, output)
+	// Clean up the static pod path
+	podPath := getPodPath(workspace)
+	if output, err := SSH(host, "rm", "-f", filepath.Join(workspace, podPath)); err != nil {
+		return fmt.Errorf("failed to cleanup static pod directory %q: error - %v, output - %q",
+			podPath, err, output)
 	}
 	return nil
 }
@@ -291,9 +291,9 @@ func (c *ConformanceRemote) RunTest(host, workspace, results, imageDesc, junitFi
 
 	// Run the tests
 	glog.V(2).Infof("Starting tests on %q", host)
-	podManifestPath := getPodPath(workspace)
+	podPath := getPodPath(workspace)
 	cmd := fmt.Sprintf("'timeout -k 30s %fs docker run --rm --privileged=true --net=host -v /:/rootfs -v %s:%s -v %s:/var/result -e TEST_ARGS=--report-prefix=%s %s'",
-		timeout.Seconds(), podManifestPath, podManifestPath, results, junitFilePrefix, getConformanceTestImageName(systemSpecName))
+		timeout.Seconds(), podPath, podPath, results, junitFilePrefix, getConformanceTestImageName(systemSpecName))
 	testOutput, err := SSH(host, "sh", "-c", cmd)
 	if err != nil {
 		return testOutput, err

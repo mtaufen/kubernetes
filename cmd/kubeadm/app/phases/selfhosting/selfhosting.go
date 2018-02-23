@@ -47,12 +47,12 @@ const (
 // 3. Mutate the PodSpec to be compatible with self-hosting (add the right labels, taints, etc. so it can schedule correctly)
 // 4. Build a new DaemonSet object for the self-hosted component in question. Use the above mentioned PodSpec
 // 5. Create the DaemonSet resource. Wait until the Pods are running.
-// 6. Remove the Static Pod manifest file. The kubelet will stop the original Static Pod-hosted component that was running.
+// 6. Remove the Static Pod file. The kubelet will stop the original Static Pod-hosted component that was running.
 // 7. The self-hosted containers should now step up and take over.
 // 8. In order to avoid race conditions, we have to make sure that static pod is deleted correctly before we continue
 //      Otherwise, there is a race condition when we proceed without kubelet having restarted the API server correctly and the next .Create call flakes
 // 9. Do that for the kube-apiserver, kube-controller-manager and kube-scheduler in a loop
-func CreateSelfHostedControlPlane(manifestsDir, kubeConfigDir string, cfg *kubeadmapi.MasterConfiguration, client clientset.Interface, waiter apiclient.Waiter, dryRun bool) error {
+func CreateSelfHostedControlPlane(podDir, kubeConfigDir string, cfg *kubeadmapi.MasterConfiguration, client clientset.Interface, waiter apiclient.Waiter, dryRun bool) error {
 
 	// Adjust the timeout slightly to something self-hosting specific
 	waiter.SetTimeout(selfHostingWaitTimeout)
@@ -74,16 +74,16 @@ func CreateSelfHostedControlPlane(manifestsDir, kubeConfigDir string, cfg *kubea
 
 	for _, componentName := range kubeadmconstants.MasterComponents {
 		start := time.Now()
-		manifestPath := kubeadmconstants.GetStaticPodFilepath(componentName, manifestsDir)
+		podPath := kubeadmconstants.GetStaticPodFilepath(componentName, podDir)
 
 		// Since we want this function to be idempotent; just continue and try the next component if this file doesn't exist
-		if _, err := os.Stat(manifestPath); err != nil {
+		if _, err := os.Stat(podPath); err != nil {
 			fmt.Printf("[self-hosted] The Static Pod for the component %q doesn't seem to be on the disk; trying the next one\n", componentName)
 			continue
 		}
 
 		// Load the Static Pod file in order to be able to create a self-hosted variant of that file
-		pod, err := volumeutil.LoadPodFromFile(manifestPath)
+		pod, err := volumeutil.LoadPodFromFile(podPath)
 		if err != nil {
 			return err
 		}
@@ -104,10 +104,10 @@ func CreateSelfHostedControlPlane(manifestsDir, kubeConfigDir string, cfg *kubea
 			return err
 		}
 
-		// Remove the old Static Pod manifest if not dryrunning
+		// Remove the old Static Pod files if not dryrunning
 		if !dryRun {
-			if err := os.RemoveAll(manifestPath); err != nil {
-				return fmt.Errorf("unable to delete static pod manifest for %s [%v]", componentName, err)
+			if err := os.RemoveAll(podPath); err != nil {
+				return fmt.Errorf("unable to delete static pod files for %s [%v]", componentName, err)
 			}
 		}
 

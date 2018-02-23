@@ -23,6 +23,7 @@ import (
 	"testing"
 )
 
+// TODO(mtaufen): This test is effectively a checksum; these sorts of tests aren't particularly useful.
 func TestGetStaticPodDirectory(t *testing.T) {
 	expected := "/etc/kubernetes/manifests"
 	actual := GetStaticPodDirectory()
@@ -51,26 +52,26 @@ func TestGetAdminKubeConfigPath(t *testing.T) {
 
 func TestGetStaticPodFilepath(t *testing.T) {
 	var tests = []struct {
-		componentName, manifestsDir, expected string
+		componentName, podDir, expected string
 	}{
 		{
 			componentName: "kube-apiserver",
-			manifestsDir:  "/etc/kubernetes/manifests",
+			podDir:        "/etc/kubernetes/manifests",
 			expected:      "/etc/kubernetes/manifests/kube-apiserver.yaml",
 		},
 		{
 			componentName: "kube-controller-manager",
-			manifestsDir:  "/etc/kubernetes/manifests/",
+			podDir:        "/etc/kubernetes/manifests/",
 			expected:      "/etc/kubernetes/manifests/kube-controller-manager.yaml",
 		},
 		{
 			componentName: "foo",
-			manifestsDir:  "/etc/bar/",
+			podDir:        "/etc/bar/",
 			expected:      "/etc/bar/foo.yaml",
 		},
 	}
 	for _, rt := range tests {
-		actual := GetStaticPodFilepath(rt.componentName, rt.manifestsDir)
+		actual := GetStaticPodFilepath(rt.componentName, rt.podDir)
 		if actual != rt.expected {
 			t.Errorf(
 				"failed GetStaticPodFilepath:\n\texpected: %s\n\t  actual: %s",

@@ -17,7 +17,7 @@ limitations under the License.
 package dns
 
 const (
-	// v180AndAboveKubeDNSDeployment is the kube-dns Deployment manifest for the kube-dns manifest for v1.7+
+	// v180AndAboveKubeDNSDeployment is the kube-dns Deployment for v1.8+
 	v180AndAboveKubeDNSDeployment = `
 apiVersion: apps/v1
 kind: Deployment
@@ -185,7 +185,7 @@ spec:
                 - {{ .Arch }}
 `
 
-	// KubeDNSService is the kube-dns Service manifest
+	// KubeDNSService is the kube-dns Service
 	KubeDNSService = `
 apiVersion: v1
 kind: Service
@@ -214,7 +214,7 @@ spec:
     k8s-app: kube-dns
 `
 
-	// CoreDNSDeployment is the CoreDNS Deployment manifest
+	// CoreDNSDeployment is the CoreDNS Deployment
 	CoreDNSDeployment = `
 apiVersion: apps/v1
 kind: Deployment
@@ -295,7 +295,7 @@ spec:
               path: Corefile
 `
 
-	// CoreDNSConfigMap is the CoreDNS ConfigMap manifest
+	// CoreDNSConfigMap is the CoreDNS ConfigMap
 	CoreDNSConfigMap = `
 apiVersion: v1
 kind: ConfigMap
@@ -317,7 +317,7 @@ data:
         cache 30
     }
 `
-	// CoreDNSClusterRole is the CoreDNS ClusterRole manifest
+	// CoreDNSClusterRole is the CoreDNS ClusterRole
 	CoreDNSClusterRole = `
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -335,7 +335,7 @@ rules:
   - list
   - watch
 `
-	// CoreDNSClusterRoleBinding is the CoreDNS Clusterrolebinding manifest
+	// CoreDNSClusterRoleBinding is the CoreDNS Clusterrolebinding
 	CoreDNSClusterRoleBinding = `
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -350,7 +350,7 @@ subjects:
   name: coredns
   namespace: kube-system
 `
-	// CoreDNSServiceAccount is the CoreDNS ServiceAccount manifest
+	// CoreDNSServiceAccount is the CoreDNS ServiceAccount
 	CoreDNSServiceAccount = `
 apiVersion: v1
 kind: ServiceAccount

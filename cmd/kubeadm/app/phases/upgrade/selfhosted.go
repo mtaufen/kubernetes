@@ -71,7 +71,7 @@ type controlPlaneComponentResources struct {
 // TL;DR; This is what the flow looks like in pseudo-code:
 // for [kube-apiserver, kube-controller-manager, kube-scheduler], do:
 //    1. Self-Hosted component v1 Running
-//       -> Duplicate the DaemonSet manifest
+//       -> Duplicate the DaemonSet
 //    2. Self-Hosted component v1 Running (active). Backup component v1 Running (passive)
 //       -> Upgrade the Self-Hosted component v1 to v2.
 //       -> Self-Hosted component v1 is Deleted from the cluster

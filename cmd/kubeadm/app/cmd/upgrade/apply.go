@@ -40,7 +40,7 @@ import (
 )
 
 const (
-	upgradeManifestTimeout = 1 * time.Minute
+	upgradeStaticPodTimeout = 1 * time.Minute
 )
 
 // applyFlags holds the information about the flags that can be passed to apply
@@ -131,7 +131,7 @@ func NewCmdApply(parentFlags *cmdUpgradeFlags) *cobra.Command {
 // - Upgrades the control plane components
 // - Applies the other resources that'd be created with kubeadm init as well, like
 //   - Creating the RBAC rules for the bootstrap tokens and the cluster-info ConfigMap
-//   - Applying new kube-dns and kube-proxy manifests
+//   - Applying new kube-dns and kube-proxy static pod files
 //   - Uploads the newly used configuration to the cluster ConfigMap
 func RunApply(flags *applyFlags) error {
 
@@ -274,20 +274,20 @@ func PerformStaticPodUpgrade(client clientset.Interface, waiter apiclient.Waiter
 // DryRunStaticPodUpgrade fakes an upgrade of the control plane
 func DryRunStaticPodUpgrade(internalcfg *kubeadmapi.MasterConfiguration) error {
 
-	dryRunManifestDir, err := constants.CreateTempDirForKubeadm("kubeadm-upgrade-dryrun")
+	dryRunPodDir, err := constants.CreateTempDirForKubeadm("kubeadm-upgrade-dryrun")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(dryRunManifestDir)
+	defer os.RemoveAll(dryRunPodDir)
 
-	if err := controlplane.CreateInitStaticPodManifestFiles(dryRunManifestDir, internalcfg); err != nil {
+	if err := controlplane.CreateInitStaticPodFiles(dryRunPodDir, internalcfg); err != nil {
 		return err
 	}
 
-	// Print the contents of the upgraded manifests and pretend like they were in /etc/kubernetes/manifests
+	// Print the contents of the upgraded static pod files and pretend like they were in /etc/kubernetes/manifests
 	files := []dryrunutil.FileToPrint{}
 	for _, component := range constants.MasterComponents {
-		realPath := constants.GetStaticPodFilepath(component, dryRunManifestDir)
+		realPath := constants.GetStaticPodFilepath(component, dryRunPodDir)
 		outputPath := constants.GetStaticPodFilepath(component, constants.GetStaticPodDirectory())
 		files = append(files, dryrunutil.NewFileToPrint(realPath, outputPath))
 	}

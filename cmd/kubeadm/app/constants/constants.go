@@ -35,8 +35,9 @@ import (
 var KubernetesDir = "/etc/kubernetes"
 
 const (
-	// ManifestsSubDirName defines directory name to store manifests
-	ManifestsSubDirName = "manifests"
+	// TODO(#10091): stop using the word 'manifest'
+	// StaticPodSubDirName defines directory name to store static pod files
+	StaticPodSubDirName = "manifests"
 	// TempDirForKubeadm defines temporary directory for kubeadm
 	TempDirForKubeadm = "/etc/kubernetes/tmp"
 
@@ -276,12 +277,12 @@ func EtcdSupportedVersion(versionString string) (*version.Version, error) {
 
 // GetStaticPodDirectory returns the location on the disk where the Static Pod should be present
 func GetStaticPodDirectory() string {
-	return filepath.Join(KubernetesDir, ManifestsSubDirName)
+	return filepath.Join(KubernetesDir, StaticPodSubDirName)
 }
 
 // GetStaticPodFilepath returns the location on the disk where the Static Pod should be present
-func GetStaticPodFilepath(componentName, manifestsDir string) string {
-	return filepath.Join(manifestsDir, componentName+".yaml")
+func GetStaticPodFilepath(componentName, podDir string) string {
+	return filepath.Join(podDir, componentName+".yaml")
 }
 
 // GetAdminKubeConfigPath returns the location on the disk where admin kubeconfig is located by default

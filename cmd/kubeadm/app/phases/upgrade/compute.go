@@ -62,7 +62,7 @@ func ActiveDNSAddon(featureGates map[string]bool) string {
 type ClusterState struct {
 	// KubeVersion describes the version of the Kubernetes API Server, Controller Manager, Scheduler and Proxy.
 	KubeVersion string
-	// DNSVersion describes the version of the kube-dns images used and manifest version
+	// DNSVersion describes the version of the kube-dns images used and Deployment version
 	DNSVersion string
 	// KubeadmVersion describes the version of the kubeadm CLI
 	KubeadmVersion string

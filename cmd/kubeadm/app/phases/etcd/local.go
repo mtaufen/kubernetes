@@ -31,22 +31,22 @@ const (
 	etcdVolumeName = "etcd"
 )
 
-// CreateLocalEtcdStaticPodManifestFile will write local etcd static pod manifest file.
-func CreateLocalEtcdStaticPodManifestFile(manifestDir string, cfg *kubeadmapi.MasterConfiguration) error {
+// CreateLocalEtcdStaticPodFile will write local etcd static pod file.
+func CreateLocalEtcdStaticPodFile(podDir string, cfg *kubeadmapi.MasterConfiguration) error {
 
 	// gets etcd StaticPodSpec, actualized for the current MasterConfiguration
 	spec := GetEtcdPodSpec(cfg)
 	// writes etcd StaticPod to disk
-	if err := staticpodutil.WriteStaticPodToDisk(kubeadmconstants.Etcd, manifestDir, spec); err != nil {
+	if err := staticpodutil.WriteStaticPodToDisk(kubeadmconstants.Etcd, podDir, spec); err != nil {
 		return err
 	}
 
-	fmt.Printf("[etcd] Wrote Static Pod manifest for a local etcd instance to %q\n", kubeadmconstants.GetStaticPodFilepath(kubeadmconstants.Etcd, manifestDir))
+	fmt.Printf("[etcd] Wrote Static Pod file for a local etcd instance to %q\n", kubeadmconstants.GetStaticPodFilepath(kubeadmconstants.Etcd, podDir))
 	return nil
 }
 
 // GetEtcdPodSpec returns the etcd static Pod actualized to the context of the current MasterConfiguration
-// NB. GetEtcdPodSpec methods holds the information about how kubeadm creates etcd static pod manifests.
+// NB. GetEtcdPodSpec methods holds the information about how kubeadm creates etcd static pod files.
 func GetEtcdPodSpec(cfg *kubeadmapi.MasterConfiguration) v1.Pod {
 	pathType := v1.HostPathDirectoryOrCreate
 	etcdMounts := map[string]v1.Volume{

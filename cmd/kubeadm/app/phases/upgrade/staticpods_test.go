@@ -125,25 +125,25 @@ func (w *fakeWaiter) WaitForHealthyKubelet(_ time.Duration, _ string) error {
 }
 
 type fakeStaticPodPathManager struct {
-	realManifestDir   string
-	tempManifestDir   string
-	backupManifestDir string
-	backupEtcdDir     string
-	MoveFileFunc      func(string, string) error
+	realStaticPodDir   string
+	tempStaticPodDir   string
+	backupStaticPodDir string
+	backupEtcdDir      string
+	MoveFileFunc       func(string, string) error
 }
 
 func NewFakeStaticPodPathManager(moveFileFunc func(string, string) error) (StaticPodPathManager, error) {
-	realManifestsDir, err := ioutil.TempDir("", "kubeadm-upgraded-manifests")
+	realStaticPodsDir, err := ioutil.TempDir("", "kubeadm-upgraded-static-pods")
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create a temporary directory for the upgrade: %v", err)
 	}
 
-	upgradedManifestsDir, err := ioutil.TempDir("", "kubeadm-upgraded-manifests")
+	upgradedStaticPodDir, err := ioutil.TempDir("", "kubeadm-upgraded-static-pods")
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create a temporary directory for the upgrade: %v", err)
 	}
 
-	backupManifestsDir, err := ioutil.TempDir("", "kubeadm-backup-manifests")
+	backupStaticPodDir, err := ioutil.TempDir("", "kubeadm-backup-static-pods")
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create a temporary directory for the upgrade: %v", err)
 	}
@@ -153,11 +153,11 @@ func NewFakeStaticPodPathManager(moveFileFunc func(string, string) error) (Stati
 	}
 
 	return &fakeStaticPodPathManager{
-		realManifestDir:   realManifestsDir,
-		tempManifestDir:   upgradedManifestsDir,
-		backupManifestDir: backupManifestsDir,
-		backupEtcdDir:     backupEtcdDir,
-		MoveFileFunc:      moveFileFunc,
+		realStaticPodDir:   realStaticPodsDir,
+		tempStaticPodDir:   upgradedStaticPodDir,
+		backupStaticPodDir: backupStaticPodDir,
+		backupEtcdDir:      backupEtcdDir,
+		MoveFileFunc:       moveFileFunc,
 	}, nil
 }
 
@@ -165,25 +165,25 @@ func (spm *fakeStaticPodPathManager) MoveFile(oldPath, newPath string) error {
 	return spm.MoveFileFunc(oldPath, newPath)
 }
 
-func (spm *fakeStaticPodPathManager) RealManifestPath(component string) string {
-	return constants.GetStaticPodFilepath(component, spm.realManifestDir)
+func (spm *fakeStaticPodPathManager) RealStaticPodDir(component string) string {
+	return constants.GetStaticPodFilepath(component, spm.realStaticPodDir)
 }
-func (spm *fakeStaticPodPathManager) RealManifestDir() string {
-	return spm.realManifestDir
-}
-
-func (spm *fakeStaticPodPathManager) TempManifestPath(component string) string {
-	return constants.GetStaticPodFilepath(component, spm.tempManifestDir)
-}
-func (spm *fakeStaticPodPathManager) TempManifestDir() string {
-	return spm.tempManifestDir
+func (spm *fakeStaticPodPathManager) RealStaticPodDir() string {
+	return spm.realStaticPodDir
 }
 
-func (spm *fakeStaticPodPathManager) BackupManifestPath(component string) string {
-	return constants.GetStaticPodFilepath(component, spm.backupManifestDir)
+func (spm *fakeStaticPodPathManager) TempStaticPodPath(component string) string {
+	return constants.GetStaticPodFilepath(component, spm.tempStaticPodDir)
 }
-func (spm *fakeStaticPodPathManager) BackupManifestDir() string {
-	return spm.backupManifestDir
+func (spm *fakeStaticPodPathManager) TempStaticPodDir() string {
+	return spm.tempStaticPodDir
+}
+
+func (spm *fakeStaticPodPathManager) BackupStaticPodPath(component string) string {
+	return constants.GetStaticPodFilepath(component, spm.backupStaticPodDir)
+}
+func (spm *fakeStaticPodPathManager) BackupStaticPodDir() string {
+	return spm.backupStaticPodDir
 }
 
 func (spm *fakeStaticPodPathManager) BackupEtcdDir() string {
@@ -192,10 +192,10 @@ func (spm *fakeStaticPodPathManager) BackupEtcdDir() string {
 
 func TestStaticPodControlPlane(t *testing.T) {
 	tests := []struct {
-		waitErrsToReturn     map[string]error
-		moveFileFunc         func(string, string) error
-		expectedErr          bool
-		manifestShouldChange bool
+		waitErrsToReturn          map[string]error
+		moveFileFunc              func(string, string) error
+		expectedErr               bool
+		staticPodFileShouldChange bool
 	}{
 		{ // error-free case should succeed
 			waitErrsToReturn: map[string]error{
@@ -206,8 +206,8 @@ func TestStaticPodControlPlane(t *testing.T) {
 			moveFileFunc: func(oldPath, newPath string) error {
 				return os.Rename(oldPath, newPath)
 			},
-			expectedErr:          false,
-			manifestShouldChange: true,
+			expectedErr:               false,
+			staticPodFileShouldChange: true,
 		},
 		{ // any wait error should result in a rollback and an abort
 			waitErrsToReturn: map[string]error{
@@ -218,8 +218,8 @@ func TestStaticPodControlPlane(t *testing.T) {
 			moveFileFunc: func(oldPath, newPath string) error {
 				return os.Rename(oldPath, newPath)
 			},
-			expectedErr:          true,
-			manifestShouldChange: false,
+			expectedErr:               true,
+			staticPodFileShouldChange: false,
 		},
 		{ // any wait error should result in a rollback and an abort
 			waitErrsToReturn: map[string]error{
@@ -230,8 +230,8 @@ func TestStaticPodControlPlane(t *testing.T) {
 			moveFileFunc: func(oldPath, newPath string) error {
 				return os.Rename(oldPath, newPath)
 			},
-			expectedErr:          true,
-			manifestShouldChange: false,
+			expectedErr:               true,
+			staticPodFileShouldChange: false,
 		},
 		{ // any wait error should result in a rollback and an abort
 			waitErrsToReturn: map[string]error{
@@ -242,8 +242,8 @@ func TestStaticPodControlPlane(t *testing.T) {
 			moveFileFunc: func(oldPath, newPath string) error {
 				return os.Rename(oldPath, newPath)
 			},
-			expectedErr:          true,
-			manifestShouldChange: false,
+			expectedErr:               true,
+			staticPodFileShouldChange: false,
 		},
 		{ // any path-moving error should result in a rollback and an abort
 			waitErrsToReturn: map[string]error{
@@ -258,8 +258,8 @@ func TestStaticPodControlPlane(t *testing.T) {
 				}
 				return os.Rename(oldPath, newPath)
 			},
-			expectedErr:          true,
-			manifestShouldChange: false,
+			expectedErr:               true,
+			staticPodFileShouldChange: false,
 		},
 		{ // any path-moving error should result in a rollback and an abort
 			waitErrsToReturn: map[string]error{
@@ -274,8 +274,8 @@ func TestStaticPodControlPlane(t *testing.T) {
 				}
 				return os.Rename(oldPath, newPath)
 			},
-			expectedErr:          true,
-			manifestShouldChange: false,
+			expectedErr:               true,
+			staticPodFileShouldChange: false,
 		},
 		{ // any path-moving error should result in a rollback and an abort; even though this is the last component (kube-apiserver and kube-controller-manager healthy)
 			waitErrsToReturn: map[string]error{
@@ -290,8 +290,8 @@ func TestStaticPodControlPlane(t *testing.T) {
 				}
 				return os.Rename(oldPath, newPath)
 			},
-			expectedErr:          true,
-			manifestShouldChange: false,
+			expectedErr:               true,
+			staticPodFileShouldChange: false,
 		},
 	}
 
@@ -301,25 +301,25 @@ func TestStaticPodControlPlane(t *testing.T) {
 		if err != nil {
 			t.Fatalf("couldn't run NewFakeStaticPodPathManager: %v", err)
 		}
-		defer os.RemoveAll(pathMgr.RealManifestDir())
-		defer os.RemoveAll(pathMgr.TempManifestDir())
-		defer os.RemoveAll(pathMgr.BackupManifestDir())
+		defer os.RemoveAll(pathMgr.RealStaticPodDir())
+		defer os.RemoveAll(pathMgr.TempStaticPodDir())
+		defer os.RemoveAll(pathMgr.BackupStaticPodDir())
 
 		oldcfg, err := getConfig("v1.7.0")
 		if err != nil {
 			t.Fatalf("couldn't create config: %v", err)
 		}
-		// Initialize the directory with v1.7 manifests; should then be upgraded to v1.8 using the method
-		err = controlplane.CreateInitStaticPodManifestFiles(pathMgr.RealManifestDir(), oldcfg)
+		// Initialize the directory with v1.7 files; should then be upgraded to v1.8 using the method
+		err = controlplane.CreateInitStaticPodFiles(pathMgr.RealStaticPodDir(), oldcfg)
 		if err != nil {
-			t.Fatalf("couldn't run CreateInitStaticPodManifestFiles: %v", err)
+			t.Fatalf("couldn't run CreateInitStaticPodFiles: %v", err)
 		}
-		err = etcdphase.CreateLocalEtcdStaticPodManifestFile(pathMgr.RealManifestDir(), oldcfg)
+		err = etcdphase.CreateLocalEtcdStaticPodFile(pathMgr.RealStaticPodDir(), oldcfg)
 		if err != nil {
-			t.Fatalf("couldn't run CreateLocalEtcdStaticPodManifestFile: %v", err)
+			t.Fatalf("couldn't run CreateLocalEtcdStaticPodFile: %v", err)
 		}
-		// Get a hash of the v1.7 API server manifest to compare later (was the file re-written)
-		oldHash, err := getAPIServerHash(pathMgr.RealManifestDir())
+		// Get a hash of the v1.7 API server file to compare later (was the file re-written)
+		oldHash, err := getAPIServerHash(pathMgr.RealStaticPodDir())
 		if err != nil {
 			t.Fatalf("couldn't read temp file: %v", err)
 		}
@@ -338,15 +338,15 @@ func TestStaticPodControlPlane(t *testing.T) {
 			)
 		}
 
-		newHash, err := getAPIServerHash(pathMgr.RealManifestDir())
+		newHash, err := getAPIServerHash(pathMgr.RealStaticPodDir())
 		if err != nil {
 			t.Fatalf("couldn't read temp file: %v", err)
 		}
 
-		if (oldHash != newHash) != rt.manifestShouldChange {
+		if (oldHash != newHash) != rt.staticPodFileShouldChange {
 			t.Errorf(
-				"failed StaticPodControlPlane\n\texpected manifest change: %t\n\tgot: %t",
-				rt.manifestShouldChange,
+				"failed StaticPodControlPlane\n\texpected file change: %t\n\tgot: %t",
+				rt.staticPodFileShouldChange,
 				(oldHash != newHash),
 			)
 		}
@@ -355,9 +355,9 @@ func TestStaticPodControlPlane(t *testing.T) {
 }
 
 func getAPIServerHash(dir string) (string, error) {
-	manifestPath := constants.GetStaticPodFilepath(constants.KubeAPIServer, dir)
+	podPath := constants.GetStaticPodFilepath(constants.KubeAPIServer, dir)
 
-	fileBytes, err := ioutil.ReadFile(manifestPath)
+	fileBytes, err := ioutil.ReadFile(podPath)
 	if err != nil {
 		return "", err
 	}
