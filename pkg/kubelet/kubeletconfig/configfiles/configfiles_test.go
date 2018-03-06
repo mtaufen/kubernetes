@@ -107,6 +107,28 @@ apiVersion: kubeletconfig/v1alpha1`),
 			newConfig(t),
 			"",
 		},
+		{
+			"field set from yaml",
+			newString(`kind: KubeletConfiguration
+apiVersion: kubeletconfig/v1alpha1
+allowPrivileged: true`),
+			func() *kubeletconfig.KubeletConfiguration {
+				kc := newConfig(t)
+				kc.AllowPrivileged = true
+				return kc
+			}(),
+			"",
+		},
+		{
+			"field set from json",
+			newString(`{"kind":"KubeletConfiguration","apiVersion":"kubeletconfig/v1alpha1","allowPrivileged":true}`),
+			func() *kubeletconfig.KubeletConfiguration {
+				kc := newConfig(t)
+				kc.AllowPrivileged = true
+				return kc
+			}(),
+			"",
+		},
 
 		// relative path
 		{
