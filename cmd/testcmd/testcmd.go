@@ -67,8 +67,17 @@ func NewTestCmd() *cobra.Command {
 		},
 	}
 	localFlagSet.BoolP("help", "h", false, fmt.Sprintf("help for %s", cmd.Name()))
-	// Cobra still needs to be aware of our flag set to generate usage and help text
-	cmd.Flags().AddFlagSet(localFlagSet)
+
+	// ugly, but necessary, because Cobra's default UsageFunc and HelpFunc pollute the flagset with global flags
+	const usageFmt = "Usage:\n  %s\n\nFlags:\n%s"
+	cmd.SetUsageFunc(func(cmd *cobra.Command) error {
+		fmt.Fprintf(cmd.OutOrStderr(), usageFmt, cmd.UseLine(), localFlagSet.FlagUsagesWrapped(2))
+		return nil
+	})
+	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		fmt.Fprintf(cmd.OutOrStdout(), usageFmt, cmd.UseLine(), localFlagSet.FlagUsagesWrapped(2))
+	})
+
 	return cmd
 }
 
