@@ -23,12 +23,18 @@ import (
 	"path"
 	"strings"
 
+	"github.com/golang/glog"
+
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/kubernetes/pkg/kubectl/util"
 	"k8s.io/kubernetes/pkg/kubectl/util/hash"
 )
+
+// The minimum bytes a secret's data values must contain to be safe to use with --append-hash.
+// If the secret is smaller than this threshold, we warn user to pad with a salt.
+const minSecretSizeForAppendHash = 512
 
 // SecretGeneratorV1 supports stable generation of an opaque secret
 type SecretGeneratorV1 struct {
@@ -124,6 +130,20 @@ func (s SecretGeneratorV1) ParamNames() []GeneratorParam {
 	}
 }
 
+func warnShortSecretAppendHash(secret *v1.Secret) {
+	var size int
+	for _, bytes := range secret.Data {
+		size += len(bytes)
+	}
+	if size < minSecretSizeForAppendHash {
+		glog.Warningf("Using --append-hash with small secrets may increase your vulnerability to dictionary attacks. "+
+			"We recommend padding your secret's data with an additional key-value pair that acts as a salt, "+
+			"to increase the aggregate size of the data values (not keys) to at least %d bytes. "+
+			"Note that this threshold may increase in the future.",
+			minSecretSizeForAppendHash)
+	}
+}
+
 // StructuredGenerate outputs a secret object using the configured fields
 func (s SecretGeneratorV1) StructuredGenerate() (runtime.Object, error) {
 	if err := s.validate(); err != nil {
@@ -151,6 +171,7 @@ func (s SecretGeneratorV1) StructuredGenerate() (runtime.Object, error) {
 		}
 	}
 	if s.AppendHash {
+		warnShortSecretAppendHash(secret)
 		h, err := hash.SecretHash(secret)
 		if err != nil {
 			return nil, err

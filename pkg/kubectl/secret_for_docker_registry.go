@@ -104,6 +104,7 @@ func (s SecretForDockerRegistryGeneratorV1) StructuredGenerate() (runtime.Object
 		secret.Data[v1.DockerConfigJsonKey] = dockercfgJsonContent
 	}
 	if s.AppendHash {
+		warnShortSecretAppendHash(secret)
 		h, err := hash.SecretHash(secret)
 		if err != nil {
 			return nil, err
