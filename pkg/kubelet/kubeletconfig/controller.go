@@ -56,8 +56,11 @@ type Controller struct {
 	// configOk manages the KubeletConfigOk condition that is reported in Node.Status.Conditions
 	configOk status.ConfigOkCondition
 
-	// informer is the informer that watches the Node object
-	informer cache.SharedInformer
+	// nodeInformer is the informer that watches the Node object
+	nodeInformer cache.SharedInformer
+
+	// remoteConfigSourceInformer is the informer that watches the assigned config source
+	remoteConfigSourceInformer cache.SharedInformer
 
 	// checkpointStore persists config source checkpoints to a storage layer
 	checkpointStore store.Store
@@ -95,7 +98,7 @@ func (cc *Controller) Bootstrap() (*kubeletconfig.KubeletConfiguration, error) {
 	if err == nil {
 		// set the status to indicate we will use the assigned config
 		if curSource != nil {
-			cc.configOk.Set(fmt.Sprintf(status.CurRemoteMessageFmt, curSource.APIPath()), reason, apiv1.ConditionTrue)
+			cc.configOk.Set(fmt.Sprintf(status.CurRemoteMessageFmt, curSource.APIPath(), curSource.UID(), curSource.ResourceVersion()), reason, apiv1.ConditionTrue)
 		} else {
 			cc.configOk.Set(status.CurLocalMessage, reason, apiv1.ConditionTrue)
 		}
@@ -125,7 +128,7 @@ func (cc *Controller) Bootstrap() (*kubeletconfig.KubeletConfiguration, error) {
 
 	// set the status to indicate that we had to roll back to the lkg for the reason reported when we tried to load the assigned config
 	if lkgSource != nil {
-		cc.configOk.Set(fmt.Sprintf(status.LkgRemoteMessageFmt, lkgSource.APIPath()), reason, apiv1.ConditionFalse)
+		cc.configOk.Set(fmt.Sprintf(status.LkgRemoteMessageFmt, lkgSource.APIPath(), lkgSource.UID(), lkgSource.ResourceVersion()), reason, apiv1.ConditionFalse)
 	} else {
 		cc.configOk.Set(status.LkgLocalMessage, reason, apiv1.ConditionFalse)
 	}
@@ -146,6 +149,11 @@ func (cc *Controller) StartSync(client clientset.Interface, eventClient v1core.E
 		return
 	}
 
+	// Rather than use utilruntime.HandleCrash, which doesn't actually crash in the Kubelet,
+	// we use HandlePanic to manually call the panic handlers and then crash.
+	// We have a better chance of recovering normal operation if we just restart the Kubelet in the event
+	// of a Go runtime error.
+
 	// start the ConfigOk condition sync loop
 	go utilpanic.HandlePanic(func() {
 		utillog.Infof("starting ConfigOk condition sync loop")
@@ -154,21 +162,32 @@ func (cc *Controller) StartSync(client clientset.Interface, eventClient v1core.E
 		}, 10*time.Second, 0.2, true, wait.NeverStop)
 	})()
 
-	cc.informer = newSharedNodeInformer(client, nodeName,
+	// if we have a remote config assigned, start the assigned config source informer loop
+	assignedSource, err := cc.checkpointStore.Current()
+	if err != nil {
+		utillog.Errorf("error reading assigned config source from local checkpoint store, will not start remote config source informer: %v", err)
+	} else if assignedSource == nil {
+		utillog.Infof("local source is assigned, will not start remote config source informer")
+	} else {
+		cc.remoteConfigSourceInformer = assignedSource.Informer(client,
+			cc.onAddRemoteConfigSourceEvent, cc.onUpdateRemoteConfigSourceEvent, cc.onDeleteRemoteConfigSourceEvent)
+		go utilpanic.HandlePanic(func() {
+			utillog.Infof("starting remote config source informer sync loop")
+			cc.remoteConfigSourceInformer.Run(wait.NeverStop)
+		})
+	}
+
+	// start the nodeInformer loop
+	cc.nodeInformer = newSharedNodeInformer(client, nodeName,
 		cc.onAddNodeEvent, cc.onUpdateNodeEvent, cc.onDeleteNodeEvent)
-	// start the informer loop
-	// Rather than use utilruntime.HandleCrash, which doesn't actually crash in the Kubelet,
-	// we use HandlePanic to manually call the panic handlers and then crash.
-	// We have a better chance of recovering normal operation if we just restart the Kubelet in the event
-	// of a Go runtime error.
 	go utilpanic.HandlePanic(func() {
 		utillog.Infof("starting Node informer sync loop")
-		cc.informer.Run(wait.NeverStop)
+		cc.nodeInformer.Run(wait.NeverStop)
 	})()
 
-	// start the config source sync loop
+	// start the config sync loop
 	go utilpanic.HandlePanic(func() {
-		utillog.Infof("starting config source sync loop")
+		utillog.Infof("starting Kubelet config sync loop")
 		wait.JitterUntil(func() {
 			cc.syncConfigSource(client, eventClient, nodeName)
 		}, 10*time.Second, 0.2, true, wait.NeverStop)
@@ -184,7 +203,7 @@ func (cc *Controller) StartSync(client clientset.Interface, eventClient v1core.E
 func (cc *Controller) loadAssignedConfig(local *kubeletconfig.KubeletConfiguration) (*kubeletconfig.KubeletConfiguration, checkpoint.RemoteConfigSource, string, error) {
 	source, err := cc.checkpointStore.Current()
 	if err != nil {
-		return nil, nil, fmt.Sprintf(status.CurFailLoadReasonFmt, "unknown"), err
+		return nil, nil, status.CurFailLoadSourceReason, err
 	}
 	// nil source is the signal to use the local config
 	if source == nil {
@@ -193,10 +212,10 @@ func (cc *Controller) loadAssignedConfig(local *kubeletconfig.KubeletConfigurati
 	// load KubeletConfiguration from checkpoint
 	kc, err := cc.checkpointStore.Load(source)
 	if err != nil {
-		return nil, source, fmt.Sprintf(status.CurFailLoadReasonFmt, source.APIPath()), err
+		return nil, source, fmt.Sprintf(status.CurFailLoadReasonFmt, source.APIPath(), source.UID(), source.ResourceVersion()), err
 	}
 	if err := validation.ValidateKubeletConfiguration(kc); err != nil {
-		return nil, source, fmt.Sprintf(status.CurFailValidateReasonFmt, source.APIPath()), err
+		return nil, source, fmt.Sprintf(status.CurFailValidateReasonFmt, source.APIPath(), source.UID(), source.ResourceVersion()), err
 	}
 	return kc, source, status.CurRemoteOkayReason, nil
 }
@@ -218,10 +237,10 @@ func (cc *Controller) loadLastKnownGoodConfig(local *kubeletconfig.KubeletConfig
 	// load from checkpoint
 	kc, err := cc.checkpointStore.Load(source)
 	if err != nil {
-		return nil, source, fmt.Errorf("%s, error: %v", fmt.Sprintf(status.LkgFailLoadReasonFmt, source.APIPath()), err)
+		return nil, source, fmt.Errorf("%s, error: %v", fmt.Sprintf(status.LkgFailLoadReasonFmt, source.APIPath(), source.UID(), source.ResourceVersion()), err)
 	}
 	if err := validation.ValidateKubeletConfiguration(kc); err != nil {
-		return nil, source, fmt.Errorf("%s, error: %v", fmt.Sprintf(status.LkgFailValidateReasonFmt, source.APIPath()), err)
+		return nil, source, fmt.Errorf("%s, error: %v", fmt.Sprintf(status.LkgFailValidateReasonFmt, source.APIPath(), source.UID(), source.ResourceVersion()), err)
 	}
 	return kc, source, nil
 }

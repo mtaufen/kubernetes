@@ -69,7 +69,7 @@ func (cc *Controller) syncConfigSource(client clientset.Interface, eventClient v
 		}
 	}()
 
-	node, err := latestNode(cc.informer.GetStore(), nodeName)
+	node, err := latestNode(cc.nodeInformer.GetStore(), nodeName)
 	if err != nil {
 		cc.configOk.SetFailSyncCondition(status.FailSyncReasonInformer)
 		syncerr = fmt.Errorf("%s, error: %v", status.FailSyncReasonInformer, err)
@@ -77,7 +77,7 @@ func (cc *Controller) syncConfigSource(client clientset.Interface, eventClient v
 	}
 
 	// check the Node and download any new config
-	if updated, cur, reason, err := cc.doSyncConfigSource(client, node.Spec.ConfigSource); err != nil {
+	if updated, cur, reason, err := cc.doSyncConfigSource(client, node); err != nil {
 		cc.configOk.SetFailSyncCondition(reason)
 		syncerr = fmt.Errorf("%s, error: %v", reason, err)
 		return
@@ -105,8 +105,8 @@ func (cc *Controller) syncConfigSource(client clientset.Interface, eventClient v
 
 // doSyncConfigSource checkpoints and sets the store's current config to the new config or resets config,
 // depending on the `source`, and returns whether the current config in the checkpoint store was updated as a result
-func (cc *Controller) doSyncConfigSource(client clientset.Interface, source *apiv1.NodeConfigSource) (bool, checkpoint.RemoteConfigSource, string, error) {
-	if source == nil {
+func (cc *Controller) doSyncConfigSource(client clientset.Interface, node *apiv1.Node) (bool, checkpoint.RemoteConfigSource, string, error) {
+	if node.Spec.ConfigSource == nil {
 		utillog.Infof("Node.Spec.ConfigSource is empty, will reset current and last-known-good to defaults")
 		updated, reason, err := cc.resetConfig()
 		if err != nil {
@@ -117,57 +117,58 @@ func (cc *Controller) doSyncConfigSource(client clientset.Interface, source *api
 
 	// if the NodeConfigSource is non-nil, download the config
 	utillog.Infof("Node.Spec.ConfigSource is non-empty, will checkpoint source and update config if necessary")
-	remote, reason, err := checkpoint.NewRemoteConfigSource(source)
+	source := checkpoint.NewRemoteConfigSource(node.Spec.ConfigSource)
+	reason, err := cc.checkpointConfigSource(client, source)
 	if err != nil {
 		return false, nil, reason, err
 	}
-	reason, err = cc.checkpointConfigSource(client, remote)
+	// Note: cc.checkpointConfigSource calls source.Download internally, so the uid and resourceVersion will be up to date here
+	updated, reason, err := cc.setCurrentConfig(source)
 	if err != nil {
 		return false, nil, reason, err
 	}
-	updated, reason, err := cc.setCurrentConfig(remote)
-	if err != nil {
-		return false, nil, reason, err
-	}
-	return updated, remote, "", nil
+	return updated, source, "", nil
 }
 
 // checkpointConfigSource downloads and checkpoints the object referred to by `source` if the checkpoint does not already exist,
 // if a failure occurs, returns a sanitized failure reason and an error
 func (cc *Controller) checkpointConfigSource(client clientset.Interface, source checkpoint.RemoteConfigSource) (string, error) {
-	// if the checkpoint already exists, skip downloading
-	if ok, err := cc.checkpointStore.Exists(source); err != nil {
-		reason := fmt.Sprintf(status.FailSyncReasonCheckpointExistenceFmt, source.APIPath(), source.UID())
-		return reason, fmt.Errorf("%s, error: %v", reason, err)
-	} else if ok {
-		utillog.Infof("checkpoint already exists for object %s with UID %s, skipping download", source.APIPath(), source.UID())
-		return "", nil
-	}
-
-	// download
+	// TODO(mtaufen): it would be nice if we could check the payload's metadata before downloading the whole payload
+	//                we can try pulling the latest configmap out of the local store, and seeing if it matches the
+	//                source specification.
+	// download source
 	payload, reason, err := source.Download(client)
 	if err != nil {
 		return reason, fmt.Errorf("%s, error: %v", reason, err)
 	}
 
+	// check whether we need to save
+	// Note: source has correct uid and resourceVersion after calling Download
+	if ok, err := cc.checkpointStore.Exists(source); err != nil {
+		reason := fmt.Sprintf(status.FailSyncReasonCheckpointExistenceFmt, source.APIPath(), payload.UID(), payload.ResourceVersion())
+		return reason, fmt.Errorf("%s, error: %v", reason, err)
+	} else if ok {
+		utillog.Infof("checkpoint already exists for object %s with UID %s and ResourceVersion %s", source.APIPath(), payload.UID(), payload.ResourceVersion())
+		return "", nil
+	}
+
 	// save
-	err = cc.checkpointStore.Save(payload)
-	if err != nil {
-		reason := fmt.Sprintf(status.FailSyncReasonSaveCheckpointFmt, source.APIPath(), payload.UID())
+	if err = cc.checkpointStore.Save(payload); err != nil {
+		reason := fmt.Sprintf(status.FailSyncReasonSaveCheckpointFmt, source.APIPath(), payload.UID(), payload.ResourceVersion())
 		return reason, fmt.Errorf("%s, error: %v", reason, err)
 	}
 
 	return "", nil
 }
 
-// setCurrentConfig the current checkpoint config in the store
+// setCurrentConfig sets the current checkpoint config in the store
 // returns whether the current config changed as a result, or a sanitized failure reason and an error.
 func (cc *Controller) setCurrentConfig(source checkpoint.RemoteConfigSource) (bool, string, error) {
 	failReason := func(s checkpoint.RemoteConfigSource) string {
 		if source == nil {
 			return status.FailSyncReasonSetCurrentLocal
 		}
-		return fmt.Sprintf(status.FailSyncReasonSetCurrentUIDFmt, source.APIPath(), source.UID())
+		return fmt.Sprintf(status.FailSyncReasonSetCurrentRemoteFmt, source.APIPath(), source.UID(), source.ResourceVersion())
 	}
 	current, err := cc.checkpointStore.Current()
 	if err != nil {

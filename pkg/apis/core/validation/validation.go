@@ -4137,9 +4137,9 @@ func validateNodeConfigSource(source *core.NodeConfigSource, fldPath *field.Path
 	count := int(0)
 	if ref := source.ConfigMap; ref != nil {
 		count++
-		// name, namespace, and UID must all be non-empty for ConfigMapRef
-		if ref.Name == "" || ref.Namespace == "" || string(ref.UID) == "" || ref.KubeletConfigKey == "" {
-			allErrs = append(allErrs, field.Invalid(fldPath.Child("configMap"), ref, "name, namespace, UID, and KubeletConfigKey must all be non-empty"))
+		// Name, Namespace, and KubeletConfigKey must all be non-empty for ConfigMap
+		if ref.Name == "" || ref.Namespace == "" || ref.KubeletConfigKey == "" {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("configMap"), ref, "name, namespace, and kubeletConfigKey must all be non-empty"))
 		}
 		// validate target configmap name
 		for _, msg := range ValidateNameFunc(ValidateConfigMapName)(ref.Name, false) {

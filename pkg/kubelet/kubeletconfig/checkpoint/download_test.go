@@ -29,107 +29,12 @@ import (
 	utiltest "k8s.io/kubernetes/pkg/kubelet/kubeletconfig/util/test"
 )
 
-func TestNewRemoteConfigSource(t *testing.T) {
-	expectErr := "invalid ConfigSource.ConfigMap"
-	cases := []struct {
-		desc   string
-		source *apiv1.NodeConfigSource
-		expect RemoteConfigSource
-		err    string
-	}{
-		{
-			desc:   "all NodeConfigSource subfields nil",
-			source: &apiv1.NodeConfigSource{},
-			expect: nil,
-			err:    "exactly one subfield must be non-nil",
-		},
-		{
-			desc:   "ConfigMap: empty reference",
-			source: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{}},
-			expect: nil,
-			err:    expectErr,
-		},
-		{
-			desc: "ConfigMap: empty name",
-			source: &apiv1.NodeConfigSource{
-				ConfigMap: &apiv1.ConfigMapNodeConfigSource{
-					ObjectReference:  apiv1.ObjectReference{Name: "", Namespace: "namespace", UID: "uid"},
-					KubeletConfigKey: "kubelet",
-				}},
-			expect: nil,
-			err:    expectErr,
-		},
-		{
-			desc: "ConfigMap: empty namespace",
-			source: &apiv1.NodeConfigSource{
-				ConfigMap: &apiv1.ConfigMapNodeConfigSource{
-					ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "", UID: "uid"},
-					KubeletConfigKey: "kubelet",
-				}},
-			expect: nil,
-			err:    expectErr,
-		},
-		{
-			desc: "ConfigMap: empty UID",
-			source: &apiv1.NodeConfigSource{
-				ConfigMap: &apiv1.ConfigMapNodeConfigSource{
-					ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: ""},
-					KubeletConfigKey: "kubelet",
-				}},
-			expect: nil,
-			err:    expectErr,
-		},
-		{
-			desc: "ConfigMap: empty KubeletConfigKey",
-			source: &apiv1.NodeConfigSource{
-				ConfigMap: &apiv1.ConfigMapNodeConfigSource{
-					ObjectReference: apiv1.ObjectReference{
-						Name: "name", Namespace: "namespace", UID: "uid"},
-					KubeletConfigKey: "",
-				}},
-			expect: nil,
-			err:    expectErr,
-		},
-		{
-			desc: "ConfigMap: valid reference",
-			source: &apiv1.NodeConfigSource{
-				ConfigMap: &apiv1.ConfigMapNodeConfigSource{
-					ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: "uid"},
-					KubeletConfigKey: "kubelet",
-				}},
-			expect: &remoteConfigMap{&apiv1.NodeConfigSource{
-				ConfigMap: &apiv1.ConfigMapNodeConfigSource{
-					ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: "uid"},
-					KubeletConfigKey: "kubelet",
-				}}},
-			err: "",
-		},
-	}
-
-	for _, c := range cases {
-		t.Run(c.desc, func(t *testing.T) {
-			source, _, err := NewRemoteConfigSource(c.source)
-			utiltest.ExpectError(t, err, c.err)
-			if err != nil {
-				return
-			}
-			// underlying object should match the object passed in
-			if !apiequality.Semantic.DeepEqual(c.expect.object(), source.object()) {
-				t.Errorf("case %q, expect RemoteConfigSource %s but got %s", c.desc, spew.Sdump(c.expect), spew.Sdump(source))
-			}
-		})
-	}
-}
-
 func TestRemoteConfigMapUID(t *testing.T) {
 	const expect = "uid"
-	source, _, err := NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+	source := NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
 		ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: expect},
 		KubeletConfigKey: "kubelet",
 	}})
-	if err != nil {
-		t.Fatalf("error constructing remote config source: %v", err)
-	}
 	uid := source.UID()
 	if expect != uid {
 		t.Errorf("expect %q, but got %q", expect, uid)
@@ -141,13 +46,10 @@ func TestRemoteConfigMapAPIPath(t *testing.T) {
 		name      = "name"
 		namespace = "namespace"
 	)
-	source, _, err := NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+	source := NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
 		ObjectReference:  apiv1.ObjectReference{Name: name, Namespace: namespace, UID: "uid"},
 		KubeletConfigKey: "kubelet",
 	}})
-	if err != nil {
-		t.Fatalf("error constructing remote config source: %v", err)
-	}
 	expect := fmt.Sprintf(configMapAPIPathFmt, namespace, name)
 	path := source.APIPath()
 
@@ -159,22 +61,15 @@ func TestRemoteConfigMapAPIPath(t *testing.T) {
 func TestRemoteConfigMapDownload(t *testing.T) {
 	cm := &apiv1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "name",
-			Namespace: "namespace",
-			UID:       "uid",
+			Name:            "name",
+			Namespace:       "namespace",
+			UID:             "uid",
+			ResourceVersion: "1",
 		}}
 	client := fakeclient.NewSimpleClientset(cm)
 	payload, err := NewConfigMapPayload(cm)
 	if err != nil {
 		t.Fatalf("error constructing payload: %v", err)
-	}
-
-	makeSource := func(source *apiv1.NodeConfigSource) RemoteConfigSource {
-		s, _, err := NewRemoteConfigSource(source)
-		if err != nil {
-			t.Fatalf("error constructing remote config source %v", err)
-		}
-		return s
 	}
 
 	cases := []struct {
@@ -185,26 +80,17 @@ func TestRemoteConfigMapDownload(t *testing.T) {
 	}{
 		{
 			desc: "object doesn't exist",
-			source: makeSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
-				ObjectReference:  apiv1.ObjectReference{Name: "bogus", Namespace: "namespace", UID: "bogus"},
+			source: NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+				ObjectReference:  apiv1.ObjectReference{Name: "bogus", Namespace: "namespace"},
 				KubeletConfigKey: "kubelet",
 			}}),
 			expect: nil,
 			err:    "not found",
 		},
 		{
-			desc: "UID is incorrect for namespace/name",
-			source: makeSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
-				ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: "bogus"},
-				KubeletConfigKey: "kubelet",
-			}}),
-			expect: nil,
-			err:    "does not match",
-		},
-		{
-			desc: "object exists and reference is correct",
-			source: makeSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
-				ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: "uid"},
+			desc: "object exists",
+			source: NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+				ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace"},
 				KubeletConfigKey: "kubelet",
 			}}),
 			expect: payload,
@@ -221,7 +107,14 @@ func TestRemoteConfigMapDownload(t *testing.T) {
 			}
 			// downloaded object should match the expected
 			if !apiequality.Semantic.DeepEqual(c.expect.object(), payload.object()) {
-				t.Errorf("case %q, expect Checkpoint %s but got %s", c.desc, spew.Sdump(c.expect), spew.Sdump(payload))
+				t.Errorf("expect Checkpoint %s but got %s", spew.Sdump(c.expect), spew.Sdump(payload))
+			}
+			// source UID and ResourceVersion should be updated by Download
+			if payload.UID() != c.source.UID() {
+				t.Errorf("expect UID to be updated by Download to match payload: %s, but got source UID: %s", payload.UID(), c.source.UID())
+			}
+			if payload.ResourceVersion() != c.source.ResourceVersion() {
+				t.Errorf("expect ResourceVersion to be updated by Download to match payload: %s, but got source ResourceVersion: %s", payload.ResourceVersion(), c.source.ResourceVersion())
 			}
 		})
 	}

@@ -46,6 +46,10 @@ func (p *configMapPayload) UID() string {
 	return string(p.cm.UID)
 }
 
+func (p *configMapPayload) ResourceVersion() string {
+	return p.cm.ResourceVersion
+}
+
 func (p *configMapPayload) Files() map[string]string {
 	return p.cm.Data
 }

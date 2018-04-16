@@ -26,20 +26,16 @@ import (
 )
 
 func TestReset(t *testing.T) {
-	source, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+	source := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
 		ObjectReference:  apiv1.ObjectReference{Name: "name", Namespace: "namespace", UID: "uid"},
 		KubeletConfigKey: "kubelet",
 	}})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	otherSource, _, err := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+
+	otherSource := checkpoint.NewRemoteConfigSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
 		ObjectReference:  apiv1.ObjectReference{Name: "other-name", Namespace: "namespace", UID: "other-uid"},
 		KubeletConfigKey: "kubelet",
 	}})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+
 	cases := []struct {
 		s       *fakeStore
 		updated bool

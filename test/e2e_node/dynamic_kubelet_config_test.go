@@ -83,6 +83,8 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 			// should be fine to reset the values using a remote config, even if they
 			// were initially set via the locally provisioned configuration.
 			// This is the same strategy several other e2e node tests use.
+			// TODO(mtaufen): given difference in defaults between flags and config, we should
+			// move to simply recording and resetting to the initial NodeConfigSource.
 			setAndTestKubeletConfigState(f, &configState{desc: "reset to original values",
 				configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
 					ObjectReference: apiv1.ObjectReference{
@@ -92,7 +94,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 					KubeletConfigKey: "kubelet",
 				}},
 				expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionTrue,
-					Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(originalConfigMap)),
+					Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(originalConfigMap), originalConfigMap.UID, originalConfigMap.ResourceVersion),
 					Reason:  status.CurRemoteOkayReason},
 				expectConfig: originalKC,
 			}, false)
@@ -184,22 +186,6 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 						apierr: "spec.configSource.configMap.kubeletConfigKey: Invalid value",
 					},
 					{
-						desc: "Node.Spec.ConfigSource.ConfigMap.UID does not align with Namespace/Name",
-						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
-							ObjectReference: apiv1.ObjectReference{
-								UID:       "foo",
-								Namespace: correctConfigMap.Namespace,
-								Name:      correctConfigMap.Name,
-							},
-							KubeletConfigKey: "kubelet",
-						}},
-						expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionFalse,
-							Message: "",
-							Reason:  fmt.Sprintf(status.FailSyncReasonFmt, fmt.Sprintf(status.FailSyncReasonUIDMismatchFmt, "foo", configMapAPIPath(correctConfigMap), correctConfigMap.UID))},
-						expectConfig: nil,
-						event:        false,
-					},
-					{
 						desc: "correct",
 						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
 							ObjectReference: apiv1.ObjectReference{
@@ -209,7 +195,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 							KubeletConfigKey: "kubelet",
 						}},
 						expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionTrue,
-							Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(correctConfigMap)),
+							Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(correctConfigMap), correctConfigMap.UID, correctConfigMap.ResourceVersion),
 							Reason:  status.CurRemoteOkayReason},
 						expectConfig: correctKC,
 						event:        true,
@@ -225,7 +211,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 						}},
 						expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionFalse,
 							Message: status.LkgLocalMessage,
-							Reason:  fmt.Sprintf(status.CurFailLoadReasonFmt, configMapAPIPath(failParseConfigMap))},
+							Reason:  fmt.Sprintf(status.CurFailLoadReasonFmt, configMapAPIPath(failParseConfigMap), failParseConfigMap.UID, failParseConfigMap.ResourceVersion)},
 						expectConfig: nil,
 						event:        true,
 					},
@@ -240,7 +226,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 						}},
 						expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionFalse,
 							Message: status.LkgLocalMessage,
-							Reason:  fmt.Sprintf(status.CurFailValidateReasonFmt, configMapAPIPath(failValidateConfigMap))},
+							Reason:  fmt.Sprintf(status.CurFailValidateReasonFmt, configMapAPIPath(failValidateConfigMap), failValidateConfigMap.UID, failValidateConfigMap.ResourceVersion)},
 						expectConfig: nil,
 						event:        true,
 					},
@@ -284,7 +270,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 							KubeletConfigKey: "kubelet",
 						}},
 						expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionTrue,
-							Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(lkgConfigMap)),
+							Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(lkgConfigMap), lkgConfigMap.UID, lkgConfigMap.ResourceVersion),
 							Reason:  status.CurRemoteOkayReason},
 						expectConfig: lkgKC,
 						event:        true,
@@ -300,15 +286,15 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 							KubeletConfigKey: "kubelet",
 						}},
 						expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionFalse,
-							Message: fmt.Sprintf(status.LkgRemoteMessageFmt, configMapAPIPath(lkgConfigMap)),
-							Reason:  fmt.Sprintf(status.CurFailLoadReasonFmt, configMapAPIPath(badConfigMap))},
+							Message: fmt.Sprintf(status.LkgRemoteMessageFmt, configMapAPIPath(lkgConfigMap), lkgConfigMap.UID, lkgConfigMap.ResourceVersion),
+							Reason:  fmt.Sprintf(status.CurFailLoadReasonFmt, configMapAPIPath(badConfigMap), badConfigMap.UID, badConfigMap.ResourceVersion)},
 						expectConfig: lkgKC,
 						event:        true,
 					},
 				}
 
 				// wait 12 minutes after setting the first config to ensure it has time to pass the trial duration
-				testBothDirections(f, &states[0], states[1:], 12*time.Minute)
+				testBothDirections(f, &states[0], states[1:], 15*time.Minute) // TODO(mtaufen): bring this back down to 12 to see if it continues to pass
 			})
 		})
 
@@ -334,13 +320,13 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 							KubeletConfigKey: "kubelet",
 						}},
 						expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionTrue,
-							Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(combinedConfigMap)),
+							Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(combinedConfigMap), combinedConfigMap.UID, combinedConfigMap.ResourceVersion),
 							Reason:  status.CurRemoteOkayReason},
 						expectConfig: lkgKC,
 						event:        true,
 					},
 
-					// bad config
+					// bad config, we update the source to point at the "bad" config key in the same ConfigMap
 					{desc: "bad config",
 						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
 							ObjectReference: apiv1.ObjectReference{
@@ -351,8 +337,8 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 						}},
 						expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionFalse,
 							// TODO(mtaufen): status should be more informative, and report the key being used
-							Message: fmt.Sprintf(status.LkgRemoteMessageFmt, configMapAPIPath(combinedConfigMap)),
-							Reason:  fmt.Sprintf(status.CurFailLoadReasonFmt, configMapAPIPath(combinedConfigMap))},
+							Message: fmt.Sprintf(status.LkgRemoteMessageFmt, configMapAPIPath(combinedConfigMap), combinedConfigMap.UID, combinedConfigMap.ResourceVersion),
+							Reason:  fmt.Sprintf(status.CurFailLoadReasonFmt, configMapAPIPath(combinedConfigMap), combinedConfigMap.UID, combinedConfigMap.ResourceVersion)},
 						expectConfig: lkgKC,
 						event:        true,
 					},
@@ -392,7 +378,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 							KubeletConfigKey: "kubelet",
 						}},
 						expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionTrue,
-							Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(cm1)),
+							Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(cm1), cm1.UID, cm1.ResourceVersion),
 							Reason:  status.CurRemoteOkayReason},
 						expectConfig: kc1,
 						event:        true,
@@ -408,7 +394,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 							KubeletConfigKey: "kubelet",
 						}},
 						expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionTrue,
-							Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(cm2)),
+							Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(cm2), cm2.UID, cm2.ResourceVersion),
 							Reason:  status.CurRemoteOkayReason},
 						expectConfig: kc2,
 						event:        true,
@@ -418,6 +404,22 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 				for i := 0; i < 50; i++ { // change the config 101 times (changes 3 times in the first iteration, 2 times in each subsequent iteration)
 					testBothDirections(f, &states[0], states[1:], 0)
 				}
+			})
+		})
+
+		// Please note: This behavior is tested to ensure implementation correctness. We do not, however, recommend ConfigMap mutations
+		// as a usage pattern for dynamic Kubelet config. It is much safer to create a new ConfigMap, and incrementally roll out
+		// a new NodeConfigSource that references the new ConfigMap across your Node objects.
+		// TODO(mtaufen): test ConfigMap mutations
+		Context("When mutating a ConfigMap", func() {
+			It("by updating it, the Kubelet should respect the update and report the appropriate status and configz", func() {
+				// TODO(mtaufen): implement
+			})
+
+			// TODO(mtaufen): should work, as long as the watch doesn't go away. Probably want to make sure that the watch can continue even if Kubelet is restarted
+			// before recreation.
+			It("by deleting and recreating it with new data, the Kubelet should respect the update and report the appropriate status and configz", func() {
+				// TODO(mtaufen): implement
 			})
 		})
 	})

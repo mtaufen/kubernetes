@@ -40,36 +40,37 @@ const (
 	LkgLocalMessage = "using last-known-good: local"
 
 	// CurRemoteMessageFmt indicates the Kubelet is using its current config, which is from an API source
-	CurRemoteMessageFmt = "using current: %s"
+	CurRemoteMessageFmt = "using current: %s, UID: %s, ResourceVersion: %s"
 	// LkgRemoteMessageFmt indicates the Kubelet is using its last-known-good config, which is from an API source
-	LkgRemoteMessageFmt = "using last-known-good: %s"
+	LkgRemoteMessageFmt = "using last-known-good: %s, UID: %s, ResourceVersion: %s"
 
 	// CurLocalOkayReason indicates that the Kubelet is using its local config
 	CurLocalOkayReason = "when the config source is nil, the Kubelet uses its local config"
 	// CurRemoteOkayReason indicates that the config referenced by Node.ConfigSource is currently passing all checks
 	CurRemoteOkayReason = "passing all checks"
 
+	// CurFailLoadSourceReason indicates that the Kubelet could not load its local copy of the NodeConfigSource referenct
+	CurFailLoadSourceReason = "failed to load local copy of NodeConfigSource reference, cannot determine which checkpoint to use"
 	// CurFailLoadReasonFmt indicates that the Kubelet failed to load the current config checkpoint for an API source
-	CurFailLoadReasonFmt = "failed to load current: %s"
+	CurFailLoadReasonFmt = "failed to load current: %s, UID: %s, ResourceVersion: %s"
 	// CurFailValidateReasonFmt indicates that the Kubelet failed to validate the current config checkpoint for an API source
-	CurFailValidateReasonFmt = "failed to validate current: %s"
+	CurFailValidateReasonFmt = "failed to validate current: %s, UID: %s, ResourceVersion: %s"
 
 	// LkgFail*ReasonFmt reasons are currently used to print errors in the Kubelet log, but do not appear in Node.Status.Conditions
 
 	// LkgFailLoadReasonFmt indicates that the Kubelet failed to load the last-known-good config checkpoint for an API source
-	LkgFailLoadReasonFmt = "failed to load last-known-good: %s"
+	LkgFailLoadReasonFmt = "failed to load last-known-good: %s, UID: %s, ResourceVersion: %s"
 	// LkgFailValidateReasonFmt indicates that the Kubelet failed to validate the last-known-good config checkpoint for an API source
-	LkgFailValidateReasonFmt = "failed to validate last-known-good: %s"
+	LkgFailValidateReasonFmt = "failed to validate last-known-good: %s, UID: %s, ResourceVersion: %s"
 
 	// FailSyncReasonFmt is used when the system couldn't sync the config, due to a malformed Node.Spec.ConfigSource, a download failure, etc.
 	FailSyncReasonFmt = "failed to sync, reason: %s"
+	// FailSyncReasonInvalidNodeConfigSourceFmt is used when the node config source fails local validation
+	FailSyncReasonInvalidNodeConfigSourceFmt = "invalid NodeConfigSource: %s"
 	// FailSyncReasonAllNilSubfields is used when no subfields are set
 	FailSyncReasonAllNilSubfields = "invalid NodeConfigSource, exactly one subfield must be non-nil, but all were nil"
 	// FailSyncReasonPartialConfigMapSource is used when some required subfields remain unset
-	FailSyncReasonPartialConfigMapSource = "invalid ConfigSource.ConfigMap, all of UID, Name, Namespace, and KubeletConfigKey must be specified"
-	// FailSyncReasonUIDMismatchFmt is used when there is a UID mismatch between the referenced and downloaded ConfigMaps,
-	// this can happen because objects must be downloaded by namespace/name, rather than by UID
-	FailSyncReasonUIDMismatchFmt = "invalid ConfigSource.ConfigMap.UID: %s does not match %s.UID: %s"
+	FailSyncReasonPartialConfigMapSource = "invalid ConfigSource.ConfigMap, all of Name, Namespace, and KubeletConfigKey must be specified"
 	// FailSyncReasonDownloadFmt is used when the download fails, e.g. due to network issues
 	FailSyncReasonDownloadFmt = "failed to download: %s"
 	// FailSyncReasonInformer is used when the informer fails to report the Node object
@@ -77,13 +78,13 @@ const (
 	// FailSyncReasonReset is used when we can't reset the local configuration references, e.g. due to filesystem issues
 	FailSyncReasonReset = "failed to reset to local config"
 	// FailSyncReasonCheckpointExistenceFmt is used when we can't determine if a checkpoint already exists, e.g. due to filesystem issues
-	FailSyncReasonCheckpointExistenceFmt = "failed to determine whether object %s with UID %s was already checkpointed"
+	FailSyncReasonCheckpointExistenceFmt = "failed to determine whether object was already checkpointed: %s, UID: %s, ResourceVersion: %s"
 	// FailSyncReasonSaveCheckpointFmt is used when we can't save a checkpoint, e.g. due to filesystem issues
-	FailSyncReasonSaveCheckpointFmt = "failed to save config checkpoint for object %s with UID %s"
-	// FailSyncReasonSetCurrentDefault is used when we can't set the current config checkpoint to the local default, e.g. due to filesystem issues
+	FailSyncReasonSaveCheckpointFmt = "failed to save config checkpoint for object: %s, UID: %s, ResourceVersion: %s"
+	// FailSyncReasonSetCurrentLocal is used when we can't set the current config checkpoint to the local default, e.g. due to filesystem issues
 	FailSyncReasonSetCurrentLocal = "failed to set current config checkpoint to local config"
-	// FailSyncReasonSetCurrentUIDFmt is used when we can't set the current config checkpoint to a checkpointed object, e.g. due to filesystem issues
-	FailSyncReasonSetCurrentUIDFmt = "failed to set current config checkpoint to object %s with UID %s"
+	// FailSyncReasonSetCurrentRemoteFmt is used when we can't set the current config checkpoint to a checkpointed object, e.g. due to filesystem issues
+	FailSyncReasonSetCurrentRemoteFmt = "failed to set current config checkpoint to object: %s, UID: %s, ResourceVersion: %s"
 
 	// EmptyMessage is a placeholder in the case that we accidentally set the condition's message to the empty string.
 	// Doing so can result in a partial patch, and thus a confusing status; this makes it clear that the message was not provided.

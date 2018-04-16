@@ -75,32 +75,47 @@ func (s *fsStore) Initialize() error {
 	return utilfiles.EnsureDir(s.fs, filepath.Join(s.dir, checkpointsDir))
 }
 
-func (s *fsStore) Exists(c checkpoint.RemoteConfigSource) (bool, error) {
+// TODO(mtaufen): add tests for the "ambiguous uid/rv" cases
+func (s *fsStore) Exists(source checkpoint.RemoteConfigSource) (bool, error) {
+	const errfmt = "failed to determine whether checkpoint exists for source %s, UID: %s, ResourceVersion: %s exists, error: %v"
+	if len(source.UID()) == 0 {
+		return false, fmt.Errorf(errfmt, source.APIPath(), source.UID(), source.ResourceVersion(), "empty UID is ambiguous")
+	}
+	if len(source.ResourceVersion()) == 0 {
+		return false, fmt.Errorf(errfmt, source.APIPath(), source.UID(), source.ResourceVersion(), "empty ResourceVersion is ambiguous")
+	}
+
 	// we check whether the directory was created for the resource
-	uid := c.UID()
-	ok, err := utilfiles.DirExists(s.fs, s.checkpointPath(uid))
+	ok, err := utilfiles.DirExists(s.fs, s.checkpointPath(source.UID(), source.ResourceVersion()))
 	if err != nil {
-		return false, fmt.Errorf("failed to determine whether checkpoint %q exists, error: %v", uid, err)
+		return false, fmt.Errorf(errfmt, source.APIPath(), source.UID(), source.ResourceVersion(), err)
 	}
 	return ok, nil
 }
 
-func (s *fsStore) Save(c checkpoint.Payload) error {
+func (s *fsStore) Save(payload checkpoint.Payload) error {
+	if len(payload.UID()) == 0 {
+		return fmt.Errorf("empty UID is ambiguous")
+	}
+	if len(payload.ResourceVersion()) == 0 {
+		return fmt.Errorf("empty ResourceVersion is ambiguous")
+	}
+
 	// save the checkpoint's files in the appropriate checkpoint dir
-	return utilfiles.ReplaceDir(s.fs, s.checkpointPath(c.UID()), c.Files())
+	return utilfiles.ReplaceDir(s.fs, s.checkpointPath(payload.UID(), payload.ResourceVersion()), payload.Files())
 }
 
 func (s *fsStore) Load(source checkpoint.RemoteConfigSource) (*kubeletconfig.KubeletConfiguration, error) {
-	sourceFmt := fmt.Sprintf("%s:%s", source.APIPath(), source.UID())
+	sourceFmt := fmt.Sprintf("%s, UID: %s, ResourceVersion: %s", source.APIPath(), source.UID(), source.ResourceVersion())
 	// check if a checkpoint exists for the source
 	if ok, err := s.Exists(source); err != nil {
-		return nil, fmt.Errorf("failed to determine if a checkpoint exists for source %s", sourceFmt)
+		return nil, err
 	} else if !ok {
 		return nil, fmt.Errorf("no checkpoint for source %s", sourceFmt)
 	}
 	// load the kubelet config file
-	utillog.Infof("loading kubelet configuration checkpoint for source %s", sourceFmt)
-	loader, err := configfiles.NewFsLoader(s.fs, filepath.Join(s.checkpointPath(source.UID()), source.KubeletFilename()))
+	utillog.Infof("loading Kubelet configuration checkpoint for source %s", sourceFmt)
+	loader, err := configfiles.NewFsLoader(s.fs, filepath.Join(s.checkpointPath(source.UID(), source.ResourceVersion()), source.KubeletFilename()))
 	if err != nil {
 		return nil, err
 	}
@@ -140,8 +155,8 @@ func (s *fsStore) Reset() (bool, error) {
 	return reset(s)
 }
 
-func (s *fsStore) checkpointPath(uid string) string {
-	return filepath.Join(s.dir, checkpointsDir, uid)
+func (s *fsStore) checkpointPath(uid, resourceVersion string) string {
+	return filepath.Join(s.dir, checkpointsDir, fmt.Sprintf("%s_%s", uid, resourceVersion))
 }
 
 func (s *fsStore) metaPath(name string) string {

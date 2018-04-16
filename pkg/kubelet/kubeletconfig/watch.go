@@ -123,3 +123,56 @@ func (cc *Controller) onDeleteNodeEvent(deletedObj interface{}) {
 	}
 	utillog.Infof("Node was deleted, sync-loop will continue because the Kubelet might recreate the Node, node: %+v", node)
 }
+
+// onAddRemoteConfigSourceEvent calls onUpdateConfigMapEvent with the new object and a nil old object
+func (cc *Controller) onAddRemoteConfigSourceEvent(newObj interface{}) {
+	cc.onUpdateRemoteConfigSourceEvent(nil, newObj)
+}
+
+// onUpdateRemoteConfigSourceEvent checks whether the configSource changed between oldObj and newObj, and pokes the
+// configuration sync worker if there was a change
+func (cc *Controller) onUpdateRemoteConfigSourceEvent(oldObj interface{}, newObj interface{}) {
+	// since ConfigMap is currently the only source type, we handle that here
+	newConfigMap, ok := newObj.(*apiv1.ConfigMap)
+	if !ok {
+		utillog.Errorf("failed to cast new object to ConfigMap, couldn't handle event")
+		return
+	}
+	if oldObj == nil {
+		// ConfigMap was just added, need to sync
+		cc.pokeConfigSourceWorker()
+		return
+	}
+	oldConfigMap, ok := oldObj.(*apiv1.ConfigMap)
+	if !ok {
+		utillog.Errorf("failed to cast old object to ConfigMap, couldn't handle event")
+		return
+	}
+	if !apiequality.Semantic.DeepEqual(oldConfigMap, newConfigMap) {
+		cc.pokeConfigSourceWorker()
+	}
+}
+
+// TODO(mtaufen): if the ConfigMap is deleted but still assigned, Kubelet should start reporting an error, even if the config is still checkpointed.
+// TODO(mtaufen): we can probably accomplish this simply by poking the config source worker and letting it produce the error, but we should make sure
+// TODO(mtaufen): it produces the error correctly.
+// onDeleteRemoteConfigSourceEvent logs a message if the ConfigMap was deleted and may log errors
+// if an unexpected DeletedFinalStateUnknown was received.
+func (cc *Controller) onDeleteRemoteConfigSourceEvent(deletedObj interface{}) {
+	ConfigMap, ok := deletedObj.(*apiv1.ConfigMap)
+	if !ok {
+		tombstone, ok := deletedObj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utillog.Errorf("couldn't cast deleted object to DeletedFinalStateUnknown, object: %+v", deletedObj)
+			return
+		}
+		ConfigMap, ok = tombstone.Obj.(*apiv1.ConfigMap)
+		if !ok {
+			utillog.Errorf("received DeletedFinalStateUnknown object but it did not contain a ConfigMap, object: %+v", deletedObj)
+			return
+		}
+		utillog.Infof("Node's ConfigMap was deleted (DeletedFinalStateUnknown): %+v", ConfigMap)
+		return
+	}
+	utillog.Infof("Node's ConfigMap was deleted: %+v", ConfigMap)
+}
