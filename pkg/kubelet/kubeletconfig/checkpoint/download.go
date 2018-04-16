@@ -18,12 +18,18 @@ package checkpoint
 
 import (
 	"fmt"
+	"math/rand"
+	"time"
 
 	apiv1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
+	kuberuntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/watch"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/status"
 	utilcodec "k8s.io/kubernetes/pkg/kubelet/kubeletconfig/util/codec"
@@ -35,6 +41,9 @@ type Payload interface {
 	// UID returns a globally unique (space and time) identifier for the payload.
 	UID() string
 
+	// ResourceVersion returns a resource version for the payload
+	ResourceVersion() string
+
 	// Files returns a map of filenames to file contents.
 	Files() map[string]string
 
@@ -44,16 +53,32 @@ type Payload interface {
 
 // RemoteConfigSource represents a remote config source object that can be downloaded as a Checkpoint
 type RemoteConfigSource interface {
-	// UID returns a globally unique identifier of the source described by the remote config source object
-	UID() string
 	// KubeletFilename returns the name of the Kubelet config file as it should appear in the keys of Payload.Files()
 	KubeletFilename() string
+
 	// APIPath returns the API path to the remote resource, e.g. its SelfLink
 	APIPath() string
-	// Download downloads the remote config source object returns a Payload backed by the object,
-	// or a sanitized failure reason and error if the download fails
-	Download(client clientset.Interface) (Payload, string, error)
-	// Encode returns a []byte representation of the NodeConfigSource behind the RemoteConfigSource
+
+	// UID returns a globally unique (space and time) identifier for the payload targeted by the source.
+	// This value is updated when Download is called.
+	UID() string
+
+	// ResourceVersion returns a resource version for the payload targeted by the source.
+	// This value is updated when Download is called.
+	ResourceVersion() string
+
+	// Download downloads the remote config source's target object and returns a Payload backed by the object,
+	// or a sanitized failure reason and error if the download fails.
+	// Download internally sets the UID and ResourceVersion on the source, based on the downloaded payload.
+	Download(client clientset.Interface) (Payload, string, error) // TODO(mtaufen): update tests
+
+	// Informer returns an informer that can be used to detect changes to the remote config source
+	Informer(client clientset.Interface,
+		addFunc func(newObj interface{}),
+		updateFunc func(oldObj interface{}, newObj interface{}),
+		deleteFunc func(deletedObj interface{})) cache.SharedInformer
+
+	// Encode returns a []byte representation of the object behind the RemoteConfigSource
 	Encode() ([]byte, error)
 
 	// NodeConfigSource returns a copy of the underlying apiv1.NodeConfigSource object.
@@ -96,8 +121,13 @@ func DecodeRemoteConfigSource(data []byte) (RemoteConfigSource, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert decoded object into a v1 SerializedNodeConfigSource, error: %v", err)
 	}
+
 	source, _, err := NewRemoteConfigSource(&cs.Source)
-	return source, err
+	if err != nil {
+		return nil, err
+	}
+
+	return source, nil
 }
 
 // EqualRemoteConfigSources is a helper for comparing remote config sources by
@@ -116,10 +146,6 @@ type remoteConfigMap struct {
 
 var _ RemoteConfigSource = (*remoteConfigMap)(nil)
 
-func (r *remoteConfigMap) UID() string {
-	return string(r.source.ConfigMap.UID)
-}
-
 func (r *remoteConfigMap) KubeletFilename() string {
 	return r.source.ConfigMap.KubeletConfigKey
 }
@@ -131,33 +157,74 @@ func (r *remoteConfigMap) APIPath() string {
 	return fmt.Sprintf(configMapAPIPathFmt, ref.Namespace, ref.Name)
 }
 
+func (r *remoteConfigMap) UID() string {
+	return string(r.source.ConfigMap.UID)
+}
+
+func (r *remoteConfigMap) ResourceVersion() string {
+	return r.source.ConfigMap.ResourceVersion
+}
+
 func (r *remoteConfigMap) Download(client clientset.Interface) (Payload, string, error) {
-	var reason string
-	uid := string(r.source.ConfigMap.UID)
+	utillog.Infof("attempting to download %s", r.APIPath())
 
-	utillog.Infof("attempting to download ConfigMap with UID %q", uid)
-
-	// get the ConfigMap via namespace/name, there doesn't seem to be a way to get it by UID
+	// get the ConfigMap via namespace/name
 	cm, err := client.CoreV1().ConfigMaps(r.source.ConfigMap.Namespace).Get(r.source.ConfigMap.Name, metav1.GetOptions{})
 	if err != nil {
-		reason = fmt.Sprintf(status.SyncErrorDownload, r.APIPath())
+		reason := fmt.Sprintf(status.SyncErrorDownload, r.APIPath())
 		return nil, reason, fmt.Errorf("%s, error: %v", reason, err)
 	}
 
-	// ensure that UID matches the UID on the source
-	if r.source.ConfigMap.UID != cm.UID {
-		reason = fmt.Sprintf(status.SyncErrorUIDMismatchFmt, r.source.ConfigMap.UID, r.APIPath(), cm.UID)
-		return nil, reason, fmt.Errorf(reason)
-	}
+	// update uid and resourceVersion based on downloaded object
+	r.source.ConfigMap.UID = cm.UID
+	r.source.ConfigMap.ResourceVersion = cm.ResourceVersion
 
 	payload, err := NewConfigMapPayload(cm)
 	if err != nil {
-		reason = fmt.Sprintf("invalid downloaded object")
+		reason := fmt.Sprintf("invalid downloaded object")
 		return nil, reason, fmt.Errorf("%s, error: %v", reason, err)
 	}
 
-	utillog.Infof("successfully downloaded ConfigMap with UID %q", uid)
+	utillog.Infof("successfully downloaded %s, UID: %s, ResourceVersion: %s", r.APIPath(), cm.UID, cm.ResourceVersion)
 	return payload, "", nil
+}
+
+func (r *remoteConfigMap) Informer(client clientset.Interface,
+	addFunc func(newObj interface{}),
+	updateFunc func(oldObj interface{}, newObj interface{}),
+	deleteFunc func(deletedObj interface{})) cache.SharedInformer {
+	// select ConfigMap by name
+	fieldselector := fields.OneTermEqualSelector("metadata.name", r.source.ConfigMap.Name)
+
+	// add some randomness to resync period, which can help avoid controllers falling into lock-step
+	minResyncPeriod := 15 * time.Minute
+	factor := rand.Float64() + 1
+	resyncPeriod := time.Duration(float64(minResyncPeriod.Nanoseconds()) * factor)
+
+	lw := &cache.ListWatch{
+		ListFunc: func(options metav1.ListOptions) (kuberuntime.Object, error) {
+			return client.CoreV1().ConfigMaps(r.source.ConfigMap.Namespace).List(metav1.ListOptions{
+				FieldSelector: fieldselector.String(),
+			})
+		},
+		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+			return client.CoreV1().ConfigMaps(r.source.ConfigMap.Namespace).Watch(metav1.ListOptions{
+				FieldSelector:   fieldselector.String(),
+				ResourceVersion: options.ResourceVersion,
+			})
+		},
+	}
+
+	handler := cache.ResourceEventHandlerFuncs{
+		AddFunc:    addFunc,
+		UpdateFunc: updateFunc,
+		DeleteFunc: deleteFunc,
+	}
+
+	informer := cache.NewSharedInformer(lw, &apiv1.ConfigMap{}, resyncPeriod)
+	informer.AddEventHandler(handler)
+
+	return informer
 }
 
 func (r *remoteConfigMap) Encode() ([]byte, error) {

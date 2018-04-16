@@ -119,9 +119,10 @@ func TestRemoteConfigMapAPIPath(t *testing.T) {
 func TestRemoteConfigMapDownload(t *testing.T) {
 	cm := &apiv1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "name",
-			Namespace: "namespace",
-			UID:       "uid",
+			Name:            "name",
+			Namespace:       "namespace",
+			UID:             "uid",
+			ResourceVersion: "1",
 		}}
 	client := fakeclient.NewSimpleClientset(cm)
 	payload, err := NewConfigMapPayload(cm)
@@ -170,7 +171,6 @@ func TestRemoteConfigMapDownload(t *testing.T) {
 			source: makeSource(&apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
 				Name:             "name",
 				Namespace:        "namespace",
-				UID:              "uid",
 				KubeletConfigKey: "kubelet",
 			}}),
 			expect: payload,
@@ -187,7 +187,14 @@ func TestRemoteConfigMapDownload(t *testing.T) {
 			}
 			// downloaded object should match the expected
 			if !apiequality.Semantic.DeepEqual(c.expect.object(), payload.object()) {
-				t.Errorf("case %q, expect Checkpoint %s but got %s", c.desc, spew.Sdump(c.expect), spew.Sdump(payload))
+				t.Errorf("expect Checkpoint %s but got %s", spew.Sdump(c.expect), spew.Sdump(payload))
+			}
+			// source UID and ResourceVersion should be updated by Download
+			if payload.UID() != c.source.UID() {
+				t.Errorf("expect UID to be updated by Download to match payload: %s, but got source UID: %s", payload.UID(), c.source.UID())
+			}
+			if payload.ResourceVersion() != c.source.ResourceVersion() {
+				t.Errorf("expect ResourceVersion to be updated by Download to match payload: %s, but got source ResourceVersion: %s", payload.ResourceVersion(), c.source.ResourceVersion())
 			}
 		})
 	}

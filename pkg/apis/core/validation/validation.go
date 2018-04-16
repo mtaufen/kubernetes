@@ -4173,11 +4173,10 @@ func validateConfigMapNodeConfigSourceSpec(source *core.ConfigMapNodeConfigSourc
 	if source.KubeletConfigKey == "" {
 		allErrs = append(allErrs, field.Required(fldPath.Child("kubeletConfigKey"), "kubeletConfigKey must be set in spec"))
 	}
-	// TODO(#61643): Prevent ref.UID from being set here when we switch from requiring UID to respecting all ConfigMap updates
-	if string(source.UID) == "" {
-		allErrs = append(allErrs, field.Required(fldPath.Child("uid"), "uid must be set in spec"))
+	// uid and resourceVersion must not be set in spec
+	if string(source.UID) != "" {
+		allErrs = append(allErrs, field.Forbidden(fldPath.Child("uid"), "uid must not be set in spec"))
 	}
-	// resourceVersion must not be set in spec
 	if source.ResourceVersion != "" {
 		allErrs = append(allErrs, field.Forbidden(fldPath.Child("resourceVersion"), "resourceVersion must not be set in spec"))
 	}
@@ -4219,6 +4218,7 @@ func validateNodeConfigSourceStatus(source *core.NodeConfigSource, fldPath *fiel
 // validation specific to Node.Status.Config.(Active|Assigned|LastKnownGood).ConfigMap
 func validateConfigMapNodeConfigSourceStatus(source *core.ConfigMapNodeConfigSource, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
+	// we require the status to be completely unambiguous - name/namespace, kubeletConfigKey, uid, resourceVersion
 	if source.Name == "" {
 		allErrs = append(allErrs, field.Required(fldPath.Child("name"), "name must be set in status"))
 	}

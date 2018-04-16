@@ -69,7 +69,7 @@ func (cc *Controller) syncConfigSource(client clientset.Interface, eventClient v
 		}
 	}()
 
-	node, err := latestNode(cc.informer.GetStore(), nodeName)
+	node, err := latestNode(cc.nodeInformer.GetStore(), nodeName)
 	if err != nil {
 		cc.configStatus.SetSyncError(status.SyncErrorInternal)
 		syncerr = fmt.Errorf("%s, error: %v", status.SyncErrorInternal, err)
@@ -128,6 +128,7 @@ func (cc *Controller) doSyncConfigSource(client clientset.Interface, source *api
 	if err != nil {
 		return false, nil, reason, err
 	}
+	// Note: cc.checkpointConfigSource calls source.Download internally, so the uid and resourceVersion will be up to date here
 	updated, reason, err := cc.setAssignedConfig(remote)
 	if err != nil {
 		return false, nil, reason, err
@@ -138,24 +139,27 @@ func (cc *Controller) doSyncConfigSource(client clientset.Interface, source *api
 // checkpointConfigSource downloads and checkpoints the object referred to by `source` if the checkpoint does not already exist,
 // if a failure occurs, returns a sanitized failure reason and an error
 func (cc *Controller) checkpointConfigSource(client clientset.Interface, source checkpoint.RemoteConfigSource) (string, error) {
-	// if the checkpoint already exists, skip downloading
-	if ok, err := cc.checkpointStore.Exists(source); err != nil {
-		return status.SyncErrorInternal, fmt.Errorf("%s, error: %v", status.SyncErrorInternal, err)
-	} else if ok {
-		// TODO(mtaufen): update this to include ResourceVersion in #63221
-		utillog.Infof("checkpoint already exists for object %s with UID %s, skipping download", source.APIPath(), source.UID())
-		return "", nil
-	}
+	// TODO(mtaufen): it would be nice if we could check the payload's metadata before (re)downloading the whole payload
+	//                we can try pulling the latest configmap out of the local informer store, and seeing if it matches the
+	//                source specification.
 
-	// download
+	// download source
 	payload, reason, err := source.Download(client)
 	if err != nil {
 		return reason, fmt.Errorf("%s, error: %v", reason, err)
 	}
 
+	// check whether we need to save
+	// Note: source has correct uid and resourceVersion after calling Download
+	if ok, err := cc.checkpointStore.Exists(source); err != nil {
+		return status.SyncErrorInternal, fmt.Errorf("%s, error: %v", status.SyncErrorInternal, err)
+	} else if ok {
+		utillog.Infof("checkpoint already exists for object %s with UID %s and ResourceVersion %s", source.APIPath(), payload.UID(), payload.ResourceVersion())
+		return "", nil
+	}
+
 	// save
-	err = cc.checkpointStore.Save(payload)
-	if err != nil {
+	if err = cc.checkpointStore.Save(payload); err != nil {
 		return status.SyncErrorInternal, fmt.Errorf("%s, error: %v", status.SyncErrorInternal, err)
 	}
 

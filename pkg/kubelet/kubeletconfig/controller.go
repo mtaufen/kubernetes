@@ -55,8 +55,11 @@ type Controller struct {
 	// configStatus manages the status we report on the Node object
 	configStatus status.NodeConfigStatus
 
-	// informer is the informer that watches the Node object
-	informer cache.SharedInformer
+	// nodeInformer is the informer that watches the Node object
+	nodeInformer cache.SharedInformer
+
+	// remoteConfigSourceInformer is the informer that watches the assigned config source
+	remoteConfigSourceInformer cache.SharedInformer
 
 	// checkpointStore persists config source checkpoints to a storage layer
 	checkpointStore store.Store
@@ -160,6 +163,11 @@ func (cc *Controller) StartSync(client clientset.Interface, eventClient v1core.E
 		return
 	}
 
+	// Rather than use utilruntime.HandleCrash, which doesn't actually crash in the Kubelet,
+	// we use HandlePanic to manually call the panic handlers and then crash.
+	// We have a better chance of recovering normal operation if we just restart the Kubelet in the event
+	// of a Go runtime error.
+
 	// start the status sync loop
 	go utilpanic.HandlePanic(func() {
 		utillog.Infof("starting status sync loop")
@@ -168,21 +176,33 @@ func (cc *Controller) StartSync(client clientset.Interface, eventClient v1core.E
 		}, 10*time.Second, 0.2, true, wait.NeverStop)
 	})()
 
-	cc.informer = newSharedNodeInformer(client, nodeName,
+	// if we have a remote config assigned, start the assigned config source informer loop
+	assignedSource, err := cc.checkpointStore.Assigned()
+	if err != nil {
+		// TODO(mtaufen): add retry logic here?
+		utillog.Errorf("error reading assigned config source from local checkpoint store, will not start remote config source informer: %v", err)
+	} else if assignedSource == nil {
+		utillog.Infof("local source is assigned, will not start remote config source informer")
+	} else {
+		cc.remoteConfigSourceInformer = assignedSource.Informer(client,
+			cc.onAddRemoteConfigSourceEvent, cc.onUpdateRemoteConfigSourceEvent, cc.onDeleteRemoteConfigSourceEvent)
+		go utilpanic.HandlePanic(func() {
+			utillog.Infof("starting remote config source informer sync loop")
+			cc.remoteConfigSourceInformer.Run(wait.NeverStop)
+		})
+	}
+
+	// start the nodeInformer loop
+	cc.nodeInformer = newSharedNodeInformer(client, nodeName,
 		cc.onAddNodeEvent, cc.onUpdateNodeEvent, cc.onDeleteNodeEvent)
-	// start the informer loop
-	// Rather than use utilruntime.HandleCrash, which doesn't actually crash in the Kubelet,
-	// we use HandlePanic to manually call the panic handlers and then crash.
-	// We have a better chance of recovering normal operation if we just restart the Kubelet in the event
-	// of a Go runtime error.
 	go utilpanic.HandlePanic(func() {
 		utillog.Infof("starting Node informer sync loop")
-		cc.informer.Run(wait.NeverStop)
+		cc.nodeInformer.Run(wait.NeverStop)
 	})()
 
-	// start the config source sync loop
+	// start the config sync loop
 	go utilpanic.HandlePanic(func() {
-		utillog.Infof("starting config source sync loop")
+		utillog.Infof("starting Kubelet config sync loop")
 		wait.JitterUntil(func() {
 			cc.syncConfigSource(client, eventClient, nodeName)
 		}, 10*time.Second, 0.2, true, wait.NeverStop)
