@@ -36,7 +36,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-type configState struct {
+type configSourceState struct {
 	desc           string
 	configSource   *apiv1.NodeConfigSource
 	expectConfigOk *apiv1.NodeCondition
@@ -47,6 +47,18 @@ type configState struct {
 	// assuming that the current source would have also caused a config change event.
 	// for example, some malformed references may result in a download failure, in which case the Kubelet
 	// does not restart to change config, while an invalid payload will be detected upon restart
+	event bool
+}
+
+// like configSourceState, but for in-place updates to ConfigMaps
+type configMapState struct {
+	desc           string
+	configMap      *apiv1.ConfigMap
+	expectConfigOk *apiv1.NodeCondition
+	expectConfig   *kubeletconfig.KubeletConfiguration
+	// whether to expect this substring in an error returned from the API server when updating the config source
+	apierr string
+	// whether the state would cause a config change event as a result of the update to the ConfigMap
 	event bool
 }
 
@@ -85,7 +97,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 			// This is the same strategy several other e2e node tests use.
 			// TODO(mtaufen): given difference in defaults between flags and config, we should
 			// move to simply recording and resetting to the initial NodeConfigSource.
-			setAndTestKubeletConfigState(f, &configState{desc: "reset to original values",
+			setAndTestKubeletConfigSourceState(f, &configSourceState{desc: "reset to original values",
 				configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
 					ObjectReference: apiv1.ObjectReference{
 						UID:       originalConfigMap.UID,
@@ -100,7 +112,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 			}, false)
 		})
 
-		Context("When setting new NodeConfigSources that cause transitions between ConfigOk conditions", func() {
+		Context("When setting new NodeConfigSources that cause transitions between KubeletConfigOk conditions", func() {
 			It("the Kubelet should report the appropriate status and configz", func() {
 				var err error
 				// we base the "correct" configmap off of the current configuration
@@ -127,7 +139,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 				failValidateConfigMap, err = f.ClientSet.CoreV1().ConfigMaps("kube-system").Create(failValidateConfigMap)
 				framework.ExpectNoError(err)
 
-				states := []configState{
+				states := []configSourceState{
 					{
 						desc:         "Node.Spec.ConfigSource is nil",
 						configSource: nil,
@@ -201,6 +213,22 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 						event:        true,
 					},
 					{
+						desc: "kubeletConfigKey is not a file in the ConfigMap",
+						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+							ObjectReference: apiv1.ObjectReference{
+								UID:       correctConfigMap.UID,
+								Namespace: correctConfigMap.Namespace,
+								Name:      correctConfigMap.Name},
+							KubeletConfigKey: "foo",
+						}},
+						expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionFalse,
+							// TODO(mtaufen): make sure this is correct
+							Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(correctConfigMap), correctConfigMap.UID, correctConfigMap.ResourceVersion),
+							Reason:  status.CurRemoteOkayReason},
+						expectConfig: correctKC,
+						event:        true,
+					},
+					{
 						desc: "fail-parse",
 						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
 							ObjectReference: apiv1.ObjectReference{
@@ -234,7 +262,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 
 				L := len(states)
 				for i := 1; i <= L; i++ { // need one less iteration than the number of states
-					testBothDirections(f, &states[i-1 : i][0], states[i:L], 0)
+					testBothConfigSourceDirections(f, &states[i-1 : i][0], states[i:L], 0)
 				}
 
 			})
@@ -259,7 +287,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 				badConfigMap, err = f.ClientSet.CoreV1().ConfigMaps("kube-system").Create(badConfigMap)
 				framework.ExpectNoError(err)
 
-				states := []configState{
+				states := []configSourceState{
 					// intended lkg
 					{desc: "intended last-known-good",
 						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
@@ -294,7 +322,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 				}
 
 				// wait 12 minutes after setting the first config to ensure it has time to pass the trial duration
-				testBothDirections(f, &states[0], states[1:], 15*time.Minute) // TODO(mtaufen): bring this back down to 12 to see if it continues to pass
+				testBothConfigSourceDirections(f, &states[0], states[1:], 15*time.Minute) // TODO(mtaufen): bring this back down to 12 to see if it continues to pass
 			})
 		})
 
@@ -309,7 +337,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 				combinedConfigMap, err = f.ClientSet.CoreV1().ConfigMaps("kube-system").Create(combinedConfigMap)
 				framework.ExpectNoError(err)
 
-				states := []configState{
+				states := []configSourceState{
 					// intended lkg
 					{desc: "intended last-known-good",
 						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
@@ -345,7 +373,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 				}
 
 				// wait 12 minutes after setting the first config to ensure it has time to pass the trial duration
-				testBothDirections(f, &states[0], states[1:], 12*time.Minute)
+				testBothConfigSourceDirections(f, &states[0], states[1:], 12*time.Minute)
 			})
 		})
 
@@ -368,7 +396,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 				cm2, err = f.ClientSet.CoreV1().ConfigMaps("kube-system").Create(cm2)
 				framework.ExpectNoError(err)
 
-				states := []configState{
+				states := []configSourceState{
 					{desc: "cm1",
 						configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
 							ObjectReference: apiv1.ObjectReference{
@@ -402,7 +430,7 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 				}
 
 				for i := 0; i < 50; i++ { // change the config 101 times (changes 3 times in the first iteration, 2 times in each subsequent iteration)
-					testBothDirections(f, &states[0], states[1:], 0)
+					testBothConfigSourceDirections(f, &states[0], states[1:], 0)
 				}
 			})
 		})
@@ -410,29 +438,164 @@ var _ = framework.KubeDescribe("DynamicKubeletConfiguration [Feature:DynamicKube
 		// Please note: This behavior is tested to ensure implementation correctness. We do not, however, recommend ConfigMap mutations
 		// as a usage pattern for dynamic Kubelet config. It is much safer to create a new ConfigMap, and incrementally roll out
 		// a new NodeConfigSource that references the new ConfigMap across your Node objects.
-		// TODO(mtaufen): test ConfigMap mutations
-		Context("When mutating a ConfigMap", func() {
-			It("by updating it, the Kubelet should respect the update and report the appropriate status and configz", func() {
-				// TODO(mtaufen): implement
-			})
+		Context("When updating a ConfigMap in place such that it causes transitions between KubeletConfigOk conditions", func() {
+			It("the Kubelet should report the appropriate status and configz", func() {
+				var err error
+				// we base the "correct" configmap off of the current configuration
+				correctKC := originalKC.DeepCopy()
+				correctConfigMap := newKubeletConfigMap("dynamic-kubelet-config-test-in-place", correctKC)
+				correctConfigMap, err = f.ClientSet.CoreV1().ConfigMaps("kube-system").Create(correctConfigMap)
+				framework.ExpectNoError(err)
 
-			// TODO(mtaufen): should work, as long as the watch doesn't go away. Probably want to make sure that the watch can continue even if Kubelet is restarted
-			// before recreation.
-			It("by deleting and recreating it with new data, the Kubelet should respect the update and report the appropriate status and configz", func() {
-				// TODO(mtaufen): implement
+				// we reuse the same name, namespace // TODO(mtaufen): hopefully update works in this case
+				failParseConfigMap := correctConfigMap.DeepCopy()
+				failParseConfigMap.Data = map[string]string{
+					"kubelet": "{0xdeadbeef}",
+				}
+
+				// fail to validate, we make a copy and set an invalid KubeAPIQPS on kc before serializing
+				invalidKC := correctKC.DeepCopy()
+				invalidKC.KubeAPIQPS = -1
+				failValidateConfigMap := correctConfigMap.DeepCopy()
+				failValidateConfigMap.Data = newKubeletConfigMap("", invalidKC).Data
+
+				// ensure node config source is set to the config map we will mutate in-place
+				setAndTestKubeletConfigSourceState(f, &configSourceState{
+					desc: "initial state (correct)",
+					configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+						ObjectReference: apiv1.ObjectReference{
+							UID:       correctConfigMap.UID,
+							Namespace: correctConfigMap.Namespace,
+							Name:      correctConfigMap.Name},
+						KubeletConfigKey: "kubelet",
+					}},
+					expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionTrue,
+						Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(correctConfigMap), correctConfigMap.UID, correctConfigMap.ResourceVersion),
+						Reason:  status.CurRemoteOkayReason},
+					expectConfig: correctKC,
+					event:        true,
+				}, false)
+
+				states := []configMapState{
+					{
+						desc:      "correct",
+						configMap: correctConfigMap,
+						expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionTrue,
+							Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(correctConfigMap), correctConfigMap.UID, correctConfigMap.ResourceVersion),
+							Reason:  status.CurRemoteOkayReason},
+						expectConfig: correctKC,
+						event:        true,
+					},
+					{
+						desc:      "fail-parse",
+						configMap: failParseConfigMap,
+						expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionFalse,
+							Message: status.LkgLocalMessage,
+							Reason:  fmt.Sprintf(status.CurFailLoadReasonFmt, configMapAPIPath(failParseConfigMap), failParseConfigMap.UID, failParseConfigMap.ResourceVersion)},
+						expectConfig: nil,
+						event:        true,
+					},
+					{
+						desc:      "fail-validate",
+						configMap: failValidateConfigMap,
+						expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionFalse,
+							Message: status.LkgLocalMessage,
+							Reason:  fmt.Sprintf(status.CurFailValidateReasonFmt, configMapAPIPath(failValidateConfigMap), failValidateConfigMap.UID, failValidateConfigMap.ResourceVersion)},
+						expectConfig: nil,
+						event:        true,
+					},
+				}
+				L := len(states)
+				for i := 1; i <= L; i++ { // need one less iteration than the number of states
+					testBothConfigMapDirections(f, &states[i-1 : i][0], states[i:L], 0)
+				}
+
 			})
 		})
+
+		// // Please note: This behavior is tested to ensure implementation correctness. We do not, however, recommend ConfigMap mutations
+		// // as a usage pattern for dynamic Kubelet config. It is much safer to create a new ConfigMap, and incrementally roll out
+		// // a new NodeConfigSource that references the new ConfigMap across your Node objects.
+		// // TODO(mtaufen): new test
+		// Context("When a remote config becomes the new last-known-good, and then the Kubelet is updated to use a new, bad config", func() {
+		// 	It("the Kubelet should report a status and configz indicating that it rolled back to the new last-known-good", func() {
+		// 		var err error
+		// 		// we base the "lkg" configmap off of the current configuration
+		// 		lkgKC := originalKC.DeepCopy()
+		// 		lkgConfigMap := newKubeletConfigMap("dynamic-kubelet-config-test-intended-lkg", lkgKC)
+		// 		lkgConfigMap, err = f.ClientSet.CoreV1().ConfigMaps("kube-system").Create(lkgConfigMap)
+		// 		framework.ExpectNoError(err)
+
+		// 		// bad config map, we insert some bogus stuff into the configMap
+		// 		badConfigMap := &apiv1.ConfigMap{
+		// 			ObjectMeta: metav1.ObjectMeta{Name: "dynamic-kubelet-config-test-bad"},
+		// 			Data: map[string]string{
+		// 				"kubelet": "{0xdeadbeef}",
+		// 			},
+		// 		}
+		// 		badConfigMap, err = f.ClientSet.CoreV1().ConfigMaps("kube-system").Create(badConfigMap)
+		// 		framework.ExpectNoError(err)
+
+		// 		states := []configSourceState{
+		// 			// intended lkg
+		// 			{desc: "intended last-known-good",
+		// 				configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+		// 					ObjectReference: apiv1.ObjectReference{
+		// 						UID:       lkgConfigMap.UID,
+		// 						Namespace: lkgConfigMap.Namespace,
+		// 						Name:      lkgConfigMap.Name},
+		// 					KubeletConfigKey: "kubelet",
+		// 				}},
+		// 				expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionTrue,
+		// 					Message: fmt.Sprintf(status.CurRemoteMessageFmt, configMapAPIPath(lkgConfigMap), lkgConfigMap.UID, lkgConfigMap.ResourceVersion),
+		// 					Reason:  status.CurRemoteOkayReason},
+		// 				expectConfig: lkgKC,
+		// 				event:        true,
+		// 			},
+
+		// 			// bad config
+		// 			{desc: "bad config",
+		// 				configSource: &apiv1.NodeConfigSource{ConfigMap: &apiv1.ConfigMapNodeConfigSource{
+		// 					ObjectReference: apiv1.ObjectReference{
+		// 						UID:       badConfigMap.UID,
+		// 						Namespace: badConfigMap.Namespace,
+		// 						Name:      badConfigMap.Name},
+		// 					KubeletConfigKey: "kubelet",
+		// 				}},
+		// 				expectConfigOk: &apiv1.NodeCondition{Type: apiv1.NodeKubeletConfigOk, Status: apiv1.ConditionFalse,
+		// 					Message: fmt.Sprintf(status.LkgRemoteMessageFmt, configMapAPIPath(lkgConfigMap), lkgConfigMap.UID, lkgConfigMap.ResourceVersion),
+		// 					Reason:  fmt.Sprintf(status.CurFailLoadReasonFmt, configMapAPIPath(badConfigMap), badConfigMap.UID, badConfigMap.ResourceVersion)},
+		// 				expectConfig: lkgKC,
+		// 				event:        true,
+		// 			},
+		// 		}
+
+		// 		// wait 12 minutes after setting the first config to ensure it has time to pass the trial duration
+		// 		testBothConfigSourceDirections(f, &states[0], states[1:], 15*time.Minute) // TODO(mtaufen): bring this back down to 12 to see if it continues to pass
+		// 	})
+		// })
+
+		// // Please note: This behavior is tested to ensure implementation correctness. We do not, however, recommend ConfigMap mutations
+		// // as a usage pattern for dynamic Kubelet config. It is much safer to create a new ConfigMap, and incrementally roll out
+		// // a new NodeConfigSource that references the new ConfigMap across your Node objects.
+		// // TODO(mtaufen): new test
+		// Context("When deleting and recreating a ConfigMap", func() {
+		// 	It("the Kubelet should respect the update and report the appropriate status and configz", func() {
+		// 		// TODO(mtaufen): implement
+		// 		// want to test delete and recreate with no change and delete and recreate with chagnes (both good and bad)
+		// 	})
+		// })
 	})
 })
 
-// testBothDirections tests the state change represented by each edge, where each state is a vertex,
+// testBothConfigSourceDirections tests the state change represented by each edge, where each state is a vertex,
 // and there are edges in each direction between first and each of the states.
-func testBothDirections(f *framework.Framework, first *configState, states []configState, waitAfterFirst time.Duration) {
+func testBothConfigSourceDirections(f *framework.Framework, first *configSourceState, states []configSourceState, waitAfterFirst time.Duration) {
 	// set to first and check that everything got set up properly
 	By(fmt.Sprintf("setting configSource to state %q", first.desc))
 	// we don't always expect an event here, because setting "first" might not represent
 	// a change from the current configuration
-	setAndTestKubeletConfigState(f, first, false)
+	setAndTestKubeletConfigSourceState(f, first, false)
 
 	time.Sleep(waitAfterFirst)
 
@@ -440,18 +603,42 @@ func testBothDirections(f *framework.Framework, first *configState, states []con
 	for i := range states {
 		By(fmt.Sprintf("from %q to %q", first.desc, states[i].desc))
 		// from first -> states[i], states[i].event fully describes whether we should get a config change event
-		setAndTestKubeletConfigState(f, &states[i], states[i].event)
+		setAndTestKubeletConfigSourceState(f, &states[i], states[i].event)
 
 		By(fmt.Sprintf("back to %q from %q", first.desc, states[i].desc))
 		// whether first -> states[i] should have produced a config change event partially determines whether states[i] -> first should produce an event
-		setAndTestKubeletConfigState(f, first, first.event && states[i].event)
+		setAndTestKubeletConfigSourceState(f, first, first.event && states[i].event)
 	}
 }
 
-// setAndTestKubeletConfigState tests that after setting the config source, the KubeletConfigOk condition
+// testBothConfigMapDirections tests the state change represented by each edge, where each state is a vertex,
+// and there are edges in each direction between first and each of the states.
+// A ConfigMap must exist
+func testBothConfigMapDirections(f *framework.Framework, first *configMapState, states []configMapState, waitAfterFirst time.Duration) {
+	// set to first and check that everything got set up properly
+	By(fmt.Sprintf("setting ConfigMap to state %q", first.desc))
+	// we don't always expect an event here, because setting "first" might not represent
+	// a change from the current configuration
+	setAndTestKubeletConfigMapState(f, first, false)
+
+	time.Sleep(waitAfterFirst)
+
+	// for each state, set to that state, check condition and configz, then reset to first and check again
+	for i := range states {
+		By(fmt.Sprintf("from %q to %q", first.desc, states[i].desc))
+		// from first -> states[i], states[i].event fully describes whether we should get a config change event
+		setAndTestKubeletConfigMapState(f, &states[i], states[i].event)
+
+		By(fmt.Sprintf("back to %q from %q", first.desc, states[i].desc))
+		// whether first -> states[i] should have produced a config change event partially determines whether states[i] -> first should produce an event
+		setAndTestKubeletConfigMapState(f, first, first.event && states[i].event)
+	}
+}
+
+// setAndTestKubeletConfigSourceState tests that after setting the config source, the KubeletConfigOk condition
 // and (if appropriate) configuration exposed via conifgz are as expected.
 // The configuration will be converted to the internal type prior to comparison.
-func setAndTestKubeletConfigState(f *framework.Framework, state *configState, expectEvent bool) {
+func setAndTestKubeletConfigSourceState(f *framework.Framework, state *configSourceState, expectEvent bool) {
 	// set the desired state, retry a few times in case we are competing with other editors
 	Eventually(func() error {
 		if err := setNodeConfigSource(f, state.configSource); err != nil {
@@ -471,6 +658,41 @@ func setAndTestKubeletConfigState(f *framework.Framework, state *configState, ex
 	}
 	// check that config source actually got set to what we expect
 	checkNodeConfigSource(f, state.desc, state.configSource)
+	// check condition
+	checkConfigOkCondition(f, state.desc, state.expectConfigOk)
+	// check expectConfig
+	if state.expectConfig != nil {
+		checkConfig(f, state.desc, state.expectConfig)
+	}
+	// check that an event was sent for the config change
+	if expectEvent {
+		checkEvent(f, state.desc, state.configSource)
+	}
+}
+
+// setAndTestKubeletConfigMapState tests that after setting the config source, the KubeletConfigOk condition
+// and (if appropriate) configuration exposed via conifgz are as expected.
+// The configuration will be converted to the internal type prior to comparison.
+func setAndTestKubeletConfigMapState(f *framework.Framework, state *configMapState, expectEvent bool) {
+	// TODO(mtaufen): may have to pull current configmap, make data change, and then send update
+
+	// update the configmap
+	Eventually(func() error {
+		if _, err := f.ClientSet.CoreV1().ConfigMaps(state.configMap.Namespace).Update(state.configMap); err != nil {
+			if len(state.apierr) == 0 {
+				return fmt.Errorf("case %s: expect nil error but got %q", state.desc, err.Error())
+			} else if !strings.Contains(err.Error(), state.apierr) {
+				return fmt.Errorf("case %s: expect error to contain %q but got %q", state.desc, state.apierr, err.Error())
+			}
+		} else if len(state.apierr) > 0 {
+			return fmt.Errorf("case %s: expect error to contain %q but got nil error", state.desc, state.apierr)
+		}
+		return nil
+	}, time.Minute, time.Second).Should(BeNil())
+	// skip further checks if we expected an API error
+	if len(state.apierr) > 0 {
+		return
+	}
 	// check condition
 	checkConfigOkCondition(f, state.desc, state.expectConfigOk)
 	// check expectConfig
