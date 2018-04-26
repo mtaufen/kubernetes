@@ -41,6 +41,9 @@ const (
 	EventMessageFmt = "Kubelet will restart to use: %s"
 	// LocalConfigMessage is the text to apply to EventMessageFmt when the Kubelet has been configured to use its local config (init or defaults)
 	LocalConfigMessage = "local config"
+	// RemoteConfigMessageFmt is the text to apply to EventMessageFmt when the Kubelet has been configured to use its remote config
+	// we use KubeletConfigKey instead of KubeletFilename so that this matches the external API for ConfigMap sources, rather than internal interfaces.
+	RemoteConfigMessageFmt = "%s, UID: %s, ResourceVersion: %s, KubeletConfigKey: %s"
 )
 
 // pokeConfiSourceWorker tells the worker thread that syncs config sources that work needs to be done
@@ -82,13 +85,13 @@ func (cc *Controller) syncConfigSource(client clientset.Interface, eventClient v
 		syncerr = fmt.Errorf("%s, error: %v", reason, err)
 		return
 	} else if updated {
-		path := LocalConfigMessage
+		msg := LocalConfigMessage
 		if cur != nil {
-			path = cur.APIPath()
+			msg = fmt.Sprintf(RemoteConfigMessageFmt, cur.APIPath(), cur.UID(), cur.ResourceVersion(), cur.KubeletFilename())
 		}
 		// we directly log and send the event, instead of using the event recorder,
 		// because the event recorder won't flush its queue before we exit (we'd lose the event)
-		event := eventf(nodeName, apiv1.EventTypeNormal, KubeletConfigChangedEventReason, EventMessageFmt, path)
+		event := eventf(nodeName, apiv1.EventTypeNormal, KubeletConfigChangedEventReason, EventMessageFmt, msg)
 		glog.V(3).Infof("Event(%#v): type: '%v' reason: '%v' %v", event.InvolvedObject, event.Type, event.Reason, event.Message)
 		if _, err := eventClient.Events(apiv1.NamespaceDefault).Create(event); err != nil {
 			utillog.Errorf("failed to send event, error: %v", err)
