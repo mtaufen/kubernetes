@@ -1839,6 +1839,25 @@ message NodeConfigSource {
   optional ConfigMapNodeConfigSource configMap = 2;
 }
 
+// NodeConfigStatus describes the status of the config assigned by Node.Spec.ConfigSource
+message NodeConfigStatus {
+  // Active reports the config source the node is actively using
+  // +optional
+  optional NodeConfigSource active = 1;
+
+  // Assigned is the node's ack of the config source assigned via Node.Spec.ConfigSource
+  // +optional
+  optional NodeConfigSource assigned = 2;
+
+  // LastKnownGood is the config source that will be used if an invalid config is assigned in the future
+  // +optional
+  optional NodeConfigSource lastKnownGood = 3;
+
+  // Error describes any problems with the configuration
+  // +optional
+  optional string error = 4;
+}
+
 // NodeDaemonEndpoints lists ports opened by daemons running on the Node.
 message NodeDaemonEndpoints {
   // Endpoint on which Kubelet is listening.
@@ -1993,6 +2012,10 @@ message NodeStatus {
   // List of volumes that are attached to the node.
   // +optional
   repeated AttachedVolume volumesAttached = 10;
+
+  // Status of the config assigned to the node
+  // +optional
+  optional NodeConfigStatus config = 11;
 }
 
 // NodeSystemInfo is a set of ids/uuids to uniquely identify the node.
