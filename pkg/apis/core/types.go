@@ -3339,6 +3339,23 @@ type NodeSystemInfo struct {
 	Architecture string
 }
 
+// NodeConfigStatus describes the status of the config assigned by Node.Spec.ConfigSource
+type NodeConfigStatus struct {
+	// Assigned is the node's ack of the config source assigned via Node.Spec.ConfigSource,
+	// and is a direct reflection of that source.
+	// +optional
+	Assigned *NodeConfigSource
+	// Active reports the config source the node is actively using
+	// +optional
+	Active *NodeConfigSource
+	// LastKnownGood is the config source that will be used if an invalid config is assigned in the future
+	// +optional
+	LastKnownGood *NodeConfigSource
+	// Error describes any problems with the configuration
+	// +optional
+	Error string
+}
+
 // NodeStatus is information about the current status of a node.
 type NodeStatus struct {
 	// Capacity represents the total resources of a node.
@@ -3371,6 +3388,9 @@ type NodeStatus struct {
 	// List of volumes that are attached to the node.
 	// +optional
 	VolumesAttached []AttachedVolume
+	// Status of the config assigned to the node
+	// +optional
+	Config *NodeConfigStatus
 }
 
 type UniqueVolumeName string
@@ -3455,8 +3475,6 @@ const (
 	NodeDiskPressure NodeConditionType = "DiskPressure"
 	// NodeNetworkUnavailable means that network for the node is not correctly configured.
 	NodeNetworkUnavailable NodeConditionType = "NetworkUnavailable"
-	// NodeKubeletConfigOk indicates whether the kubelet is correctly configured
-	NodeKubeletConfigOk NodeConditionType = "KubeletConfigOk"
 )
 
 type NodeCondition struct {

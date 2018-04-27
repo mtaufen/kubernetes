@@ -53,13 +53,14 @@ type RemoteConfigSource interface {
 	// Download downloads the remote config source object returns a Payload backed by the object,
 	// or a sanitized failure reason and error if the download fails
 	Download(client clientset.Interface) (Payload, string, error)
-	// Encode returns a []byte representation of the object behind the RemoteConfigSource
+	// Encode returns a []byte representation of the NodeConfigSource behind the RemoteConfigSource
 	Encode() ([]byte, error)
 
-	// object returns the underlying source object.
-	// If you want to compare sources for equality, use EqualRemoteConfigSources,
-	// which compares the underlying source objects for semantic API equality.
-	object() interface{}
+	// NodeConfigSource returns a copy of the underlying apiv1.NodeConfigSource object.
+	// All RemoteConfigSources are expected to be backed by a NodeConfigSource,
+	// though the convenience methods on the interface will target the source
+	// type that was detected in a call to NewRemoteConfigSource.
+	NodeConfigSource() *apiv1.NodeConfigSource
 }
 
 // NewRemoteConfigSource constructs a RemoteConfigSource from a v1/NodeConfigSource object
@@ -72,7 +73,7 @@ func NewRemoteConfigSource(source *apiv1.NodeConfigSource) (RemoteConfigSource, 
 
 	// exactly one reference subfield of the config source must be non-nil, toady ConfigMap is the only reference subfield
 	if source.ConfigMap == nil {
-		return nil, status.FailSyncReasonAllNilSubfields, fmt.Errorf("%s, NodeConfigSource was: %#v", status.FailSyncReasonAllNilSubfields, source)
+		return nil, status.SyncErrorAllNilSubfields, fmt.Errorf("%s, NodeConfigSource was: %#v", status.SyncErrorAllNilSubfields, source)
 	}
 	return &remoteConfigMap{source}, "", nil
 }
@@ -103,7 +104,7 @@ func DecodeRemoteConfigSource(data []byte) (RemoteConfigSource, error) {
 // comparing the underlying API objects for semantic equality.
 func EqualRemoteConfigSources(a, b RemoteConfigSource) bool {
 	if a != nil && b != nil {
-		return apiequality.Semantic.DeepEqual(a.object(), b.object())
+		return apiequality.Semantic.DeepEqual(a.NodeConfigSource(), b.NodeConfigSource())
 	}
 	return a == b
 }
@@ -139,13 +140,13 @@ func (r *remoteConfigMap) Download(client clientset.Interface) (Payload, string,
 	// get the ConfigMap via namespace/name, there doesn't seem to be a way to get it by UID
 	cm, err := client.CoreV1().ConfigMaps(r.source.ConfigMap.Namespace).Get(r.source.ConfigMap.Name, metav1.GetOptions{})
 	if err != nil {
-		reason = fmt.Sprintf(status.FailSyncReasonDownloadFmt, r.APIPath())
+		reason = fmt.Sprintf(status.SyncErrorDownload, r.APIPath())
 		return nil, reason, fmt.Errorf("%s, error: %v", reason, err)
 	}
 
 	// ensure that UID matches the UID on the source
 	if r.source.ConfigMap.UID != cm.UID {
-		reason = fmt.Sprintf(status.FailSyncReasonUIDMismatchFmt, r.source.ConfigMap.UID, r.APIPath(), cm.UID)
+		reason = fmt.Sprintf(status.SyncErrorUIDMismatchFmt, r.source.ConfigMap.UID, r.APIPath(), cm.UID)
 		return nil, reason, fmt.Errorf(reason)
 	}
 
@@ -171,6 +172,6 @@ func (r *remoteConfigMap) Encode() ([]byte, error) {
 	return data, nil
 }
 
-func (r *remoteConfigMap) object() interface{} {
-	return r.source
+func (r *remoteConfigMap) NodeConfigSource() *apiv1.NodeConfigSource {
+	return r.source.DeepCopy()
 }

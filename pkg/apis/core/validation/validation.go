@@ -4014,9 +4014,14 @@ func ValidateNode(node *core.Node) field.ErrorList {
 	// That said, if specified, we need to ensure they are valid.
 	allErrs = append(allErrs, ValidateNodeResources(node)...)
 
-	// Only allow Node.Spec.ConfigSource to be set if the DynamicKubeletConfig feature gate is enabled
-	if node.Spec.ConfigSource != nil && !utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) {
-		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "configSource"), "configSource may only be set if the DynamicKubeletConfig feature gate is enabled)"))
+	// Only allow Spec.ConfigSource and Status.Config to be set if the DynamicKubeletConfig feature gate is enabled
+	if !utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) {
+		if node.Spec.ConfigSource != nil {
+			allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "configSource"), "configSource may only be set if the DynamicKubeletConfig feature gate is enabled)"))
+		}
+		if node.Status.Config != nil {
+			allErrs = append(allErrs, field.Forbidden(field.NewPath("status", "config"), "config may only be set if the DynamicKubeletConfig feature gate is enabled)"))
+		}
 	}
 
 	if len(node.Spec.PodCIDR) != 0 {
@@ -4101,6 +4106,18 @@ func ValidateNodeUpdate(node, oldNode *core.Node) field.ErrorList {
 		}
 	}
 
+	// Allow and validate updates to Node.Spec.ConfigSource and Node.Status.Config if DynamicKubeletConfig feature gate is enabled
+	if utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) {
+		if node.Spec.ConfigSource != nil {
+			allErrs = append(allErrs, validateNodeConfigSourceSpec(node.Spec.ConfigSource, field.NewPath("spec", "configSource"))...)
+		}
+		oldNode.Spec.ConfigSource = node.Spec.ConfigSource
+		if node.Status.Config != nil {
+			allErrs = append(allErrs, validateNodeConfigStatus(node.Status.Config, field.NewPath("status", "config"))...)
+		}
+		oldNode.Status.Config = node.Status.Config
+	}
+
 	// TODO: move reset function to its own location
 	// Ignore metadata changes now that they have been tested
 	oldNode.ObjectMeta = node.ObjectMeta
@@ -4116,14 +4133,6 @@ func ValidateNodeUpdate(node, oldNode *core.Node) field.ErrorList {
 		allErrs = append(allErrs, validateNodeTaints(node.Spec.Taints, fldPath.Child("taints"))...)
 	}
 	oldNode.Spec.Taints = node.Spec.Taints
-
-	// Allow updates to Node.Spec.ConfigSource if DynamicKubeletConfig feature gate is enabled
-	if utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) {
-		if node.Spec.ConfigSource != nil {
-			allErrs = append(allErrs, validateNodeConfigSourceSpec(node.Spec.ConfigSource, field.NewPath("spec", "configSource"))...)
-		}
-		oldNode.Spec.ConfigSource = node.Spec.ConfigSource
-	}
 
 	// We made allowed changes to oldNode, and now we compare oldNode to node. Any remaining differences indicate changes to protected fields.
 	// TODO: Add a 'real' error type for this error and provide print actual diffs.
@@ -4155,24 +4164,77 @@ func validateNodeConfigSourceSpec(source *core.NodeConfigSource, fldPath *field.
 // validation specific to Node.Spec.ConfigSource.ConfigMap
 func validateConfigMapNodeConfigSourceSpec(source *core.ConfigMapNodeConfigSource, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
-	// name, namespace, uid, and kubeletConfigKey must all be non-empty for ConfigMap
 	if source.Name == "" {
 		allErrs = append(allErrs, field.Required(fldPath.Child("name"), "name must be set in spec"))
 	}
 	if source.Namespace == "" {
 		allErrs = append(allErrs, field.Required(fldPath.Child("namespace"), "namespace must be set in spec"))
 	}
+	if source.KubeletConfigKey == "" {
+		allErrs = append(allErrs, field.Required(fldPath.Child("kubeletConfigKey"), "kubeletConfigKey must be set in spec"))
+	}
 	// TODO(#61643): Prevent ref.UID from being set here when we switch from requiring UID to respecting all ConfigMap updates
 	if string(source.UID) == "" {
 		allErrs = append(allErrs, field.Required(fldPath.Child("uid"), "uid must be set in spec"))
-	}
-	if source.KubeletConfigKey == "" {
-		allErrs = append(allErrs, field.Required(fldPath.Child("kubeletConfigKey"), "kubeletConfigKey must be set in spec"))
 	}
 	// resourceVersion must not be set in spec
 	if source.ResourceVersion != "" {
 		allErrs = append(allErrs, field.Forbidden(fldPath.Child("resourceVersion"), "resourceVersion must not be set in spec"))
 	}
+	return append(allErrs, validateConfigMapNodeConfigSource(source, fldPath)...)
+}
+
+// validation specififc to Node.Status.Config
+func validateNodeConfigStatus(status *core.NodeConfigStatus, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	if status.Assigned != nil {
+		// Assigned is a reflection of the spec, which acts as an ACK from the Kubelet regarding recognition,
+		// of the assignment. As such, it is validated against the same rules as the spec, rather than status.
+		allErrs = append(allErrs, validateNodeConfigSourceSpec(status.Assigned, fldPath.Child("assigned"))...)
+	}
+	if status.Active != nil {
+		allErrs = append(allErrs, validateNodeConfigSourceStatus(status.Active, fldPath.Child("active"))...)
+	}
+	if status.LastKnownGood != nil {
+		allErrs = append(allErrs, validateNodeConfigSourceStatus(status.LastKnownGood, fldPath.Child("lastKnownGood"))...)
+	}
+	return allErrs
+}
+
+// validation specific to Node.Status.Config.(Active|Assigned|LastKnownGood)
+func validateNodeConfigSourceStatus(source *core.NodeConfigSource, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	count := int(0)
+	if source.ConfigMap != nil {
+		count++
+		allErrs = append(allErrs, validateConfigMapNodeConfigSourceStatus(source.ConfigMap, fldPath.Child("configMap"))...)
+	}
+	// add more subfields here in the future as they are added to NodeConfigSource
+
+	// exactly one reference subfield must be non-nil
+	if count != 1 {
+		allErrs = append(allErrs, field.Invalid(fldPath, source, "exactly one reference subfield must be non-nil"))
+	}
+	return allErrs
+}
+
+// validation specific to Node.Status.Config.(Active|Assigned|LastKnownGood).ConfigMap
+func validateConfigMapNodeConfigSourceStatus(source *core.ConfigMapNodeConfigSource, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	if source.Name == "" {
+		allErrs = append(allErrs, field.Required(fldPath.Child("name"), "name must be set in status"))
+	}
+	if source.Namespace == "" {
+		allErrs = append(allErrs, field.Required(fldPath.Child("namespace"), "namespace must be set in status"))
+	}
+	if source.KubeletConfigKey == "" {
+		allErrs = append(allErrs, field.Required(fldPath.Child("kubeletConfigKey"), "kubeletConfigKey must be set in status"))
+	}
+	if string(source.UID) == "" {
+		allErrs = append(allErrs, field.Required(fldPath.Child("uid"), "uid must be set in status"))
+	}
+	// TODO(#63221): require ResourceVersion in status when we start respecting ConfigMap mutations (the Kubelet isn't tracking it internally until
+	// that PR, which makes it difficult to report for now).
 	return append(allErrs, validateConfigMapNodeConfigSource(source, fldPath)...)
 }
 

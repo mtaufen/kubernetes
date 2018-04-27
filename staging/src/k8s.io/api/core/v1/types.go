@@ -3727,6 +3727,23 @@ type NodeSystemInfo struct {
 	Architecture string `json:"architecture" protobuf:"bytes,10,opt,name=architecture"`
 }
 
+// NodeConfigStatus describes the status of the config assigned by Node.Spec.ConfigSource
+type NodeConfigStatus struct {
+	// Assigned is the node's ack of the config source assigned via Node.Spec.ConfigSource,
+	// and is a direct reflection of that source.
+	// +optional
+	Assigned *NodeConfigSource `json:"assigned,omitempty" protobuf:"bytes,1,opt,name=assigned"`
+	// Active reports the config source the node is actively using
+	// +optional
+	Active *NodeConfigSource `json:"active,omitempty" protobuf:"bytes,2,opt,name=active"`
+	// LastKnownGood is the config source that will be used if an invalid config is assigned in the future
+	// +optional
+	LastKnownGood *NodeConfigSource `json:"lastKnownGood,omitempty" protobuf:"bytes,3,opt,name=lastKnownGood"`
+	// Error describes any problems with the configuration
+	// +optional
+	Error string `json:"error,omitempty" protobuf:"bytes,4,opt,name=error"`
+}
+
 // NodeStatus is information about the current status of a node.
 type NodeStatus struct {
 	// Capacity represents the total resources of a node.
@@ -3771,6 +3788,9 @@ type NodeStatus struct {
 	// List of volumes that are attached to the node.
 	// +optional
 	VolumesAttached []AttachedVolume `json:"volumesAttached,omitempty" protobuf:"bytes,10,rep,name=volumesAttached"`
+	// Status of the config assigned to the node
+	// +optional
+	Config *NodeConfigStatus `json:"config,omitempty" protobuf:"bytes,11,opt,name=config"`
 }
 
 type UniqueVolumeName string
@@ -3858,8 +3878,6 @@ const (
 	NodePIDPressure NodeConditionType = "PIDPressure"
 	// NodeNetworkUnavailable means that network for the node is not correctly configured.
 	NodeNetworkUnavailable NodeConditionType = "NetworkUnavailable"
-	// NodeKubeletConfigOk indicates whether the kubelet is correctly configured
-	NodeKubeletConfigOk NodeConditionType = "KubeletConfigOk"
 )
 
 // NodeCondition contains condition information for a node.
