@@ -690,6 +690,9 @@ func (nc *Controller) monitorNodeStatus() error {
 			// Check with the cloud provider to see if the node still exists. If it
 			// doesn't, delete the node immediately.
 			if currentReadyCondition.Status != v1.ConditionTrue && nc.cloud != nil {
+				// TODO(mtaufen): probably just change this to check taints, and move adding "shutdown" and "deleted" taints into CCM
+				//                potentially we even delegate deleting nodes based on cloud provider info to CCM
+
 				// check is node shutdowned, if yes do not deleted it. Instead add taint
 				shutdown, err := nc.nodeShutdownInCloudProvider(context.TODO(), node)
 				if err != nil {
@@ -731,6 +734,12 @@ func (nc *Controller) monitorNodeStatus() error {
 
 // tryUpdateNodeStatus checks a given node's conditions and tries to update it. Returns grace period to
 // which given node is entitled, state of current and last observed Ready Condition, and an error if it occurred.
+
+// Updates the node controller's node status map with the "current" status of the node.
+// Returns a grace period, the "observed" ready condition, and the "current" ready condition.
+// The grace period indicates (typically nodeStartupGracePeriod or nodeMonitorGracePeriod, depending on if the Kubelet has posted a status yet)
+// The "observed" ready condition is either the same as the "current" ready condition, or when "current" is nil, it is a fake condition with timestamps that match node creation.
+// The "current" ready condition is taken directly from the node passed as an argument to tryUpdateNodeStatus (and may be nil, if the condition isn't found on the node).
 func (nc *Controller) tryUpdateNodeStatus(node *v1.Node) (time.Duration, v1.NodeCondition, *v1.NodeCondition, error) {
 	var err error
 	var gracePeriod time.Duration
@@ -758,27 +767,37 @@ func (nc *Controller) tryUpdateNodeStatus(node *v1.Node) (time.Duration, v1.Node
 		gracePeriod = nc.nodeMonitorGracePeriod
 	}
 
-	savedNodeStatus, found := nc.nodeStatusMap[node.Name]
+	savedNodeStatus, savedStatusFound := nc.nodeStatusMap[node.Name]
+
+	// savedNodeStatus: node controller's latest in-memory record
+	// savedCondition: v1.NodeReady condition from savedNodeStatus. Might be nil.
+	// observedCondition: v1.NodeReady condition from node (which in practice is typically a node we just got from the API server). Might be nil.
+	//                    This is NOT the same as observedReadyCondition, above, which may be fake if the Kubelet hasn't posted node status yet.
+
+	//
+
 	// There are following cases to check:
 	// - both saved and new status have no Ready Condition set - we leave everything as it is,
 	// - saved status have no Ready Condition, but current one does - Controller was restarted with Node data already present in etcd,
 	// - saved status have some Ready Condition, but current one does not - it's an error, but we fill it up because that's probably a good thing to do,
+
 	// - both saved and current statuses have Ready Conditions and they have the same LastProbeTime - nothing happened on that Node, it may be
 	//   unresponsive, so we leave it as it is,
 	// - both saved and current statuses have Ready Conditions, they have different LastProbeTimes, but the same Ready Condition State -
 	//   everything's in order, no transition occurred, we update only probeTimestamp,
 	// - both saved and current statuses have Ready Conditions, different LastProbeTimes and different Ready Condition State -
 	//   Ready Condition changed it state since we last seen it, so we update both probeTimestamp and readyTransitionTimestamp.
+
 	// TODO: things to consider:
 	//   - if 'LastProbeTime' have gone back in time its probably an error, currently we ignore it,
 	//   - currently only correct Ready State transition outside of Node Controller is marking it ready by Kubelet, we don't check
 	//     if that's the case, but it does not seem necessary.
 	var savedCondition *v1.NodeCondition
-	if found {
+	if savedStatusFound {
 		_, savedCondition = v1node.GetNodeCondition(&savedNodeStatus.status, v1.NodeReady)
 	}
 	_, observedCondition := v1node.GetNodeCondition(&node.Status, v1.NodeReady)
-	if !found {
+	if !savedStatusFound {
 		glog.Warningf("Missing timestamp for Node %s. Assuming now as a timestamp.", node.Name)
 		savedNodeStatus = nodeStatusData{
 			status:                   node.Status,
@@ -899,6 +918,12 @@ func (nc *Controller) tryUpdateNodeStatus(node *v1.Node) (time.Duration, v1.Node
 	}
 
 	return gracePeriod, observedReadyCondition, currentReadyCondition, err
+}
+
+// saveNodeStatus updates the internal nodeStatusMap entry for node based on node's content.
+// It will update the internal probe and transition timestamps as necessary.
+func (nc *Controller) saveNodeStatus(node *v1.Node) {
+
 }
 
 func (nc *Controller) handleDisruption(zoneToNodeConditions map[string][]*v1.NodeCondition, nodes []*v1.Node) {
