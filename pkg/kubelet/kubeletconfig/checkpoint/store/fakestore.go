@@ -32,6 +32,10 @@ type fakeStore struct {
 
 var _ Store = (*fakeStore)(nil)
 
+func NewFakeStore() Store {
+	return &fakeStore{}
+}
+
 func (s *fakeStore) Initialize() error {
 	return fmt.Errorf("Initialize method not supported")
 }
