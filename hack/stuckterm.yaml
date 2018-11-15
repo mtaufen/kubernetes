@@ -1,0 +1,34 @@
+# ConfigMap Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ubuntu-deployment
+  namespace: default
+  labels:
+    app: ubuntu
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ubuntu
+  template:
+    metadata:
+      labels:
+        app: ubuntu
+    spec:
+      containers:
+      - name: ubuntu
+        image: ubuntu
+        command: ["/bin/sh", "-c", "while true; do cat /etc/config/baz/quux; sleep 10; done"]
+        volumeMounts:
+          - name: ubuntu-config-volume
+            mountPath: /etc/config
+            subPath: foo/bar
+            readOnly: true
+      volumes:
+        - name: ubuntu-config-volume
+          gcePersistentDisk:
+            pdName: stuck-term-disk
+            fsType: ext4
+            readOnly: true
+      restartPolicy: Always
