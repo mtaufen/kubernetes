@@ -51,6 +51,8 @@ import (
 // to call multiple times, but not concurrently (kl.registrationCompleted is
 // not locked).
 func (kl *Kubelet) registerWithAPIServer() {
+	// TODO(mtaufen): We should still be able to heal if the node is accidentally
+	// deleted. See issue #
 	if kl.registrationCompleted {
 		return
 	}

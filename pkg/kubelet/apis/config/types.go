@@ -62,6 +62,9 @@ const (
 type KubeletConfiguration struct {
 	metav1.TypeMeta
 
+	// registerNode enables automatic registration of this node with the
+	// Kubernetes API server. Requires a kubeconfig file
+	RegisterNode bool
 	// staticPodPath is the path to the directory containing local (static) pods to
 	// run, or the path to a single static pod file.
 	StaticPodPath string

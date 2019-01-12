@@ -62,6 +62,15 @@ const (
 type KubeletConfiguration struct {
 	metav1.TypeMeta `json:",inline"`
 
+	// registerNode enables automatic registration of this node with the
+	// Kubernetes API server.
+	// Dynamic Kubelet Config (beta): Dynamically disabling this field is not recommended.
+	// Disabling it will not stop the Kubelet from updating node status, but
+	// will prevent the Kubelet from re-registering the Node if it is accidentally
+	// deleted from the API server.
+	// Default: true
+	// +optional
+	RegisterNode *bool `json:"registerNode, omitempty"`
 	// staticPodPath is the path to the directory containing local (static) pods to
 	// run, or the path to a single static pod file.
 	// Dynamic Kubelet Config (beta): If dynamically updating this field, consider that
