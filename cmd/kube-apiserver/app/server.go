@@ -356,8 +356,9 @@ func CreateKubeAPIServerConfig(
 			EndpointReconcilerType: reconcilers.Type(s.EndpointReconcilerType),
 			MasterCount:            s.MasterCount,
 
-			ServiceAccountIssuer:        s.ServiceAccountIssuer,
-			ServiceAccountMaxExpiration: s.ServiceAccountTokenMaxExpiration,
+			ServiceAccountIssuer:         s.ServiceAccountIssuer,
+			ServiceAccountMaxExpiration:  s.ServiceAccountTokenMaxExpiration,
+			ServiceAccountIssuerMetadata: s.ServiceAccountIssuerMetadata,
 
 			VersionedInformers: versionedInformers,
 		},
@@ -659,6 +660,8 @@ func Complete(s *options.ServerRunOptions) (completedServerRunOptions, error) {
 			return options, fmt.Errorf("failed to build token generator: %v", err)
 		}
 		s.ServiceAccountTokenMaxExpiration = s.Authentication.ServiceAccounts.MaxExpiration
+		// TODO: Include keys from ServiceAccountKeyFiles, in addition to the signing key
+		s.ServiceAccountIssuerMetadata = serviceaccount.NewServer(s.Authentication.ServiceAccounts.Issuer, []interface{}{sk})
 	}
 
 	if s.Etcd.EnableWatchCache {

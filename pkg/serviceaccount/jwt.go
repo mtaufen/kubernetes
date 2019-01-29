@@ -59,6 +59,9 @@ func JWTTokenGenerator(iss string, privateKey interface{}) (TokenGenerator, erro
 	var signer jose.Signer
 	var err error
 	switch pk := privateKey.(type) {
+	// TODO(mtaufen): cceckman had refactored these in the original #80724 to
+	// use the more generic util.go:algorithmForPublicKey function. Consider
+	// re-implementing that refactor (for now removed to resolve rebase conflict).
 	case *rsa.PrivateKey:
 		signer, err = signerFromRSAPrivateKey(pk)
 		if err != nil {

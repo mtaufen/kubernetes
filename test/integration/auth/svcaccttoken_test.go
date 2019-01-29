@@ -17,6 +17,7 @@ limitations under the License.
 package auth
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"encoding/base64"
 	"encoding/json"
@@ -26,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	jose "gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
 
 	authenticationv1 "k8s.io/api/authentication/v1"
@@ -39,6 +41,7 @@ import (
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	clientset "k8s.io/client-go/kubernetes"
 	v1listers "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/keyutil"
 	featuregatetesting "k8s.io/component-base/featuregate/testing"
@@ -104,6 +107,12 @@ func TestServiceAccountTokenCreate(t *testing.T) {
 		t.Fatalf("err: %v", err)
 	}
 	masterConfig.ExtraConfig.ServiceAccountIssuer = tokenGenerator
+
+	metaServer := serviceaccount.NewServer(iss, []interface{}{pk})
+	metaServer.SetErrorHandler(func(err error) {
+		t.Error("encountered error serving metadata: ", err)
+	})
+	masterConfig.ExtraConfig.ServiceAccountIssuerMetadata = metaServer
 	masterConfig.ExtraConfig.ServiceAccountMaxExpiration = maxExpirationDuration
 	masterConfig.GenericConfig.Authentication.APIAudiences = aud
 
@@ -115,6 +124,11 @@ func TestServiceAccountTokenCreate(t *testing.T) {
 		t.Fatalf("err: %v", err)
 	}
 	*gcs = *cs
+
+	rc, err := rest.UnversionedRESTClientFor(master.GenericAPIServer.LoopbackClientConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	var (
 		sa = &v1.ServiceAccount{
@@ -566,6 +580,98 @@ func TestServiceAccountTokenCreate(t *testing.T) {
 		defer recreateDelSecret()
 
 		doTokenReview(t, cs, treq, true)
+	})
+
+	t.Run("a token is valid against the HTTP-provided metadata", func(t *testing.T) {
+		var token string
+
+		sa, del := createDeleteSvcAcct(t, cs, sa)
+		defer del()
+
+		t.Run("get token", func(t *testing.T) {
+			treq := &authenticationv1.TokenRequest{
+				Spec: authenticationv1.TokenRequestSpec{
+					Audiences: []string{"api"},
+				},
+			}
+
+			resp, err := cs.CoreV1().ServiceAccounts(sa.Namespace).CreateToken(sa.Name, treq)
+			if err != nil {
+				t.Fatalf("unexpected err creating token: %#v", resp)
+			}
+			token = resp.Status.Token
+		})
+		if token == "" {
+			t.Fatal("no token")
+		}
+
+		metadata := struct {
+			Issuer string `json:"issuer"`
+			Jwks   string `json:"jwks_uri"`
+		}{}
+		t.Run("get metadata", func(t *testing.T) {
+			resp := rc.Get().AbsPath("/serviceaccountissuer/v1alpha1/metadata.json").Do()
+			if err := resp.Error(); err != nil {
+				t.Fatal(err)
+			}
+			b, err := resp.Raw()
+			if err != nil {
+				t.Fatal(err)
+			}
+			md := bytes.NewBuffer(b)
+			t.Logf("raw metadata response:\n---%s\n---", md.String())
+			if md.Len() == 0 {
+				t.Fatal("empty response for metadata")
+			}
+			if err := json.NewDecoder(md).Decode(&metadata); err != nil {
+				t.Fatal("could not decode metadata: ", err)
+			}
+			if len(metadata.Issuer) == 0 || len(metadata.Jwks) == 0 {
+				t.Fatal("invalid metadata")
+			}
+		})
+
+		var key interface{}
+		t.Run("get jwks", func(t *testing.T) {
+			t.Log("fetching from ", metadata.Jwks)
+			resp := rc.Get().AbsPath(metadata.Jwks).Do()
+			if err := resp.Error(); err != nil {
+				t.Fatal(err)
+			}
+			b, err := resp.Raw()
+			if err != nil {
+				t.Fatal(err)
+			}
+			ks := bytes.NewBuffer(b)
+			if ks.Len() == 0 {
+				t.Fatal("empty jwks")
+			}
+			t.Logf("raw JWKS: \n---\n%s\n---", ks.String())
+			jwks := jose.JSONWebKeySet{}
+			if err := json.NewDecoder(ks).Decode(&jwks); err != nil {
+				t.Fatal("could not decode JWKS: ", err)
+			}
+			if len(jwks.Keys) != 1 {
+				t.Fatalf("len(jwks.Keys) = %d, want 1", len(jwks.Keys))
+			}
+			key = jwks.Keys[0]
+		})
+
+		tok, err := jwt.ParseSigned(token)
+		if err != nil {
+			t.Fatalf("could not parse token %q: %v", token, err)
+		}
+		var claims jwt.Claims
+		if err := tok.Claims(key, &claims); err != nil {
+			t.Fatal("could not validate claims on token: ", err)
+		}
+		exp := jwt.Expected{
+			Issuer: metadata.Issuer,
+		}
+		if err := claims.Validate(exp); err != nil {
+			t.Fatal("invalid claims: ", err)
+		}
+
 	})
 }
 
