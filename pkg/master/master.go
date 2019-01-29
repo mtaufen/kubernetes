@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strconv"
 	"time"
@@ -76,6 +77,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	discoveryclient "k8s.io/client-go/kubernetes/typed/discovery/v1beta1"
+	"k8s.io/client-go/util/keyutil"
 	api "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/features"
 	kubeoptions "k8s.io/kubernetes/pkg/kubeapiserver/options"
@@ -189,6 +191,9 @@ type ExtraConfig struct {
 
 	ServiceAccountIssuer        serviceaccount.TokenGenerator
 	ServiceAccountMaxExpiration time.Duration
+	ServiceAccountIssuerURL     string
+	ServiceAccountJWKSURI       string
+	ServiceAccountKeyFiles      []string
 
 	VersionedInformers informers.SharedInformerFactory
 }
@@ -339,6 +344,12 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 
 	if c.ExtraConfig.EnableLogsSupport {
 		routes.Logs{}.Install(s.Handler.GoRestfulContainer)
+	}
+
+	if utilfeature.DefaultFeatureGate.Enabled(features.ServiceAccountIssuerDiscovery) {
+		if err := setupServiceAccountIssuerDiscoveryHandlers(c, s); err != nil {
+			return nil, err
+		}
 	}
 
 	m := &Master{
@@ -602,4 +613,90 @@ func DefaultAPIResourceConfigSource() *serverstorage.ResourceConfig {
 	)
 
 	return ret
+}
+
+// setupServiceAccountIssuerDiscoveryHandlers is a helper for setting up the
+// ServiceAccountIssuerDiscovery OIDC endpoint handlers.
+// It will only install the handlers if options have been configured correctly
+// for the ServiceAccountIssuerDiscovery feature.
+func setupServiceAccountIssuerDiscoveryHandlers(c completedConfig, s *genericapiserver.GenericAPIServer) error {
+	// Ensure the issuer URL is https, per the OIDC spec. If not, warn and
+	// return instead of constructing the server. We can't error because
+	// that would be backwards-incompatible with issuer validation in prior
+	// versions, which didn't enforce https.
+	issuerURL, err := url.Parse(c.ExtraConfig.ServiceAccountIssuerURL)
+	if err != nil {
+		return err
+	}
+	if issuerURL.Scheme != "https" {
+		klog.Errorf("service-account-issuer (%s) is not valid per OIDC spec. "+
+			"Requires https. The ServiceAccountIssuerDiscovery endpoints will "+
+			"not be enabled.",
+			c.ExtraConfig.ServiceAccountIssuerURL)
+		return nil
+	}
+
+	var pubKeys []interface{}
+	for _, f := range c.ExtraConfig.ServiceAccountKeyFiles {
+		keys, err := keyutil.PublicKeysFromFile(f)
+		if err != nil {
+			return fmt.Errorf("failed to parse service-account-key-file %q: %v", f, err)
+		}
+		pubKeys = append(pubKeys, keys...)
+	}
+
+	// Either use the provided JWKS URI or default to ExternalAddress plus
+	// the JWKS path.
+	jwksURI := c.ExtraConfig.ServiceAccountJWKSURI
+	if jwksURI == "" {
+		u := &url.URL{
+			Scheme: "https",
+			Host:   c.GenericConfig.ExternalAddress,
+			Path:   routes.JWKSPath,
+		}
+		jwksURI = u.String()
+
+		// TODO(mtaufen): I think we can probably expect ExternalAddress is
+		// at most just host + port and skip the sanity check, but want to be
+		// careful until that is confirmed.
+
+		// Sanity check that the jwksURI we produced is the valid URL we expect.
+		// This is just in case ExternalAddress came in as something weird,
+		// like a scheme + host + port, instead of just host + port.
+		// If it's weird, skip installing the endpoints.
+		const msg = "attempted to build jwks_uri from external " +
+			"address %s, but could not construct a valid URL. " +
+			"The ServiceAccountIssuerDiscovery endpoints will " +
+			"not be enabled. Error: %v"
+
+		parsed, err := url.Parse(jwksURI)
+		if err != nil {
+			klog.Errorf(msg, c.GenericConfig.ExternalAddress, err)
+			return nil
+		} else if u.Scheme != parsed.Scheme ||
+			u.Host != parsed.Host ||
+			u.Path != parsed.Path {
+			klog.Errorf(msg, c.GenericConfig.ExternalAddress,
+				fmt.Errorf("got %v, expected %v", parsed, u))
+			return nil
+		}
+	}
+
+	// Metadata and keys are expected to only change across restarts at present,
+	// so we just marshal immediately and serve the cached JSON bytes.
+	metadataJSON, err := serviceaccount.OpenIDMetadataJSON(
+		c.ExtraConfig.ServiceAccountIssuerURL,
+		jwksURI,
+		pubKeys)
+	if err != nil {
+		return fmt.Errorf("could not marshal issuer discovery JSON, error: %v", err)
+	}
+
+	keysetJSON, err := serviceaccount.OpenIDKeysetJSON(pubKeys)
+	if err != nil {
+		return fmt.Errorf("could not marshal issuer keys JSON, error: %v", err)
+	}
+
+	routes.NewOpenIDMetadataServer(metadataJSON, keysetJSON).Install(s.Handler.GoRestfulContainer)
+	return nil
 }

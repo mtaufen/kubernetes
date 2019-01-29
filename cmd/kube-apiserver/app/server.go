@@ -381,6 +381,13 @@ func CreateKubeAPIServerConfig(
 		config.ExtraConfig.KubeletClientConfig.Lookup = config.GenericConfig.EgressSelector.Lookup
 	}
 
+	// If ServiceAccountIssuerDiscovery is enabled, construct the OIDC metadata server.
+	if utilfeature.DefaultFeatureGate.Enabled(features.ServiceAccountIssuerDiscovery) {
+		config.ExtraConfig.ServiceAccountIssuerURL = s.Authentication.ServiceAccounts.Issuer
+		config.ExtraConfig.ServiceAccountJWKSURI = s.Authentication.ServiceAccounts.JWKSURI
+		config.ExtraConfig.ServiceAccountKeyFiles = s.Authentication.ServiceAccounts.KeyFiles
+	}
+
 	return config, insecureServingInfo, serviceResolver, pluginInitializers, nil
 }
 
