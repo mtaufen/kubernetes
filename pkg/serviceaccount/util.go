@@ -17,9 +17,18 @@ limitations under the License.
 package serviceaccount
 
 import (
-	"k8s.io/api/core/v1"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rsa"
+	"fmt"
+
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/errors"
 	apiserverserviceaccount "k8s.io/apiserver/pkg/authentication/serviceaccount"
 	"k8s.io/apiserver/pkg/authentication/user"
+
+	jose "gopkg.in/square/go-jose.v2"
 )
 
 const (
@@ -78,4 +87,91 @@ func IsServiceAccountToken(secret *v1.Secret, sa *v1.ServiceAccount) bool {
 	}
 
 	return true
+}
+
+func PublicJWKSFromKeys(in []interface{}) (*jose.JSONWebKeySet, errors.Aggregate) {
+	// Decode keys into a JWKS.
+	var keys jose.JSONWebKeySet
+	var errs []error
+	for i, key := range in {
+		var pubkey *jose.JSONWebKey
+		var err error
+
+		switch k := key.(type) {
+		case interface {
+			Public() crypto.PublicKey
+		}:
+			// This is a private key. Get its public key
+			pubkey, err = jwkFromPublicKey(k.Public())
+		case rsa.PublicKey:
+			pubkey, err = jwkFromPublicKey(&k)
+		case *rsa.PublicKey:
+			pubkey, err = jwkFromPublicKey(k)
+		case ecdsa.PublicKey:
+			pubkey, err = jwkFromPublicKey(&k)
+		case *ecdsa.PublicKey:
+			pubkey, err = jwkFromPublicKey(k)
+		default:
+			err = fmt.Errorf("key must be rsa.PublicKey or ecdsa.PublicKey")
+		}
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+
+		if !pubkey.Valid() {
+			errs = append(errs, fmt.Errorf("configured key #%d not valid", i))
+			continue
+		}
+		keys.Keys = append(keys.Keys, *pubkey)
+	}
+	if len(errs) != 0 {
+		return &keys, errors.NewAggregate(errs)
+	}
+	return &keys, nil
+}
+
+func jwkFromPublicKey(publicKey crypto.PublicKey) (*jose.JSONWebKey, error) {
+	alg, err := algorithmForPublicKey(publicKey)
+	if err != nil {
+		return nil, fmt.Errorf("must be rsa.PublicKey, ecdsa.PublicKey, or jose.OpaqueSigner")
+	}
+
+	keyID, err := keyIDFromPublicKey(publicKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive keyID: %v", err)
+	}
+
+	return &jose.JSONWebKey{
+		Algorithm: string(alg),
+		Key:       publicKey,
+		KeyID:     keyID,
+		Use:       "sig",
+	}, nil
+}
+
+func algorithmForPublicKey(publicKey crypto.PublicKey) (jose.SignatureAlgorithm, error) {
+	switch pk := publicKey.(type) {
+	case rsa.PublicKey:
+		return algorithmForPublicKey(&publicKey)
+	case *rsa.PublicKey:
+		return jose.RS256, nil
+	case ecdsa.PublicKey:
+		return algorithmForPublicKey(&publicKey)
+	case *ecdsa.PublicKey:
+		switch pk.Curve {
+		case elliptic.P256():
+			return jose.ES256, nil
+		case elliptic.P384():
+			return jose.ES384, nil
+		case elliptic.P521():
+			return jose.ES512, nil
+		default:
+			return "", fmt.Errorf("unknown private key curve, must be 256, 384, or 521")
+		}
+	case jose.OpaqueSigner:
+		return jose.SignatureAlgorithm(pk.Public().Algorithm), nil
+	default:
+		return "", fmt.Errorf("unknown public key type %T, must be *rsa.PublicKey, *ecdsa.PublicKey, or jose.OpaqueSigner", publicKey)
+	}
 }

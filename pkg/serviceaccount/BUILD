@@ -37,7 +37,10 @@ filegroup(
 
 filegroup(
     name = "all-srcs",
-    srcs = [":package-srcs"],
+    srcs = [
+        ":package-srcs",
+        "//pkg/serviceaccount/metadata:all-srcs",
+    ],
     tags = ["automanaged"],
 )
 
@@ -46,12 +49,15 @@ go_test(
     srcs = [
         "claims_test.go",
         "jwt_test.go",
+        "keys_test.go",
+        "metadata_test.go",
         "util_test.go",
     ],
     embed = [":go_default_library"],
     deps = [
         "//pkg/apis/core:go_default_library",
         "//pkg/controller/serviceaccount:go_default_library",
+        "//pkg/serviceaccount/metadata:go_default_library",
         "//staging/src/k8s.io/api/core/v1:go_default_library",
         "//staging/src/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
         "//staging/src/k8s.io/apiserver/pkg/authentication/authenticator:go_default_library",
@@ -60,6 +66,8 @@ go_test(
         "//staging/src/k8s.io/client-go/listers/core/v1:go_default_library",
         "//staging/src/k8s.io/client-go/tools/cache:go_default_library",
         "//staging/src/k8s.io/client-go/util/keyutil:go_default_library",
+        "//vendor/github.com/emicklei/go-restful:go_default_library",
+        "//vendor/github.com/google/go-cmp/cmp:go_default_library",
         "//vendor/gopkg.in/square/go-jose.v2:go_default_library",
         "//vendor/gopkg.in/square/go-jose.v2/jwt:go_default_library",
     ],

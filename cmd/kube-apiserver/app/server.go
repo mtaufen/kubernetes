@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -83,6 +84,7 @@ import (
 	"k8s.io/kubernetes/pkg/registry/cachesize"
 	rbacrest "k8s.io/kubernetes/pkg/registry/rbac/rest"
 	"k8s.io/kubernetes/pkg/serviceaccount"
+	"k8s.io/kubernetes/pkg/serviceaccount/metadata"
 	utilflag "k8s.io/kubernetes/pkg/util/flag"
 	"k8s.io/kubernetes/plugin/pkg/auth/authenticator/token/bootstrap"
 )
@@ -343,8 +345,9 @@ func CreateKubeAPIServerConfig(
 			EndpointReconcilerType: reconcilers.Type(s.EndpointReconcilerType),
 			MasterCount:            s.MasterCount,
 
-			ServiceAccountIssuer:        s.ServiceAccountIssuer,
-			ServiceAccountMaxExpiration: s.ServiceAccountTokenMaxExpiration,
+			ServiceAccountIssuer:         s.ServiceAccountIssuer,
+			ServiceAccountMaxExpiration:  s.ServiceAccountTokenMaxExpiration,
+			ServiceAccountIssuerMetadata: s.ServiceAccountIssuerMetadata,
 
 			VersionedInformers: versionedInformers,
 		},
@@ -666,6 +669,53 @@ func Complete(s *options.ServerRunOptions) (completedServerRunOptions, error) {
 			return options, fmt.Errorf("failed to build token generator: %v", err)
 		}
 		s.ServiceAccountTokenMaxExpiration = s.Authentication.ServiceAccounts.MaxExpiration
+
+		// If ServiceAccountIssuerDiscovery is enabled, construct the OIDC metadata server.
+		if utilfeature.DefaultFeatureGate.Enabled(features.ServiceAccountIssuerDiscovery) {
+			var pubKeys []interface{}
+			for _, f := range s.Authentication.ServiceAccounts.KeyFiles {
+				keys, err := keyutil.PublicKeysFromFile(f)
+				if err != nil {
+					return options, fmt.Errorf("failed to parse service-account-key-file %q: %v", f, err)
+				}
+				pubKeys = append(pubKeys, keys...)
+			}
+
+			// Either use the provided JWKS URI or default to ExternalHost plus
+			// the JWKS path.
+			jwksURI := s.Authentication.ServiceAccounts.JWKSURI
+			if jwksURI == "" {
+				u, err := url.Parse(s.GenericServerRunOptions.ExternalHost)
+				if err != nil {
+					return options, fmt.Errorf("failed to parse external-hostname %q as URL: %v",
+						s.GenericServerRunOptions.ExternalHost, err)
+				}
+
+				// If no scheme is specified, ExternalHost interpreted as a Path
+				// instead of a Host. We want to default to interpreting
+				// ExternalHost as a Host, not as a Path, so in the case where
+				// the Host is empty we manually construct the URL.
+				if u.Host == "" {
+					u = &url.URL{
+						Host: s.GenericServerRunOptions.ExternalHost,
+					}
+				}
+
+				// Force https scheme.
+				u.Scheme = "https"
+
+				// Append the JWKS path of this server.
+				u.Path = path.Join(u.Path, metadata.JWKSPath)
+				jwksURI = u.String()
+			}
+
+			md, err := metadata.NewServer(
+				s.Authentication.ServiceAccounts.Issuer, jwksURI, pubKeys)
+			if err != nil {
+				return options, fmt.Errorf("could not construct service account OIDC metadata server: %v", err)
+			}
+			s.ServiceAccountIssuerMetadata = md
+		}
 	}
 
 	if s.Etcd.EnableWatchCache {

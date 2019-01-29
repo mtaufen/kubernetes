@@ -87,6 +87,7 @@ import (
 	"k8s.io/kubernetes/pkg/master/tunneler"
 	"k8s.io/kubernetes/pkg/routes"
 	"k8s.io/kubernetes/pkg/serviceaccount"
+	"k8s.io/kubernetes/pkg/serviceaccount/metadata"
 	nodeutil "k8s.io/kubernetes/pkg/util/node"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -190,8 +191,9 @@ type ExtraConfig struct {
 	// Selects which reconciler to use
 	EndpointReconcilerType reconcilers.Type
 
-	ServiceAccountIssuer        serviceaccount.TokenGenerator
-	ServiceAccountMaxExpiration time.Duration
+	ServiceAccountIssuer         serviceaccount.TokenGenerator
+	ServiceAccountIssuerMetadata *metadata.IssuerMetadataServer
+	ServiceAccountMaxExpiration  time.Duration
 
 	VersionedInformers informers.SharedInformerFactory
 }
@@ -342,6 +344,11 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 
 	if c.ExtraConfig.EnableLogsSupport {
 		routes.Logs{}.Install(s.Handler.GoRestfulContainer)
+	}
+
+	if mds := c.ExtraConfig.ServiceAccountIssuerMetadata; mds != nil &&
+		utilfeature.DefaultFeatureGate.Enabled(features.ServiceAccountIssuerDiscovery) {
+		mds.Install(s.Handler.GoRestfulContainer)
 	}
 
 	m := &Master{

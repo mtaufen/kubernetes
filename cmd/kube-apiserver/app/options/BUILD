@@ -25,6 +25,7 @@ go_library(
         "//pkg/master/ports:go_default_library",
         "//pkg/master/reconcilers:go_default_library",
         "//pkg/serviceaccount:go_default_library",
+        "//pkg/serviceaccount/metadata:go_default_library",
         "//staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver:go_default_library",
         "//staging/src/k8s.io/apimachinery/pkg/util/net:go_default_library",
         "//staging/src/k8s.io/apiserver/pkg/admission:go_default_library",

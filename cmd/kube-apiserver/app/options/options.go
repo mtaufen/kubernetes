@@ -33,6 +33,7 @@ import (
 	"k8s.io/kubernetes/pkg/master/ports"
 	"k8s.io/kubernetes/pkg/master/reconcilers"
 	"k8s.io/kubernetes/pkg/serviceaccount"
+	"k8s.io/kubernetes/pkg/serviceaccount/metadata"
 )
 
 // ServerRunOptions runs a kubernetes api server.
@@ -77,6 +78,7 @@ type ServerRunOptions struct {
 
 	ServiceAccountSigningKeyFile     string
 	ServiceAccountIssuer             serviceaccount.TokenGenerator
+	ServiceAccountIssuerMetadata     *metadata.IssuerMetadataServer
 	ServiceAccountTokenMaxExpiration time.Duration
 
 	ShowHiddenMetricsForVersion string
