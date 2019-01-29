@@ -19,7 +19,6 @@ package serviceaccount
 import (
 	"context"
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
@@ -56,19 +55,17 @@ type TokenGenerator interface {
 // JWTTokenAuthenticator()
 func JWTTokenGenerator(iss string, privateKey interface{}) (TokenGenerator, error) {
 	var alg jose.SignatureAlgorithm
+	var err error
 	switch pk := privateKey.(type) {
 	case *rsa.PrivateKey:
-		alg = jose.RS256
+		alg, err = algorithmForPublicKey(pk.Public())
+		if err != nil {
+			return nil, err
+		}
 	case *ecdsa.PrivateKey:
-		switch pk.Curve {
-		case elliptic.P256():
-			alg = jose.ES256
-		case elliptic.P384():
-			alg = jose.ES384
-		case elliptic.P521():
-			alg = jose.ES512
-		default:
-			return nil, fmt.Errorf("unknown private key curve, must be 256, 384, or 521")
+		alg, err = algorithmForPublicKey(pk.Public())
+		if err != nil {
+			return nil, err
 		}
 	case jose.OpaqueSigner:
 		alg = jose.SignatureAlgorithm(pk.Public().Algorithm)

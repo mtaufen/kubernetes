@@ -70,6 +70,7 @@ type ServerRunOptions struct {
 
 	ServiceAccountSigningKeyFile     string
 	ServiceAccountIssuer             serviceaccount.TokenGenerator
+	ServiceAccountIssuerMetadata     serviceaccount.IssuerMetadataServer
 	ServiceAccountTokenMaxExpiration time.Duration
 }
 

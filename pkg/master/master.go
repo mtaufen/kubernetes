@@ -171,8 +171,9 @@ type ExtraConfig struct {
 	// Selects which reconciler to use
 	EndpointReconcilerType reconcilers.Type
 
-	ServiceAccountIssuer        serviceaccount.TokenGenerator
-	ServiceAccountMaxExpiration time.Duration
+	ServiceAccountIssuer         serviceaccount.TokenGenerator
+	ServiceAccountIssuerMetadata serviceaccount.IssuerMetadataServer
+	ServiceAccountMaxExpiration  time.Duration
 
 	VersionedInformers informers.SharedInformerFactory
 }
@@ -309,6 +310,9 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 
 	if c.ExtraConfig.EnableLogsSupport {
 		routes.Logs{}.Install(s.Handler.GoRestfulContainer)
+	}
+	if mds := c.ExtraConfig.ServiceAccountIssuerMetadata; mds != nil {
+		mds.Install(s.Handler.GoRestfulContainer)
 	}
 
 	m := &Master{
