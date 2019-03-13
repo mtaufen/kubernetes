@@ -45,18 +45,25 @@ type IssuerMetadataServer interface {
 func NewServer(iss string, keys []interface{}) IssuerMetadataServer {
 	return &issuerServer{
 		metadata: issuerMetadata{
-			Issuer:  iss,
-			JwksURI: JwksPath,
+			Issuer:        iss,
+			JwksURI:       JwksPath,
+			ResponseTypes: []string{"id_token"}, // Kubernetes only produces ID tokens
+			SubjectTypes:  []string{"public"},   // https://openid.net/specs/openid-connect-core-1_0.html#SubjectIDTypes
 		},
 		keys: keys,
 	}
 }
 
-// issuerMetadata provides a subset of OIDC provider metadata:
+// issuerMetadata provides a minimal subset of OIDC provider metadata:
 // https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata
 type issuerMetadata struct {
-	Issuer  string `json:"issuer"`   // REQUIRED in OIDC
-	JwksURI string `json:"jwks_uri"` // REQUIRED in OIDC
+	Issuer string `json:"issuer"` // REQUIRED in OIDC; meaningful to relying parties.
+	// AuthzEndpoint string   `json:"authorization_endpoint"`                // REQUIRED in OIDC; but useless to relying parties.
+	JwksURI       string   `json:"jwks_uri"`                              // REQUIRED in OIDC; meaningful to relying parties.
+	ResponseTypes []string `json:"response_types_supported"`              // REQUIRED in OIDC
+	SubjectTypes  []string `json:"subject_types_supported"`               // REQUIRED in OIDC
+	SigningAlgs   []string `json:"id_token_signing_alg_values_supported"` // REQUIRED in OIDC
+
 }
 
 // issuerServer is an HTTP server for metadata of the KSA token issuer.
