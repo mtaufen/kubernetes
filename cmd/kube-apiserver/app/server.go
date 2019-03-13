@@ -598,8 +598,13 @@ func Complete(s *options.ServerRunOptions) (completedServerRunOptions, error) {
 			return options, fmt.Errorf("failed to build token generator: %v", err)
 		}
 		s.ServiceAccountTokenMaxExpiration = s.Authentication.ServiceAccounts.MaxExpiration
+
 		// TODO: Include keys from ServiceAccountKeyFiles, in addition to the signing key
-		s.ServiceAccountIssuerMetadata = serviceaccount.NewServer(s.Authentication.ServiceAccounts.Issuer, []interface{}{sk})
+		md, err := serviceaccount.NewServer(s.Authentication.ServiceAccounts.Issuer, []interface{}{sk})
+		if err != nil {
+			return options, fmt.Errorf("failed to build service account issuer metadata: %v", err)
+		}
+		s.ServiceAccountIssuerMetadata = md
 	}
 
 	if s.Etcd.EnableWatchCache {

@@ -35,8 +35,11 @@ type Configuration struct {
 
 func TestServeConfiguration(t *testing.T) {
 	keys := []interface{}{getPublicKey(rsaPublicKey), getPublicKey(ecdsaPublicKey)}
+	srv, err := serviceaccount.NewServer("my-fake-issuer", keys)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	srv := serviceaccount.NewServer("my-fake-issuer", keys)
 	s := setupServer(srv)
 	defer s.Close()
 
@@ -45,7 +48,7 @@ func TestServeConfiguration(t *testing.T) {
 		JwksURI:       "/serviceaccountkeys/v1/jwks.json",
 		ResponseTypes: []string{"id_token"},
 		SubjectTypes:  []string{"public"},
-		// SigningAlgs:   []string{"ES256", "RS256"},
+		SigningAlgs:   []string{"ES256", "RS256"},
 	}
 
 	reqURL := s.URL + "/.well-known/openid-configuration"
@@ -107,7 +110,10 @@ var serveKeysTests = []struct {
 func TestServeKeys(t *testing.T) {
 	for _, tt := range serveKeysTests {
 		t.Run(tt.Name, func(t *testing.T) {
-			h := serviceaccount.NewServer("my-fake-issuer", tt.Keys)
+			h, err := serviceaccount.NewServer("my-fake-issuer", tt.Keys)
+			if err != nil {
+				t.Fatal(err)
+			}
 
 			var errors []error
 			h.SetErrorHandler(func(err error) {
@@ -166,7 +172,10 @@ func TestServeKeys(t *testing.T) {
 
 func TestDisallowMethods(t *testing.T) {
 	var loggedError error
-	h := serviceaccount.NewServer("my-fake-issuer", nil)
+	h, err := serviceaccount.NewServer("my-fake-issuer", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetErrorHandler(func(e error) {
 		loggedError = e
 	})
@@ -202,7 +211,11 @@ func TestDisallowMethods(t *testing.T) {
 }
 
 func TestUrlBoundaries(t *testing.T) {
-	s := setupServer(serviceaccount.NewServer("my-fake-issuer", nil))
+	srv, err := serviceaccount.NewServer("my-fake-issuer", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := setupServer(srv)
 	defer s.Close()
 
 	for _, tt := range []struct {
