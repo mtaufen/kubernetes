@@ -1,13 +1,13 @@
 package serviceaccount_test
 
 import (
-	"bytes"
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	restful "github.com/emicklei/go-restful"
@@ -21,15 +21,33 @@ func setupServer(s serviceaccount.IssuerMetadataServer) *httptest.Server {
 	return httptest.NewServer(c)
 }
 
+// Configuration is an OIDC configuration, including all required fields.
+// https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata
+type Configuration struct {
+	Issuer string `json:"issuer"`
+	// AuthzEndpoint string `json:"authorization_endpoint"` // REQUIRED, but useless to relying parties.
+	// TokenEndpoint `json:"token_endpoint"` // "REQUIRED unless only the Implicit Flow is used."
+	JwksURI       string   `json:"jwks_uri"`
+	ResponseTypes []string `json:"response_types_supported"`
+	SigningAlgs   []string `json:"id_token_signing_alg_values_supported"`
+	SubjectTypes  []string `json:"subject_types_supported"`
+}
+
 func TestServeConfiguration(t *testing.T) {
-	s := setupServer(serviceaccount.NewServer("my-fake-issuer", nil))
+	keys := []interface{}{getPublicKey(rsaPublicKey), getPublicKey(ecdsaPublicKey)}
+
+	srv := serviceaccount.NewServer("my-fake-issuer", keys)
+	s := setupServer(srv)
 	defer s.Close()
 
-	want := `{
-	"issuer": "my-fake-issuer",
-	"jwks_uri": "/serviceaccountkeys/v1/jwks.json"
-}
-`
+	want := Configuration{
+		Issuer:        "my-fake-issuer",
+		JwksURI:       "/serviceaccountkeys/v1/jwks.json",
+		ResponseTypes: []string{"id_token"},
+		SubjectTypes:  []string{"public"},
+		// SigningAlgs:   []string{"ES256", "RS256"},
+	}
+
 	reqURL := s.URL + "/.well-known/openid-configuration"
 
 	resp, err := http.Get(reqURL)
@@ -45,21 +63,15 @@ func TestServeConfiguration(t *testing.T) {
 		t.Errorf("Get(%s) Content-Type = %q, _ want: %q, _", reqURL, got, want)
 	}
 
-	b := bytes.NewBuffer(nil)
-	if resp.Body == nil {
-		t.Errorf("resp.Body = %v, want io.ReadCloser", resp.Body)
-		return // can't evaluate body
-	}
-	defer resp.Body.Close()
-
-	_, err = b.ReadFrom(resp.Body)
-	if err != nil {
-		t.Errorf("ReadFrom(_) = _, %v want: _, %v", err, nil)
-		return // can't evaluate body
+	d := json.NewDecoder(resp.Body)
+	var got Configuration
+	if err := d.Decode(&got); err != nil {
+		t.Errorf("Decode(_) = %v, want: <nil>", err)
+		return // can't evaluate Configuration
 	}
 
-	if got := b.String(); got != want {
-		t.Errorf("response differs: got: ---\n%s\n--- want: ---\n%s\n---", got, want)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("received configuration differs: got: %+v\nwant: %+v\n", got, want)
 	}
 }
 
@@ -96,6 +108,7 @@ func TestServeKeys(t *testing.T) {
 	for _, tt := range serveKeysTests {
 		t.Run(tt.Name, func(t *testing.T) {
 			h := serviceaccount.NewServer("my-fake-issuer", tt.Keys)
+
 			var errors []error
 			h.SetErrorHandler(func(err error) {
 				errors = append(errors, err)
