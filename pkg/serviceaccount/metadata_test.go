@@ -45,7 +45,7 @@ func TestServeConfiguration(t *testing.T) {
 
 	want := Configuration{
 		Issuer:        "my-fake-issuer",
-		JwksURI:       "/serviceaccountkeys/v1/jwks.json",
+		JwksURI:       s.URL + "/serviceaccountkeys/v1/jwks.json",
 		ResponseTypes: []string{"id_token"},
 		SubjectTypes:  []string{"public"},
 		SigningAlgs:   []string{"ES256", "RS256"},
