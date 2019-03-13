@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 
 	restful "github.com/emicklei/go-restful"
 	jose "gopkg.in/square/go-jose.v2"
@@ -42,16 +43,21 @@ type IssuerMetadataServer interface {
 }
 
 // NewServer creates a new IssuerMetadataServer.
-func NewServer(iss string, keys []interface{}) IssuerMetadataServer {
+func NewServer(iss string, keys []interface{}) (IssuerMetadataServer, error) {
+	ks, err := getJwks(keys)
+	if err != nil {
+		return nil, err
+	}
 	return &issuerServer{
 		metadata: issuerMetadata{
 			Issuer:        iss,
 			JwksURI:       JwksPath,
 			ResponseTypes: []string{"id_token"}, // Kubernetes only produces ID tokens
 			SubjectTypes:  []string{"public"},   // https://openid.net/specs/openid-connect-core-1_0.html#SubjectIDTypes
+			SigningAlgs:   getAlgs(ks),          // REQUIRED by OIDC
 		},
-		keys: keys,
-	}
+		keys: ks,
+	}, nil
 }
 
 // issuerMetadata provides a minimal subset of OIDC provider metadata:
@@ -70,7 +76,7 @@ type issuerMetadata struct {
 type issuerServer struct {
 	errorHandler func(error)
 	metadata     issuerMetadata
-	keys         []interface{}
+	keys         *jose.JSONWebKeySet
 }
 
 // Install adds this server to the request router c.
@@ -117,10 +123,25 @@ func (s *issuerServer) serveConfiguration(w http.ResponseWriter, req *http.Reque
 	}
 }
 
-func (s *issuerServer) getJwks() *jose.JSONWebKeySet {
+func getAlgs(keys *jose.JSONWebKeySet) []string {
+	var result []string
+	algs := map[string]bool{}
+	for _, k := range keys.Keys {
+		a := k.Algorithm
+		if !algs[a] {
+			result = append(result, a)
+		}
+		algs[a] = true
+	}
+	sort.Strings(result)
+	return result
+}
+
+func getJwks(in []interface{}) (*jose.JSONWebKeySet, error) {
 	// Decode keys into a JWKS.
 	var keys jose.JSONWebKeySet
-	for i, key := range s.keys {
+	var errs []error
+	for i, key := range in {
 		var pubkey *jose.JSONWebKey
 		var err error
 
@@ -145,12 +166,12 @@ func (s *issuerServer) getJwks() *jose.JSONWebKeySet {
 			}
 		}
 		if err != nil {
-			s.handleError(err)
+			errs = append(errs, err)
 			continue
 		}
 
 		if !pubkey.Valid() {
-			s.handleError(KeyExcludedError{
+			errs = append(errs, KeyExcludedError{
 				Key:    pubkey,
 				Reason: fmt.Sprintf("configured key #%d not valid", i),
 			})
@@ -158,7 +179,10 @@ func (s *issuerServer) getJwks() *jose.JSONWebKeySet {
 		}
 		keys.Keys = append(keys.Keys, *pubkey)
 	}
-	return &keys
+	if len(errs) != 0 {
+		return &keys, fmt.Errorf("multiple errors: %v", errs)
+	}
+	return &keys, nil
 }
 
 func (s *issuerServer) serveKeys(w http.ResponseWriter, req *http.Request) {
@@ -169,7 +193,7 @@ func (s *issuerServer) serveKeys(w http.ResponseWriter, req *http.Request) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "\t")
 
-	err := enc.Encode(s.getJwks())
+	err := enc.Encode(s.keys)
 
 	if err != nil {
 		s.handleError(ResponseError{
