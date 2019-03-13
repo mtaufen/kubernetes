@@ -27,10 +27,10 @@ func TestServeConfiguration(t *testing.T) {
 
 	want := `{
 	"issuer": "my-fake-issuer",
-	"jwks_uri": "/serviceaccountissuer/v1alpha1/jwks.json"
+	"jwks_uri": "/serviceaccountkeys/v1/jwks.json"
 }
 `
-	reqURL := s.URL + "/serviceaccountissuer/v1alpha1/metadata.json"
+	reqURL := s.URL + "/.well-known/openid-configuration"
 
 	resp, err := http.Get(reqURL)
 	if resp == nil || err != nil {
@@ -104,7 +104,7 @@ func TestServeKeys(t *testing.T) {
 			s := setupServer(h)
 			defer s.Close()
 
-			reqURL := s.URL + "/serviceaccountissuer/v1alpha1/jwks.json"
+			reqURL := s.URL + "/serviceaccountkeys/v1/jwks.json"
 
 			resp, err := http.Get(reqURL)
 			if resp == nil || err != nil {
@@ -147,8 +147,6 @@ func TestServeKeys(t *testing.T) {
 					t.Errorf("Keys[%d]: wrong type: got: %q want: %q", i, got, want)
 				}
 			}
-
-			// TODO - DO NOT SUBMIT - test key set contents
 		})
 	}
 }
@@ -170,7 +168,7 @@ func TestDisallowMethods(t *testing.T) {
 		t.Run(fmt.Sprintf("disallow %s", method), func(t *testing.T) {
 			loggedError = nil
 
-			req, err := http.NewRequest(method, s.URL+"/serviceaccountissuer/v1alpha1/metadata.json", nil)
+			req, err := http.NewRequest(method, s.URL+"/.well-known/openid-configuration", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -199,13 +197,13 @@ func TestUrlBoundaries(t *testing.T) {
 		Path   string
 		WantOK bool
 	}{
-		{"OIDC config path", "/serviceaccountissuer/v1alpha1/metadata.json", true},
-		{"JWKS path", "/serviceaccountissuer/v1alpha1/jwks.json", true},
-		{"prefix", "/serviceaccountissuer/v1alpha1/metadata", false},
+		{"OIDC config path", "/.well-known/openid-configuration", true},
+		{"JWKS path", "/serviceaccountkeys/v1/jwks.json", true},
+		{"prefix", "/serviceaccountkeys/v1/jwks", false},
 		{"well-known", "/.well-known", false},
-		{"subpath", "/serviceaccountissuer/v1alpha1/jwks.json/foo", false},
-		{"query", "/serviceaccountissuer/v1alpha1/metadata.json?format=yaml", true},
-		{"fragment", "/serviceaccountissuer/v1alpha1/metadata.json#issuer", true},
+		{"subpath", "/serviceaccountkeys/v1/jwks.json/foo", false},
+		{"query", "/serviceaccountkeys/v1/jwks.json?format=yaml", true},
+		{"fragment", "/serviceaccountkeys/v1/jwks.json#issuer", true},
 	} {
 		t.Run(tt.Name, func(t *testing.T) {
 			resp, err := http.Get(s.URL + tt.Path)
