@@ -636,8 +636,9 @@ func TestServiceAccountTokenCreate(t *testing.T) {
 
 		var key interface{}
 		t.Run("get jwks", func(t *testing.T) {
-			t.Log("fetching from", metadata.Jwks)
-			resp := rc.Get().AbsPath(metadata.Jwks).Do()
+			req := rc.Get().RequestURI(metadata.Jwks)
+			t.Log("fetching from", req.URL())
+			resp := req.Do()
 			if err := resp.Error(); err != nil {
 				t.Fatal(err)
 			}
