@@ -610,7 +610,7 @@ func TestServiceAccountTokenCreate(t *testing.T) {
 			Jwks   string `json:"jwks_uri"`
 		}{}
 		t.Run("get metadata", func(t *testing.T) {
-			resp := rc.Get().AbsPath("/serviceaccountissuer/v1alpha1/metadata.json").Do()
+			resp := rc.Get().AbsPath("/.well-known/openid-configuration").Do()
 			if err := resp.Error(); err != nil {
 				t.Fatal(err)
 			}
@@ -633,7 +633,7 @@ func TestServiceAccountTokenCreate(t *testing.T) {
 
 		var key interface{}
 		t.Run("get jwks", func(t *testing.T) {
-			t.Log("fetching from ", metadata.Jwks)
+			t.Log("fetching from", metadata.Jwks)
 			resp := rc.Get().AbsPath(metadata.Jwks).Do()
 			if err := resp.Error(); err != nil {
 				t.Fatal(err)
