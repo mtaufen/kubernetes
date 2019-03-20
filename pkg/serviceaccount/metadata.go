@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path"
 	"sort"
 
 	restful "github.com/emicklei/go-restful"
@@ -43,16 +44,31 @@ type IssuerMetadataServer interface {
 }
 
 // NewServer creates a new IssuerMetadataServer.
-func NewServer(iss string, keys []interface{}) (IssuerMetadataServer, error) {
+// The issuer is the OIDC issuer; keys are the keys that may be used to sign KSA tokens.
+// The jwksHost is the host or URL under which the JWKS is hosted; it is combined with JwksPath when reporting `jwks_uri`.
+func NewServer(iss, jwksHost string, keys []interface{}) (IssuerMetadataServer, error) {
 	ks, err := getJwks(keys)
 	if err != nil {
 		return nil, err
 	}
 
+	jwksURL, err := url.Parse(jwksHost)
+	// URL requires a path, but not a host, so "foo" just becomes a path-
+	// not a host + an empty path. Default to interpreting jwksHost as a host.
+	if err != nil || jwksURL.Host == "" {
+		jwksURL = &url.URL{
+			Host: jwksHost,
+		}
+	}
+	jwksURL.Path = path.Join(jwksURL.Path, JwksPath)
+	if jwksURL.Scheme == "" {
+		jwksURL.Scheme = "https"
+	}
+
 	return &issuerServer{
 		metadata: issuerMetadata{
 			Issuer:        iss,
-			JwksURI:       JwksPath,
+			JwksURI:       jwksURL.String(),
 			ResponseTypes: []string{"id_token"}, // Kubernetes only produces ID tokens
 			SubjectTypes:  []string{"public"},   // https://openid.net/specs/openid-connect-core-1_0.html#SubjectIDTypes
 			SigningAlgs:   getAlgs(ks),          // REQUIRED by OIDC
@@ -112,54 +128,10 @@ func (s *issuerServer) serveConfiguration(w http.ResponseWriter, req *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 	// TODO: Set cache header appropriately
 
-	// Some OIDC valiation implementations, e.g. gopkg.in/coreos/go-oidc.v2,
-	// require that the JWKS URI be a URL - protocol://host:port/path.
-	//
-	// In order to point to *this* handler, the host has to be "this API
-	// server" - but that could be a number of hostnames (IP,
-	// kubernetes.default.svc, a public DNS name...) that we don't know.
-	// It would be Nice if we could pull that host from the issuer, but...
-	//
-	// in other cases, the issuer may be a subpath of a host that is not
-	// this API server, e.g.:
-	// container.googleapis.com/.../clusters/my-cluster/tokens
-	// (That's actually pretty nice, because it means that your API server
-	// isn't in the token-validation path / doesn't need to be exposed to
-	// all clients of its tokens.)
-	//
-	// The TOTAL HACK that I have here is to copy the host from the incoming
-	// request, if we can find one. This smells dangerous to me, though I
-	// don't have a particular exploit in mind - I don't like responding to
-	// the user with "yeah, here's the data you sent me back, but
-	// authoritatively."
-	//
-	// The TODO here would be to:
-	// - allow service-account-jwks-uri as a flag, alongside issuer
-	// - pass it in to the New constructor as an alternative to the keyset
-	//   - if the jwks_uri is explicit, use it;
-	//   - otherwise, if the issuer is pathless, use it;
-	//   - otherwise, err on startup; we don't know the host to RPs to.
-	md := s.metadata
-	if req.URL != nil && req.URL.Host != "" {
-		u := *req.URL
-		u.Path = JwksPath
-		md.JwksURI = u.String()
-	} else if req.Host != "" {
-		u := &url.URL{
-			Scheme: "http",
-			Host:   req.Host,
-			Path:   JwksPath,
-		}
-		if req.TLS != nil {
-			u.Scheme = "https"
-		}
-		md.JwksURI = u.String()
-	}
-
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "\t")
 	// We can't stop writing the body and switch the header; but we can record when an error occured.
-	err := enc.Encode(md)
+	err := enc.Encode(s.metadata)
 	if err != nil && s.errorHandler != nil {
 		s.errorHandler(ResponseError{
 			URL: *req.URL,

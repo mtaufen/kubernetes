@@ -599,10 +599,20 @@ func Complete(s *options.ServerRunOptions) (completedServerRunOptions, error) {
 		}
 		s.ServiceAccountTokenMaxExpiration = s.Authentication.ServiceAccounts.MaxExpiration
 
-		// TODO: Include keys from ServiceAccountKeyFiles, in addition to the signing key
-		md, err := serviceaccount.NewServer(s.Authentication.ServiceAccounts.Issuer, []interface{}{sk})
+		var pubKeys []interface{}
+		for _, f := range s.Authentication.ServiceAccounts.KeyFiles {
+			keys, err := keyutil.PublicKeysFromFile(f)
+			if err != nil {
+				return options, fmt.Errorf("failed to parse service-account-key-file %q: %v", f, err)
+			}
+			pubKeys = append(pubKeys, keys...)
+		}
+		md, err := serviceaccount.NewServer(
+			s.Authentication.ServiceAccounts.Issuer,
+			s.GenericServerRunOptions.ExternalHost,
+			pubKeys)
 		if err != nil {
-			return options, fmt.Errorf("failed to build service account issuer metadata: %v", err)
+			return options, fmt.Errorf("could not provide service account issuer information: %v", err)
 		}
 		s.ServiceAccountIssuerMetadata = md
 	}

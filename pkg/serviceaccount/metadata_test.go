@@ -15,11 +15,26 @@ import (
 	"k8s.io/kubernetes/pkg/serviceaccount"
 )
 
-func setupServer(s serviceaccount.IssuerMetadataServer) *httptest.Server {
+func setupServer(t *testing.T, iss string, keys []interface{}) *httptest.Server {
+	t.Helper()
+
 	c := restful.NewContainer()
-	s.Install(c)
-	return httptest.NewServer(c)
+	s := httptest.NewServer(c)
+
+	// Install after we start server s.t. key URL can include host
+	srv, err := serviceaccount.NewServer(iss, s.URL, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.SetErrorHandler(func(err error) {
+		t.Fatal(err)
+	})
+	srv.Install(c)
+
+	return s
 }
+
+var defaultKeys = []interface{}{getPublicKey(rsaPublicKey), getPublicKey(ecdsaPublicKey)}
 
 // Configuration is an OIDC configuration, including all required fields.
 // https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata
@@ -34,13 +49,7 @@ type Configuration struct {
 }
 
 func TestServeConfiguration(t *testing.T) {
-	keys := []interface{}{getPublicKey(rsaPublicKey), getPublicKey(ecdsaPublicKey)}
-	srv, err := serviceaccount.NewServer("my-fake-issuer", keys)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	s := setupServer(srv)
+	s := setupServer(t, "my-fake-issuer", defaultKeys)
 	defer s.Close()
 
 	want := Configuration{
@@ -110,17 +119,7 @@ var serveKeysTests = []struct {
 func TestServeKeys(t *testing.T) {
 	for _, tt := range serveKeysTests {
 		t.Run(tt.Name, func(t *testing.T) {
-			h, err := serviceaccount.NewServer("my-fake-issuer", tt.Keys)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			var errors []error
-			h.SetErrorHandler(func(err error) {
-				errors = append(errors, err)
-			})
-
-			s := setupServer(h)
+			s := setupServer(t, "my-fake-issuer", tt.Keys)
 			defer s.Close()
 
 			reqURL := s.URL + "/serviceaccountkeys/v1/jwks.json"
@@ -140,10 +139,6 @@ func TestServeKeys(t *testing.T) {
 				return // can't evaluate body
 			}
 			defer resp.Body.Close()
-
-			if len(errors) != 0 {
-				t.Errorf("unexpected errors while serving: got: %v want: <no errors>", errors)
-			}
 
 			d := json.NewDecoder(resp.Body)
 			ks := &jose.JSONWebKeySet{}
@@ -171,16 +166,7 @@ func TestServeKeys(t *testing.T) {
 }
 
 func TestDisallowMethods(t *testing.T) {
-	var loggedError error
-	h, err := serviceaccount.NewServer("my-fake-issuer", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.SetErrorHandler(func(e error) {
-		loggedError = e
-	})
-
-	s := setupServer(h)
+	s := setupServer(t, "my-fake-issuer", defaultKeys)
 	defer s.Close()
 
 	for _, method := range []string{
@@ -188,8 +174,6 @@ func TestDisallowMethods(t *testing.T) {
 		http.MethodDelete, http.MethodConnect, http.MethodOptions, http.MethodTrace,
 	} {
 		t.Run(fmt.Sprintf("disallow %s", method), func(t *testing.T) {
-			loggedError = nil
-
 			req, err := http.NewRequest(method, s.URL+"/.well-known/openid-configuration", nil)
 			if err != nil {
 				t.Fatal(err)
@@ -202,20 +186,12 @@ func TestDisallowMethods(t *testing.T) {
 			if resp.StatusCode != http.StatusMethodNotAllowed {
 				t.Errorf("Do() = %v, _ want: %v, _", resp.StatusCode, http.StatusMethodNotAllowed)
 			}
-
-			if loggedError != nil {
-				t.Errorf("Do(): server encountered unexpected error: %v", loggedError)
-			}
 		})
 	}
 }
 
 func TestUrlBoundaries(t *testing.T) {
-	srv, err := serviceaccount.NewServer("my-fake-issuer", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := setupServer(srv)
+	s := setupServer(t, "my-fake-issuer", defaultKeys)
 	defer s.Close()
 
 	for _, tt := range []struct {
