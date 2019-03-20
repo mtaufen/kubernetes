@@ -108,7 +108,7 @@ func TestServiceAccountTokenCreate(t *testing.T) {
 	}
 	masterConfig.ExtraConfig.ServiceAccountIssuer = tokenGenerator
 
-	metaServer, err := serviceaccount.NewServer(iss, []interface{}{pk})
+	metaServer, err := serviceaccount.NewServer(iss, "", []interface{}{pk})
 	if err != nil {
 		t.Fatal(err)
 	}
