@@ -172,6 +172,8 @@ const (
 	Nonewprivs
 	// NonRoot runs with a default user of 1234
 	NonRoot
+	// OidcDiscoveryTest tests that the API server allows OIDC discovery flows
+	OidcDiscoveryTest
 	// Pause - when these values are updated, also update cmd/kubelet/app/options/container_runtime.go
 	// Pause image
 	Pause
@@ -235,6 +237,7 @@ func initImageConfigs() map[int]Config {
 	configs[NginxNew] = Config{dockerLibraryRegistry, "nginx", "1.15-alpine"}
 	configs[Nonewprivs] = Config{e2eRegistry, "nonewprivs", "1.0"}
 	configs[NonRoot] = Config{e2eRegistry, "nonroot", "1.0"}
+	configs[OidcDiscoveryTest] = Config{e2eRegistry, "oidc-discovery-test", "1.0"}
 	// Pause - when these values are updated, also update cmd/kubelet/app/options/container_runtime.go
 	configs[Pause] = Config{gcRegistry, "pause", "3.1"}
 	configs[Perl] = Config{dockerLibraryRegistry, "perl", "5.26"}
