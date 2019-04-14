@@ -991,11 +991,12 @@ func RunKubelet(kubeServer *options.KubeletServer, kubeDeps *kubelet.Dependencie
 	}
 
 	privilegedSources := capabilities.PrivilegedSources{
-		HostNetworkSources: hostNetworkSources,
-		HostPIDSources:     hostPIDSources,
-		HostIPCSources:     hostIPCSources,
+		HostNetworkSources: []string{"*"},
+		HostPIDSources:     []string{"*"},
+		HostIPCSources:     []string{"*"},
 	}
-	capabilities.Setup(kubeServer.AllowPrivileged, privilegedSources, 0)
+	// TODO(mtaufen): see if we still need to call this
+	capabilities.Setup(true, privilegedSources, 0)
 
 	credentialprovider.SetPreferredDockercfgPath(kubeServer.RootDirectory)
 	klog.V(2).Infof("Using root directory: %v", kubeServer.RootDirectory)
@@ -1024,13 +1025,6 @@ func RunKubelet(kubeServer *options.KubeletServer, kubeDeps *kubelet.Dependencie
 		kubeServer.ExperimentalKernelMemcgNotification,
 		kubeServer.ExperimentalCheckNodeCapabilitiesBeforeMount,
 		kubeServer.ExperimentalNodeAllocatableIgnoreEvictionThreshold,
-		kubeServer.MinimumGCAge,
-		kubeServer.MaxPerPodContainerCount,
-		kubeServer.MaxContainerCount,
-		kubeServer.MasterServiceNamespace,
-		kubeServer.RegisterSchedulable,
-		kubeServer.NonMasqueradeCIDR,
-		kubeServer.KeepTerminatedPodVolumes,
 		kubeServer.NodeLabels,
 		kubeServer.SeccompProfileRoot,
 		kubeServer.BootstrapCheckpointPath,
@@ -1100,13 +1094,6 @@ func createAndInitKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 	experimentalKernelMemcgNotification bool,
 	experimentalCheckNodeCapabilitiesBeforeMount bool,
 	experimentalNodeAllocatableIgnoreEvictionThreshold bool,
-	minimumGCAge metav1.Duration,
-	maxPerPodContainerCount int32,
-	maxContainerCount int32,
-	masterServiceNamespace string,
-	registerSchedulable bool,
-	nonMasqueradeCIDR string,
-	keepTerminatedPodVolumes bool,
 	nodeLabels map[string]string,
 	seccompProfileRoot string,
 	bootstrapCheckpointPath string,
@@ -1134,13 +1121,6 @@ func createAndInitKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 		experimentalKernelMemcgNotification,
 		experimentalCheckNodeCapabilitiesBeforeMount,
 		experimentalNodeAllocatableIgnoreEvictionThreshold,
-		minimumGCAge,
-		maxPerPodContainerCount,
-		maxContainerCount,
-		masterServiceNamespace,
-		registerSchedulable,
-		nonMasqueradeCIDR,
-		keepTerminatedPodVolumes,
 		nodeLabels,
 		seccompProfileRoot,
 		bootstrapCheckpointPath,

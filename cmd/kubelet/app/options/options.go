@@ -132,8 +132,6 @@ type KubeletFlags struct {
 	// Whitelist of unsafe sysctls or sysctl patterns (ending in *).
 	// +optional
 	AllowedUnsafeSysctls []string
-	// containerized should be set to true if kubelet is running in a container.
-	Containerized bool
 	// remoteRuntimeEndpoint is the endpoint of remote runtime service
 	RemoteRuntimeEndpoint string
 	// remoteImageEndpoint is the endpoint of remote image service
@@ -174,40 +172,8 @@ type KubeletFlags struct {
 	NodeStatusMaxImages int32
 
 	// DEPRECATED FLAGS
-	// minimumGCAge is the minimum age for a finished container before it is
-	// garbage collected.
-	MinimumGCAge metav1.Duration
-	// maxPerPodContainerCount is the maximum number of old instances to
-	// retain per container. Each container takes up some disk space.
-	MaxPerPodContainerCount int32
-	// maxContainerCount is the maximum number of old instances of containers
-	// to retain globally. Each container takes up some disk space.
-	MaxContainerCount int32
-	// masterServiceNamespace is The namespace from which the kubernetes
-	// master services should be injected into pods.
-	MasterServiceNamespace string
-	// registerSchedulable tells the kubelet to register the node as
-	// schedulable. Won't have any effect if register-node is false.
-	// DEPRECATED: use registerWithTaints instead
-	RegisterSchedulable bool
-	// nonMasqueradeCIDR configures masquerading: traffic to IPs outside this range will use IP masquerade.
-	NonMasqueradeCIDR string
-	// This flag, if set, instructs the kubelet to keep volumes from terminated pods mounted to the node.
-	// This can be useful for debugging volume related issues.
-	KeepTerminatedPodVolumes bool
-	// allowPrivileged enables containers to request privileged mode.
-	// Defaults to true.
-	AllowPrivileged bool
-	// hostNetworkSources is a comma-separated list of sources from which the
-	// Kubelet allows pods to use of host network. Defaults to "*". Valid
-	// options are "file", "http", "api", and "*" (all sources).
-	HostNetworkSources []string
-	// hostPIDSources is a comma-separated list of sources from which the
-	// Kubelet allows pods to use the host pid namespace. Defaults to "*".
-	HostPIDSources []string
-	// hostIPCSources is a comma-separated list of sources from which the
-	// Kubelet allows pods to use the host ipc namespace. Defaults to "*".
-	HostIPCSources []string
+	// containerized should be set to true if kubelet is running in a container.
+	Containerized bool
 }
 
 // NewKubeletFlags will create a new KubeletFlags with default values
@@ -427,35 +393,20 @@ func (f *KubeletFlags) AddFlags(mainfs *pflag.FlagSet) {
 	// DEPRECATED FLAGS
 	fs.BoolVar(&f.Containerized, "containerized", f.Containerized, "Running kubelet in a container.")
 	fs.MarkDeprecated("containerized", "This feature will be removed in a later release.")
-	fs.StringVar(&f.BootstrapKubeconfig, "experimental-bootstrap-kubeconfig", f.BootstrapKubeconfig, "")
-	fs.MarkDeprecated("experimental-bootstrap-kubeconfig", "Use --bootstrap-kubeconfig")
-	fs.DurationVar(&f.MinimumGCAge.Duration, "minimum-container-ttl-duration", f.MinimumGCAge.Duration, "Minimum age for a finished container before it is garbage collected.  Examples: '300ms', '10s' or '2h45m'")
-	fs.MarkDeprecated("minimum-container-ttl-duration", "Use --eviction-hard or --eviction-soft instead. Will be removed in a future version.")
-	fs.Int32Var(&f.MaxPerPodContainerCount, "maximum-dead-containers-per-container", f.MaxPerPodContainerCount, "Maximum number of old instances to retain per container.  Each container takes up some disk space.")
-	fs.MarkDeprecated("maximum-dead-containers-per-container", "Use --eviction-hard or --eviction-soft instead. Will be removed in a future version.")
-	fs.Int32Var(&f.MaxContainerCount, "maximum-dead-containers", f.MaxContainerCount, "Maximum number of old instances of containers to retain globally.  Each container takes up some disk space. To disable, set to a negative number.")
-	fs.MarkDeprecated("maximum-dead-containers", "Use --eviction-hard or --eviction-soft instead. Will be removed in a future version.")
-	fs.StringVar(&f.MasterServiceNamespace, "master-service-namespace", f.MasterServiceNamespace, "The namespace from which the kubernetes master services should be injected into pods")
-	fs.MarkDeprecated("master-service-namespace", "This flag will be removed in a future version.")
-	fs.BoolVar(&f.RegisterSchedulable, "register-schedulable", f.RegisterSchedulable, "Register the node as schedulable. Won't have any effect if register-node is false.")
-	fs.MarkDeprecated("register-schedulable", "will be removed in a future version")
-	fs.StringVar(&f.NonMasqueradeCIDR, "non-masquerade-cidr", f.NonMasqueradeCIDR, "Traffic to IPs outside this range will use IP masquerade. Set to '0.0.0.0/0' to never masquerade.")
-	fs.MarkDeprecated("non-masquerade-cidr", "will be removed in a future version")
-	fs.BoolVar(&f.KeepTerminatedPodVolumes, "keep-terminated-pod-volumes", f.KeepTerminatedPodVolumes, "Keep terminated pod volumes mounted to the node after the pod terminates.  Can be useful for debugging volume related issues.")
-	fs.MarkDeprecated("keep-terminated-pod-volumes", "will be removed in a future version")
-	// TODO(#58010:v1.13.0): Remove --allow-privileged, it is deprecated
-	fs.BoolVar(&f.AllowPrivileged, "allow-privileged", f.AllowPrivileged, "If true, allow containers to request privileged mode. Default: true")
-	fs.MarkDeprecated("allow-privileged", "will be removed in a future version")
-	// TODO(#58010:v1.12.0): Remove --host-network-sources, it is deprecated
-	fs.StringSliceVar(&f.HostNetworkSources, "host-network-sources", f.HostNetworkSources, "Comma-separated list of sources from which the Kubelet allows pods to use of host network.")
-	fs.MarkDeprecated("host-network-sources", "will be removed in a future version")
-	// TODO(#58010:v1.12.0): Remove --host-pid-sources, it is deprecated
-	fs.StringSliceVar(&f.HostPIDSources, "host-pid-sources", f.HostPIDSources, "Comma-separated list of sources from which the Kubelet allows pods to use the host pid namespace.")
-	fs.MarkDeprecated("host-pid-sources", "will be removed in a future version")
-	// TODO(#58010:v1.12.0): Remove --host-ipc-sources, it is deprecated
-	fs.StringSliceVar(&f.HostIPCSources, "host-ipc-sources", f.HostIPCSources, "Comma-separated list of sources from which the Kubelet allows pods to use the host ipc namespace.")
-	fs.MarkDeprecated("host-ipc-sources", "will be removed in a future version")
 
+	// Deprecation dates:
+	// experimental-bootstrap-kubeconfig in May 2017: cdcfa35c2a4ece8a5270302fda8d83c34bc893eb
+	// minimum-container-ttl-duration, maximum-dead-containers-per-container, maximum-dead-containers in June 2016: 095e04d5628b2d3f7e87fb70bcdf570da6f6e8ab
+	// master-service-namespace in Apr 2017: 93f392251c868f034fa1b6ff63907c3a127ba7c6
+	// register-schedulable in Aug 2016: e225625a80533f9867ea4a647cb0732d56f85771
+	// non-masquerade-cidr in May 2017: 252646b8de412abc80c61379b78dced1524cceef (may not have a viable alt...)
+	// keep-terminated-pod-volumes in Jun 2017: 4c37faaaa7e8d01590baeb1fa9aee53e5e7891c4
+	// allow-privileged, host-network-sources, host-pid-sources, host-ipc-sources in Jan 2018: 5caf26fa844cd92f26a20c1c0b134bbcf5a06475
+
+	// TODO(mtaufen): See which had viable replacements. Double check GKE code to see if we still use any - may indicate lack of viable replacement.
+	// TODO(mtaufen): if there are deprecation issues, mark fixed in PR description
+	// TODO(mtaufen): be especially careful with capabilities.* like AllowPrivileged and co, API server still depends on some things in that package
+	//                look at that dead PR that tried to remove it to remember what the sticking points were.
 }
 
 // AddKubeletConfigFlags adds flags for a specific kubeletconfig.KubeletConfiguration to the specified FlagSet
