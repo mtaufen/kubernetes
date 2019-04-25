@@ -223,6 +223,14 @@ kube::golang::setup_platforms() {
     mapfile -t KUBE_TEST_PLATFORMS <<< "$(printf "%s\n" "${KUBE_SUPPORTED_TEST_PLATFORMS[@]}")"
     readonly KUBE_TEST_PLATFORMS
   fi
+
+  if [[ -n "${KUBE_BUILD_PLATFORMS:-}" ]]; then
+    declare -p KUBE_BUILD_PLATFORMS
+  fi
+  declare -p KUBE_SERVER_PLATFORMS
+  declare -p KUBE_NODE_PLATFORMS
+  declare -p KUBE_CLIENT_PLATFORMS
+  declare -p KUBE_TEST_PLATFORMS
 }
 
 kube::golang::setup_platforms
