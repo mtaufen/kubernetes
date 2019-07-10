@@ -518,6 +518,72 @@ var _ = SIGDescribe("ServiceAccounts", func() {
 			e2elog.Failf("Unexpected error: %v\n%s", err, logs)
 		}
 	})
+
+	ginkgo.It("should support OIDC discovery of service account issuer [Feature:TokenRequestProjection]", func() {
+		tokenPath := "/var/run/secrets/tokens"
+		tokenName := "sa-token"
+		audience := "oidc-discovery-test"
+		tenMin := int64(10 * 60)
+
+		// TODO: Consider running as a "job", to completion?
+		pod := &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "oidc-dicovery-validator"},
+			Spec: v1.PodSpec{
+				Containers: []v1.Container{{
+					Name:  "oidc-discovery-validator",
+					Image: imageutils.GetE2EImage(imageutils.OidcDiscoveryTest),
+					Args: []string{
+						"-token-path", path.Join(tokenPath, tokenName),
+						"-audience", audience,
+					},
+					VolumeMounts: []v1.VolumeMount{{
+						MountPath: tokenPath,
+						Name:      "sa-token",
+						ReadOnly:  true,
+					}},
+				}},
+				RestartPolicy:      v1.RestartPolicyNever,
+				ServiceAccountName: "default",
+				Volumes: []v1.Volume{{
+					Name: "sa-token",
+					VolumeSource: v1.VolumeSource{
+						Projected: &v1.ProjectedVolumeSource{
+							Sources: []v1.VolumeProjection{
+								{
+									ServiceAccountToken: &v1.ServiceAccountTokenProjection{
+										Path:              "token",
+										ExpirationSeconds: &tenMin,
+										Audience:          audience,
+									},
+								},
+							},
+						},
+					},
+				}},
+			},
+		}
+		pod, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).Create(pod)
+		framework.ExpectNoError(err)
+
+		e2elog.Logf("created pod")
+		err = e2epod.WaitForPodSuccessInNamespace(f.ClientSet, pod.Name, f.Namespace.Name)
+		framework.ExpectNoError(err)
+		e2elog.Logf("completed pod")
+
+		var logs string
+		if err := wait.Poll(30*time.Second, 2*time.Minute, func() (done bool, err error) {
+			e2elog.Logf("polling logs")
+			logs, err = e2epod.GetPodLogs(f.ClientSet, f.Namespace.Name, pod.Name, pod.Spec.Containers[0].Name)
+			if err != nil {
+				e2elog.Logf("Error pulling logs: %v", err)
+				return false, nil
+			}
+			return true, nil
+		}); err != nil {
+			e2elog.Failf("Unexpected error: %v\n%s", err, logs)
+		}
+		e2elog.Logf("Pod logs: \n%v", logs)
+	})
 })
 
 var reportLogsParser = regexp.MustCompile("([a-zA-Z0-9-_]*)=([a-zA-Z0-9-_]*)$")

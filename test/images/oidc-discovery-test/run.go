@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -13,7 +14,14 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+var (
+	tokenPath = flag.String("token-path", "", "path to read service account token from")
+	audience  = flag.String("audience", "", "audience to check on received token")
+)
+
 func main() {
+	flag.Parse()
+
 	ctx, err := clientContext()
 	if err != nil {
 		log.Fatal(err)
@@ -76,7 +84,7 @@ func (k *claims) String() string {
 }
 
 func gettoken() (string, error) {
-	b, err := ioutil.ReadFile("/var/run/secrets/tokens/sa-token")
+	b, err := ioutil.ReadFile(*tokenPath)
 	return string(b), err
 }
 
