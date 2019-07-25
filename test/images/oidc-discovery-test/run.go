@@ -49,7 +49,7 @@ func main() {
 	}
 	log.Printf("OK: Constructed OIDC provider for issuer %v", unsafeClaims.Issuer)
 
-	validTok, err := iss.Verifier(&oidc.Config{ClientID: "my-audience"}).Verify(ctx, raw)
+	validTok, err := iss.Verifier(&oidc.Config{ClientID: *audience}).Verify(ctx, raw)
 	if err != nil {
 		log.Fatal(err)
 	}
