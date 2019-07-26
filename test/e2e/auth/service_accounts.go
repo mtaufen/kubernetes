@@ -25,6 +25,7 @@ import (
 
 	authenticationv1 "k8s.io/api/authentication/v1"
 	v1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -520,6 +521,48 @@ var _ = SIGDescribe("ServiceAccounts", func() {
 	})
 
 	ginkgo.It("should support OIDC discovery of service account issuer [Feature:TokenRequestProjection]", func() {
+
+		// Allow the test pod access to the OIDC discovery non-resource URLs.
+		clusterRoleName := "oidc-discovery"
+		if _, err := f.ClientSet.RbacV1().ClusterRoles().Create(&rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: clusterRoleName,
+			},
+			Rules: []rbacv1.PolicyRule{
+				{
+					Verbs: []string{"get"},
+					NonResourceURLs: []string{
+						"/.well-known/*",
+						"/serviceaccountkeys/*",
+					},
+				},
+			},
+		}); err != nil && !apierrors.IsAlreadyExists(err) {
+			e2elog.Failf("Unexpected err creating ClusterRole %s: %v", clusterRoleName, err)
+		}
+		crbName := fmt.Sprintf("%s-oidc-discovery", f.Namespace.Name)
+		if _, err := f.ClientSet.RbacV1().ClusterRoleBindings().Create(&rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: crbName,
+			},
+			Subjects: []rbacv1.Subject{
+				{
+					Kind:      rbacv1.ServiceAccountKind,
+					APIGroup:  "",
+					Name:      "default",
+					Namespace: f.Namespace.Name,
+				},
+			},
+			RoleRef: rbacv1.RoleRef{
+				Name:     clusterRoleName,
+				APIGroup: rbacv1.GroupName,
+				Kind:     "ClusterRole",
+			},
+		}); err != nil && !apierrors.IsAlreadyExists(err) {
+			e2elog.Failf("Unexpected err creating ClusterRoleBinding %s: %v", crbName, err)
+		}
+
+		// Create the pod with tokens.
 		tokenPath := "/var/run/secrets/tokens"
 		tokenName := "sa-token"
 		audience := "oidc-discovery-test"
