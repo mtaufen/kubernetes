@@ -21,6 +21,7 @@ var (
 
 func main() {
 	flag.Parse()
+	log.SetFlags(log.Ldate | log.Ltime | log.LUTC | log.Lshortfile)
 
 	ctx, err := clientContext()
 	if err != nil {
@@ -41,7 +42,7 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Printf("OK: got issuer %s", unsafeClaims.Issuer)
-	log.Printf("(Full, not-validated claims: %+v)", unsafeClaims)
+	log.Printf("Full, not-validated claims: \n%#v", unsafeClaims)
 
 	iss, err := oidc.NewProvider(ctx, unsafeClaims.Issuer)
 	if err != nil {
@@ -88,11 +89,20 @@ func gettoken() (string, error) {
 	return string(b), err
 }
 
+// clientContext returns a context that uses the Kubernetes InClusterConfig for HTTP requests.
+// The `oidc` library respects the oauth2.HTTPClient context key; if it is set,
+// the library will use the provided http.Client rather than the default HTTP client.
+// This allows us to ensure requests get routed to the API server, in a client configured
+// with the appropriate CA.
 func clientContext() (context.Context, error) {
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
 		return nil, err
 	}
+
+	cfg := cfg.Wrap(func(rt http.RoundTripper) http.RoundTripper {
+
+	})
 
 	rt, err := rest.TransportFor(cfg)
 	if err != nil {
