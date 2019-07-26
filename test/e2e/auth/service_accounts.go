@@ -527,7 +527,7 @@ var _ = SIGDescribe("ServiceAccounts", func() {
 
 		// TODO: Consider running as a "job", to completion?
 		pod := &v1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "oidc-dicovery-validator"},
+			ObjectMeta: metav1.ObjectMeta{Name: "oidc-discovery-validator"},
 			Spec: v1.PodSpec{
 				Containers: []v1.Container{{
 					Name:  "oidc-discovery-validator",
@@ -538,20 +538,20 @@ var _ = SIGDescribe("ServiceAccounts", func() {
 					},
 					VolumeMounts: []v1.VolumeMount{{
 						MountPath: tokenPath,
-						Name:      "sa-token",
+						Name:      tokenName,
 						ReadOnly:  true,
 					}},
 				}},
 				RestartPolicy:      v1.RestartPolicyNever,
 				ServiceAccountName: "default",
 				Volumes: []v1.Volume{{
-					Name: "sa-token",
+					Name: tokenName,
 					VolumeSource: v1.VolumeSource{
 						Projected: &v1.ProjectedVolumeSource{
 							Sources: []v1.VolumeProjection{
 								{
 									ServiceAccountToken: &v1.ServiceAccountTokenProjection{
-										Path:              "token",
+										Path:              tokenName,
 										ExpirationSeconds: &tenMin,
 										Audience:          audience,
 									},
