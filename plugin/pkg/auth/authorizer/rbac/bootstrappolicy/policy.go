@@ -219,7 +219,11 @@ func ClusterRoles() []rbacv1.ClusterRole {
 			ObjectMeta: metav1.ObjectMeta{Name: "system:public-info-viewer"},
 			Rules: []rbacv1.PolicyRule{
 				rbacv1helpers.NewRule("get").URLs(
-					"/livez", "/readyz", "/healthz", "/version", "/version/",
+					// TODO(mtaufen): e2e test should no longer have to create RBAC rules.
+					"/livez", "/readyz", "/healthz",
+					"/version", "/version/",
+					// OIDC discovery endpoints
+					"/.well-known/*", "/serviceaccountkeys/*",
 				).RuleOrDie(),
 			},
 		},
