@@ -669,6 +669,7 @@ func Complete(s *options.ServerRunOptions) (completedServerRunOptions, error) {
 			}
 			pubKeys = append(pubKeys, keys...)
 		}
+		// TODO(mtaufen): Ensure this is feature-gated
 		md, err := serviceaccount.NewServer(
 			s.Authentication.ServiceAccounts.Issuer,
 			s.GenericServerRunOptions.ExternalHost,

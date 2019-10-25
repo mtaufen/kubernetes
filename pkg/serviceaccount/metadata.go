@@ -52,6 +52,12 @@ func NewServer(iss, jwksHost string, keys []interface{}) (IssuerMetadataServer, 
 		return nil, err
 	}
 
+	// TODO(mtaufen): Is this compatible with the way GKE does it
+	// (serve issuer and JWKS URI from Google)? In GKE's kube-apiserver
+	// configuration, the jwksHost value passed in here will be the public
+	// IP address of the master. See cmd/kube-apiserver/app/server.go:Complete,
+	// where GenericServerRunOptions.ExternalHost is set up. We may want to
+	// add an option to configure the jwks host?
 	jwksURL, err := url.Parse(jwksHost)
 	// URL requires a path, but not a host, so "foo" just becomes a path-
 	// not a host + an empty path. Default to interpreting jwksHost as a host.
@@ -126,8 +132,9 @@ func fromStandard(h http.HandlerFunc) restful.RouteFunction {
 
 func (s *issuerServer) serveConfiguration(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	// TODO: Set cache header appropriately
+	// TODO(mtaufen): Set cache header appropriately
 
+	// TODO(mtaufen): trace the error handling here to understand how it works
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "\t")
 	// We can't stop writing the body and switch the header; but we can record when an error occured.
