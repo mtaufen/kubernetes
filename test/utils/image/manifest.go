@@ -68,7 +68,7 @@ func initReg() RegistryList {
 		GcAuthenticatedRegistry: "gcr.io/authenticated-image-pulling",
 		DockerLibraryRegistry:   "docker.io/library",
 		DockerGluster:           "docker.io/gluster",
-		E2eRegistry:             "gcr.io/kubernetes-e2e-test-images",
+		E2eRegistry:             "gcr.io/mtaufen-gke-dev",
 		InvalidRegistry:         "invalid.com/invalid",
 		GcRegistry:              "k8s.gcr.io",
 		GcrReleaseRegistry:      "gcr.io/gke-release",
