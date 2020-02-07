@@ -51,7 +51,6 @@ import (
 	"k8s.io/kubernetes/pkg/apis/core"
 	serviceaccountgetter "k8s.io/kubernetes/pkg/controller/serviceaccount"
 	"k8s.io/kubernetes/pkg/features"
-	"k8s.io/kubernetes/pkg/routes"
 	"k8s.io/kubernetes/pkg/serviceaccount"
 	"k8s.io/kubernetes/test/integration/framework"
 )
@@ -72,7 +71,7 @@ func TestServiceAccountTokenCreate(t *testing.T) {
 		t.Fatalf("err: %v", err)
 	}
 
-	pk := &sk.(*ecdsa.PrivateKey).PublicKey
+	pk := sk.(*ecdsa.PrivateKey).PublicKey
 
 	const iss = "https://foo.bar.example.com"
 	aud := authenticator.Audiences{"api"}
@@ -92,7 +91,7 @@ func TestServiceAccountTokenCreate(t *testing.T) {
 	masterConfig.GenericConfig.Authentication.Authenticator = bearertoken.New(
 		serviceaccount.JWTTokenAuthenticator(
 			iss,
-			[]interface{}{pk},
+			[]interface{}{&pk},
 			aud,
 			serviceaccount.NewValidator(serviceaccountgetter.NewGetterFromClient(
 				gcs,
@@ -109,18 +108,6 @@ func TestServiceAccountTokenCreate(t *testing.T) {
 		),
 	)
 
-	// Write the private key to a file so the server can read it in.
-	f, err := ioutil.TempFile("", "service-account-key-*")
-	if err != nil {
-		t.Fatalf("error creating service account key file %v", err)
-	}
-	defer f.Close()
-	_, err = f.WriteString(ecdsaPrivateKey)
-	if err != nil {
-		t.Fatalf("error writing service account key file %v", err)
-	}
-	f.Close()
-
 	tokenGenerator, err := serviceaccount.JWTTokenGenerator(iss, sk)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -128,9 +115,9 @@ func TestServiceAccountTokenCreate(t *testing.T) {
 	masterConfig.ExtraConfig.ServiceAccountIssuer = tokenGenerator
 	masterConfig.ExtraConfig.ServiceAccountMaxExpiration = maxExpirationDuration
 	masterConfig.GenericConfig.Authentication.APIAudiences = aud
-	masterConfig.ExtraConfig.ServiceAccountIssuerURL = iss
-	masterConfig.ExtraConfig.ServiceAccountJWKSURI = ""
-	masterConfig.ExtraConfig.ServiceAccountKeyFiles = []string{f.Name()}
+
+	masterConfig.ExtraConfig.ServiceAccountIssuerMetadataBuilder = serviceaccount.
+		NewOpenIDMetadataBuilder(iss, "", []interface{}{&pk})
 
 	master, _, closeFn := framework.RunAMaster(masterConfig)
 	defer closeFn()
@@ -668,7 +655,7 @@ func TestServiceAccountTokenCreate(t *testing.T) {
 		expectJWKSURI := (&url.URL{
 			Scheme: "https",
 			Host:   "192.168.10.4:443",
-			Path:   routes.JWKSPath,
+			Path:   serviceaccount.JWKSPath,
 		}).String()
 		if discoveryDoc.JWKS != expectJWKSURI {
 			t.Fatalf("unexpected jwks_uri in discovery doc: got %s, want %s",
@@ -676,9 +663,9 @@ func TestServiceAccountTokenCreate(t *testing.T) {
 		}
 
 		// Since the test framework hardcodes the host, we combine our client's
-		// scheme and host with routes.JWKSPath. We know that this is what was
+		// scheme and host with serviceaccount.JWKSPath. We know that this is what was
 		// in the discovery doc because we checked that it matched above.
-		jwksURI := rc.Get().AbsPath(routes.JWKSPath).URL().String()
+		jwksURI := rc.Get().AbsPath(serviceaccount.JWKSPath).URL().String()
 		t.Log("get jwks from", jwksURI)
 		resp, err = rc.Client.Get(jwksURI)
 		if err != nil {

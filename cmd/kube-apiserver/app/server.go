@@ -383,9 +383,18 @@ func CreateKubeAPIServerConfig(
 
 	// If ServiceAccountIssuerDiscovery is enabled, construct the OIDC metadata server.
 	if utilfeature.DefaultFeatureGate.Enabled(features.ServiceAccountIssuerDiscovery) {
-		config.ExtraConfig.ServiceAccountIssuerURL = s.Authentication.ServiceAccounts.Issuer
-		config.ExtraConfig.ServiceAccountJWKSURI = s.Authentication.ServiceAccounts.JWKSURI
-		config.ExtraConfig.ServiceAccountKeyFiles = s.Authentication.ServiceAccounts.KeyFiles
+		var pubKeys []interface{}
+		for _, f := range s.Authentication.ServiceAccounts.KeyFiles {
+			keys, err := keyutil.PublicKeysFromFile(f)
+			if err != nil {
+				return nil, nil, nil, nil, fmt.Errorf("failed to parse key file %q: %v", f, err)
+			}
+			pubKeys = append(pubKeys, keys...)
+		}
+		config.ExtraConfig.ServiceAccountIssuerMetadataBuilder = serviceaccount.NewOpenIDMetadataBuilder(
+			s.Authentication.ServiceAccounts.Issuer,
+			s.Authentication.ServiceAccounts.JWKSURI,
+			pubKeys)
 	}
 
 	return config, insecureServingInfo, serviceResolver, pluginInitializers, nil

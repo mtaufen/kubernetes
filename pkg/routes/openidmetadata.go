@@ -22,6 +22,7 @@ import (
 	restful "github.com/emicklei/go-restful"
 
 	"k8s.io/klog"
+	"k8s.io/kubernetes/pkg/serviceaccount"
 )
 
 // This code is in package routes because many controllers import
@@ -35,10 +36,6 @@ const (
 	// to the Kubernetes Service Account key issuer.
 	// https://openid.net/specs/openid-connect-discovery-1_0.html
 	OpenIDConfigPath = "/.well-known/openid-configuration"
-	// JWKSPath is the URL path at which the API server serves a JWKS
-	// containing the public keys that may be used to sign Kubernetes
-	// Service Account keys
-	JWKSPath = "/openid/v1/jwks"
 	// cacheControl is the value of the Cache-Control header. Overrides the
 	// global `private, no-cache` setting.
 	headerCacheControl = "Cache-Control"
@@ -85,7 +82,7 @@ func (s *OpenIDMetadataServer) Install(c *restful.Container) {
 	jwks := new(restful.WebService).
 		Produces(mimeJWKS)
 
-	jwks.Path(JWKSPath).Route(
+	jwks.Path(serviceaccount.JWKSPath).Route(
 		jwks.GET("").
 			To(fromStandard(s.serveKeys)).
 			Doc("get service account issuer OpenID JSON Web Key Set (contains public token verification keys)").

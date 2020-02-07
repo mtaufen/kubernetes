@@ -34,25 +34,23 @@ import (
 	"k8s.io/kubernetes/pkg/serviceaccount"
 )
 
+const (
+	exampleIssuer = "https://issuer.example.com"
+)
+
 func setupServer(t *testing.T, iss string, keys []interface{}) *httptest.Server {
 	t.Helper()
 
 	c := restful.NewContainer()
 	s := httptest.NewServer(c)
 
-	// Construct after we start server so key URL can include host
-	metadataJSON, err := serviceaccount.OpenIDMetadataJSON(
-		iss, s.URL+routes.JWKSPath, keys)
+	b := serviceaccount.NewOpenIDMetadataBuilder(iss, s.URL+serviceaccount.JWKSPath, keys)
+	md, err := b.OpenIDMetadata("")
 	if err != nil {
-		t.Fatalf("could not marshal issuer discovery JSON, error: %v", err)
+		t.Fatal(err)
 	}
 
-	keysJSON, err := serviceaccount.OpenIDKeysetJSON(keys)
-	if err != nil {
-		t.Fatalf("could not marshal issuer keys JSON, error: %v", err)
-	}
-
-	srv := routes.NewOpenIDMetadataServer(metadataJSON, keysJSON)
+	srv := routes.NewOpenIDMetadataServer(md.MetadataJSON, md.PublicKeysetJSON)
 	srv.Install(c)
 
 	return s
@@ -71,12 +69,12 @@ type Configuration struct {
 }
 
 func TestServeConfiguration(t *testing.T) {
-	s := setupServer(t, "my-fake-issuer", defaultKeys)
+	s := setupServer(t, exampleIssuer, defaultKeys)
 	defer s.Close()
 
 	want := Configuration{
-		Issuer:        "my-fake-issuer",
-		JWKSURI:       s.URL + routes.JWKSPath,
+		Issuer:        exampleIssuer,
+		JWKSURI:       s.URL + serviceaccount.JWKSPath,
 		ResponseTypes: []string{"id_token"},
 		SubjectTypes:  []string{"public"},
 		SigningAlgs:   []string{"ES256", "RS256"},
@@ -170,7 +168,7 @@ func TestServeKeys(t *testing.T) {
 
 	for _, tt := range serveKeysTests {
 		t.Run(tt.Name, func(t *testing.T) {
-			s := setupServer(t, "my-fake-issuer", tt.Keys)
+			s := setupServer(t, exampleIssuer, tt.Keys)
 			defer s.Close()
 
 			reqURL := s.URL + "/openid/v1/jwks"
@@ -210,7 +208,7 @@ func TestServeKeys(t *testing.T) {
 }
 
 func TestURLBoundaries(t *testing.T) {
-	s := setupServer(t, "my-fake-issuer", defaultKeys)
+	s := setupServer(t, exampleIssuer, defaultKeys)
 	defer s.Close()
 
 	for _, tt := range []struct {
@@ -236,6 +234,132 @@ func TestURLBoundaries(t *testing.T) {
 			}
 			if !tt.WantOK && (resp.StatusCode != http.StatusNotFound) {
 				t.Errorf("Get(%v)= %v, want %v", tt.Path, resp.StatusCode, http.StatusNotFound)
+			}
+		})
+	}
+}
+
+func TestOpenIDMetadataBuilder(t *testing.T) {
+	cases := []struct {
+		name            string
+		issuerURL       string
+		jwksURI         string
+		externalAddress string
+		keys            []interface{}
+		wantMeta        string
+		wantKeyset      string
+		err             bool
+	}{
+		{
+			name:       "valid inputs",
+			issuerURL:  exampleIssuer,
+			jwksURI:    exampleIssuer + serviceaccount.JWKSPath,
+			keys:       defaultKeys,
+			wantMeta:   `{"issuer":"https://issuer.example.com","jwks_uri":"https://issuer.example.com/openid/v1/jwks","response_types_supported":["id_token"],"subject_types_supported":["public"],"id_token_signing_alg_values_supported":["ES256","RS256"]}`,
+			wantKeyset: `{"keys":[{"use":"sig","kty":"RSA","kid":"JHJehTTTZlsspKHT-GaJxK7Kd1NQgZJu3fyK6K_QDYU","alg":"RS256","n":"249XwEo9k4tM8fMxV7zxOhcrP-WvXn917koM5Qr2ZXs4vo26e4ytdlrV0bQ9SlcLpQVSYjIxNfhTZdDt-ecIzshKuv1gKIxbbLQMOuK1eA_4HALyEkFgmS_tleLJrhc65tKPMGD-pKQ_xhmzRuCG51RoiMgbQxaCyYxGfNLpLAZK9L0Tctv9a0mJmGIYnIOQM4kC1A1I1n3EsXMWmeJUj7OTh_AjjCnMnkgvKT2tpKxYQ59PgDgU8Ssc7RDSmSkLxnrv-OrN80j6xrw0OjEiB4Ycr0PqfzZcvy8efTtFQ_Jnc4Bp1zUtFXt7-QeevePtQ2EcyELXE0i63T1CujRMWw","e":"AQAB"},{"use":"sig","kty":"EC","kid":"SoABiieYuNx4UdqYvZRVeuC6SihxgLrhLy9peHMHpTc","crv":"P-256","alg":"ES256","x":"H6cuzP8XuD5wal6wf9M6xDljTOPLX2i8uIp_C_ASqiI","y":"BlHnikLV9PyEd6gl8k4T_3Wwoh6xd79XLoQTh2PAi1Y"}]}`,
+		},
+		{
+			name:      "valid inputs, default JWKSURI to external address",
+			issuerURL: exampleIssuer,
+			jwksURI:   "",
+			// We expect host + port, no scheme, when API server calculates ExternalAddress.
+			externalAddress: "192.0.2.1:80",
+			keys:            defaultKeys,
+			wantMeta:        `{"issuer":"https://issuer.example.com","jwks_uri":"https://192.0.2.1:80/openid/v1/jwks","response_types_supported":["id_token"],"subject_types_supported":["public"],"id_token_signing_alg_values_supported":["ES256","RS256"]}`,
+			wantKeyset:      `{"keys":[{"use":"sig","kty":"RSA","kid":"JHJehTTTZlsspKHT-GaJxK7Kd1NQgZJu3fyK6K_QDYU","alg":"RS256","n":"249XwEo9k4tM8fMxV7zxOhcrP-WvXn917koM5Qr2ZXs4vo26e4ytdlrV0bQ9SlcLpQVSYjIxNfhTZdDt-ecIzshKuv1gKIxbbLQMOuK1eA_4HALyEkFgmS_tleLJrhc65tKPMGD-pKQ_xhmzRuCG51RoiMgbQxaCyYxGfNLpLAZK9L0Tctv9a0mJmGIYnIOQM4kC1A1I1n3EsXMWmeJUj7OTh_AjjCnMnkgvKT2tpKxYQ59PgDgU8Ssc7RDSmSkLxnrv-OrN80j6xrw0OjEiB4Ycr0PqfzZcvy8efTtFQ_Jnc4Bp1zUtFXt7-QeevePtQ2EcyELXE0i63T1CujRMWw","e":"AQAB"},{"use":"sig","kty":"EC","kid":"SoABiieYuNx4UdqYvZRVeuC6SihxgLrhLy9peHMHpTc","crv":"P-256","alg":"ES256","x":"H6cuzP8XuD5wal6wf9M6xDljTOPLX2i8uIp_C_ASqiI","y":"BlHnikLV9PyEd6gl8k4T_3Wwoh6xd79XLoQTh2PAi1Y"}]}`,
+		},
+		{
+			name:       "valid inputs, IP addresses instead of domains",
+			issuerURL:  "https://192.0.2.1:80",
+			jwksURI:    "https://192.0.2.1:80" + serviceaccount.JWKSPath,
+			keys:       defaultKeys,
+			wantMeta:   `{"issuer":"https://192.0.2.1:80","jwks_uri":"https://192.0.2.1:80/openid/v1/jwks","response_types_supported":["id_token"],"subject_types_supported":["public"],"id_token_signing_alg_values_supported":["ES256","RS256"]}`,
+			wantKeyset: `{"keys":[{"use":"sig","kty":"RSA","kid":"JHJehTTTZlsspKHT-GaJxK7Kd1NQgZJu3fyK6K_QDYU","alg":"RS256","n":"249XwEo9k4tM8fMxV7zxOhcrP-WvXn917koM5Qr2ZXs4vo26e4ytdlrV0bQ9SlcLpQVSYjIxNfhTZdDt-ecIzshKuv1gKIxbbLQMOuK1eA_4HALyEkFgmS_tleLJrhc65tKPMGD-pKQ_xhmzRuCG51RoiMgbQxaCyYxGfNLpLAZK9L0Tctv9a0mJmGIYnIOQM4kC1A1I1n3EsXMWmeJUj7OTh_AjjCnMnkgvKT2tpKxYQ59PgDgU8Ssc7RDSmSkLxnrv-OrN80j6xrw0OjEiB4Ycr0PqfzZcvy8efTtFQ_Jnc4Bp1zUtFXt7-QeevePtQ2EcyELXE0i63T1CujRMWw","e":"AQAB"},{"use":"sig","kty":"EC","kid":"SoABiieYuNx4UdqYvZRVeuC6SihxgLrhLy9peHMHpTc","crv":"P-256","alg":"ES256","x":"H6cuzP8XuD5wal6wf9M6xDljTOPLX2i8uIp_C_ASqiI","y":"BlHnikLV9PyEd6gl8k4T_3Wwoh6xd79XLoQTh2PAi1Y"}]}`,
+		},
+		{
+			name:       "response only contains public keys, even when private keys are provided",
+			issuerURL:  exampleIssuer,
+			jwksURI:    exampleIssuer + serviceaccount.JWKSPath,
+			keys:       []interface{}{getPrivateKey(rsaPrivateKey), getPrivateKey(ecdsaPrivateKey)},
+			wantMeta:   `{"issuer":"https://issuer.example.com","jwks_uri":"https://issuer.example.com/openid/v1/jwks","response_types_supported":["id_token"],"subject_types_supported":["public"],"id_token_signing_alg_values_supported":["ES256","RS256"]}`,
+			wantKeyset: `{"keys":[{"use":"sig","kty":"RSA","kid":"JHJehTTTZlsspKHT-GaJxK7Kd1NQgZJu3fyK6K_QDYU","alg":"RS256","n":"249XwEo9k4tM8fMxV7zxOhcrP-WvXn917koM5Qr2ZXs4vo26e4ytdlrV0bQ9SlcLpQVSYjIxNfhTZdDt-ecIzshKuv1gKIxbbLQMOuK1eA_4HALyEkFgmS_tleLJrhc65tKPMGD-pKQ_xhmzRuCG51RoiMgbQxaCyYxGfNLpLAZK9L0Tctv9a0mJmGIYnIOQM4kC1A1I1n3EsXMWmeJUj7OTh_AjjCnMnkgvKT2tpKxYQ59PgDgU8Ssc7RDSmSkLxnrv-OrN80j6xrw0OjEiB4Ycr0PqfzZcvy8efTtFQ_Jnc4Bp1zUtFXt7-QeevePtQ2EcyELXE0i63T1CujRMWw","e":"AQAB"},{"use":"sig","kty":"EC","kid":"SoABiieYuNx4UdqYvZRVeuC6SihxgLrhLy9peHMHpTc","crv":"P-256","alg":"ES256","x":"H6cuzP8XuD5wal6wf9M6xDljTOPLX2i8uIp_C_ASqiI","y":"BlHnikLV9PyEd6gl8k4T_3Wwoh6xd79XLoQTh2PAi1Y"}]}`,
+		},
+		{
+			name:      "issuer missing https",
+			issuerURL: "http://issuer.example.com",
+			jwksURI:   exampleIssuer + serviceaccount.JWKSPath,
+			keys:      defaultKeys,
+			err:       true,
+		},
+		{
+			name:      "issuer missing scheme",
+			issuerURL: "issuer.example.com",
+			jwksURI:   exampleIssuer + serviceaccount.JWKSPath,
+			keys:      defaultKeys,
+			err:       true,
+		},
+		{
+			name:      "issuer is not a valid URL",
+			issuerURL: "issuer",
+			jwksURI:   exampleIssuer + serviceaccount.JWKSPath,
+			keys:      defaultKeys,
+			err:       true,
+		},
+		{
+			name:      "jwks missing https",
+			issuerURL: exampleIssuer,
+			jwksURI:   "http://issuer.example.com" + serviceaccount.JWKSPath,
+			keys:      defaultKeys,
+			err:       true,
+		},
+		{
+			name:      "jwks missing scheme",
+			issuerURL: exampleIssuer,
+			jwksURI:   "issuer.example.com" + serviceaccount.JWKSPath,
+			keys:      defaultKeys,
+			err:       true,
+		},
+		{
+			name:      "jwks is not a valid URL",
+			issuerURL: exampleIssuer,
+			jwksURI:   "issuer" + serviceaccount.JWKSPath,
+			keys:      defaultKeys,
+			err:       true,
+		},
+		{
+			name:            "external address also has a scheme",
+			issuerURL:       exampleIssuer,
+			externalAddress: "https://192.0.2.1:80",
+			keys:            defaultKeys,
+			err:             true,
+		},
+		{
+			name:      "missing external address and jwks",
+			issuerURL: exampleIssuer,
+			keys:      defaultKeys,
+			err:       true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			b := serviceaccount.NewOpenIDMetadataBuilder(tc.issuerURL, tc.jwksURI, tc.keys)
+			md, err := b.OpenIDMetadata(tc.externalAddress)
+			if tc.err {
+				if err == nil {
+					t.Fatalf("got <nil>, want error")
+				}
+				return
+			} else if !tc.err && err != nil {
+				t.Fatalf("got error %v, want <nil>", err)
+			}
+
+			metadata := string(md.MetadataJSON)
+			keyset := string(md.PublicKeysetJSON)
+			if metadata != tc.wantMeta {
+				t.Errorf("got metadata %s, want %s", metadata, tc.wantMeta)
+			}
+			if keyset != tc.wantKeyset {
+				t.Errorf("got keyset %s, want %s", keyset, tc.wantKeyset)
 			}
 		})
 	}

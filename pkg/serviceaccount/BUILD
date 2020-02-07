@@ -48,7 +48,6 @@ go_test(
     srcs = [
         "claims_test.go",
         "jwt_test.go",
-        "keys_test.go",
         "openidmetadata_test.go",
         "util_test.go",
     ],

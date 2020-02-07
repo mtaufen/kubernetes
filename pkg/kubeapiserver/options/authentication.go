@@ -171,13 +171,25 @@ func (s *BuiltInAuthenticationOptions) Validate() []error {
 		allErrors = append(allErrors, fmt.Errorf("oidc-issuer-url and oidc-client-id should be specified together"))
 	}
 
-	if s.ServiceAccounts != nil {
-		if len(s.ServiceAccounts.Issuer) > 0 && strings.Contains(s.ServiceAccounts.Issuer, ":") {
-			if _, err := url.Parse(s.ServiceAccounts.Issuer); err != nil {
-				allErrors = append(allErrors, fmt.Errorf("service-account-issuer contained a ':' but was not a valid URL: %v", err))
-			}
+	if s.ServiceAccounts != nil && len(s.ServiceAccounts.Issuer) > 0 && strings.Contains(s.ServiceAccounts.Issuer, ":") {
+		if _, err := url.Parse(s.ServiceAccounts.Issuer); err != nil {
+			allErrors = append(allErrors, fmt.Errorf("service-account-issuer contained a ':' but was not a valid URL: %v", err))
 		}
+	}
+	if s.ServiceAccounts != nil && utilfeature.DefaultFeatureGate.Enabled(features.BoundServiceAccountTokenVolume) {
+		if !utilfeature.DefaultFeatureGate.Enabled(features.TokenRequest) || !utilfeature.DefaultFeatureGate.Enabled(features.TokenRequestProjection) {
+			allErrors = append(allErrors, errors.New("if the BoundServiceAccountTokenVolume feature is enabled,"+
+				" the TokenRequest and TokenRequestProjection features must also be enabled"))
+		}
+		if len(s.ServiceAccounts.Issuer) == 0 {
+			allErrors = append(allErrors, errors.New("service-account-issuer is a required flag when BoundServiceAccountTokenVolume is enabled"))
+		}
+		if len(s.ServiceAccounts.KeyFiles) == 0 {
+			allErrors = append(allErrors, errors.New("service-account-key-file is a required flag when BoundServiceAccountTokenVolume is enabled"))
+		}
+	}
 
+	if s.ServiceAccounts != nil {
 		if utilfeature.DefaultFeatureGate.Enabled(features.ServiceAccountIssuerDiscovery) {
 			// Validate the JWKS URI when it is explicitly set.
 			// When unset, it is later derived from ExternalHost.
@@ -190,19 +202,6 @@ func (s *BuiltInAuthenticationOptions) Validate() []error {
 			}
 		} else if len(s.ServiceAccounts.JWKSURI) > 0 {
 			allErrors = append(allErrors, fmt.Errorf("service-account-jwks-uri may only be set when the ServiceAccountIssuerDiscovery feature gate is enabled"))
-		}
-
-		if utilfeature.DefaultFeatureGate.Enabled(features.BoundServiceAccountTokenVolume) {
-			if !utilfeature.DefaultFeatureGate.Enabled(features.TokenRequest) || !utilfeature.DefaultFeatureGate.Enabled(features.TokenRequestProjection) {
-				allErrors = append(allErrors, errors.New("if the BoundServiceAccountTokenVolume feature is enabled,"+
-					" the TokenRequest and TokenRequestProjection features must also be enabled"))
-			}
-			if len(s.ServiceAccounts.Issuer) == 0 {
-				allErrors = append(allErrors, errors.New("service-account-issuer is a required flag when BoundServiceAccountTokenVolume is enabled"))
-			}
-			if len(s.ServiceAccounts.KeyFiles) == 0 {
-				allErrors = append(allErrors, errors.New("service-account-key-file is a required flag when BoundServiceAccountTokenVolume is enabled"))
-			}
 		}
 	}
 
